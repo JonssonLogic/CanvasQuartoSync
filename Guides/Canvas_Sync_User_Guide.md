@@ -1,0 +1,218 @@
+# Canvas Sync System User Guide
+
+This system automates the synchronization of local course content to a Canvas course. It supports pages, assignments, quizzes, module headers, and calendar events.
+
+## 1. Getting Started
+
+### Prerequisites
+1.  **Python 3.8+**
+2.  **Quarto CLI**: Must be installed and available in your system PATH.
+3.  **Python Packages**:
+    ```bash
+    pip install canvasapi python-frontmatter PyYAML
+    ```
+4.  **Environment Variables**:
+    *   `CANVAS_API_URL` (e.g., `https://canvas.instructure.com`)
+    *   `CANVAS_API_TOKEN` (Your generated API Access Token)
+
+### Configuration
+The **Course ID** must be specified in one of two ways (in order of priority):
+1.  **Command Line Argument**: `--course-id 12345`
+2.  **File**: Create a `course_id.txt` file in your content folder containing only the numeric ID.
+
+### Usage
+Run the script from the root of your project:
+
+```powershell
+# Default: Sync content from current directory
+python sync_to_canvas.py
+
+# Sync from a specific folder
+python sync_to_canvas.py ../MyCourseData
+
+# Sync including Calendar (Opt-in)
+python sync_to_canvas.py --sync-calendar
+```
+
+---
+
+## 2. File Organization & Naming Conventions
+
+The system uses a **strict naming convention** to identify Modules and Content. 
+
+### Modules (Directories)
+*   **Format**: `NN_Name` (Two digits, underscore, Name).
+*   **Example**: `01_Introduction`, `02_Python Basics`.
+*   **Behavior**: 
+    *   The prefix `01_` determines the module order in Canvas.
+    *   The part after `_` becomes the Module Name (e.g., "Introduction").
+    *   **Folders NOT matching this pattern are IGNORED.**
+
+### Content Files
+*   **Format**: `NN_Name.ext` (Two digits, underscore, Name, extension).
+*   **Example**: `01_Welcome.qmd`, `02_Assignment.qmd`.
+*   **Behavior**:
+    *   **In a Module Folder**: The file is synced and added to that Module.
+    *   **In Root Folder**: The file is synced to Canvas (as a Page/Assignment/etc.) but is **NOT added to any module**. (Useful for "loose" pages or hidden assignments).
+    *   **Files NOT matching this pattern are IGNORED.**
+
+**Example Structure**:
+```text
+DailyWork/
+├── 01_Introduction/        -> Module: "Introduction"
+│   ├── 01_Welcome.qmd      -> Page (In Module)
+│   └── 03_Resources.md     -> SubHeader
+├── 02_Python Basics/       -> Module: "Python Basics"
+│   └── 01_FirstProg.qmd    -> Assignment (In Module)
+├── 99_HiddenPage.qmd       -> Page (Synced, but NOT in any module)
+├── graphics/               -> Ignored (no prefix)
+└── handlers/               -> Ignored (no prefix)
+```
+
+---
+
+## 3. Content Types & Metadata
+
+> [!IMPORTANT]
+> **Safe Updates**: When the system syncs, it checks if an item with the same title already exists. 
+> *   **If Found**: It **updates** the existing item (description, points, dates, etc.). This ensures student submissions and grades are **preserved**.
+> *   **If Not Found**: It creates a new item.
+>  
+> *Exception: If you rename a file/title locally, it will be treated as a new item.*
+
+### Quarto Pages (`.qmd`)
+*   **Locality**: Place in a module folder.
+*   **Metadata**:
+    ```yaml
+    ---
+    title: "Page Title"
+    format:
+      html:
+        page-layout: article # Recommended
+    canvas:
+      type: page
+      published: true      # Optional (Default: false)
+      indent: 0            # Optional (0-5)
+    ---
+    ```
+
+### Quarto Assignments (`.qmd`)
+*   **Metadata**:
+    ```yaml
+    ---
+    title: "Assignment Title"
+    format:
+      html:
+        page-layout: article
+    canvas:
+      type: assignment
+      published: true
+      points: 10
+      due_at: 2024-10-15T23:59:00Z
+      submission_types: [online_upload] # e.g., online_text_entry, online_url
+      allowed_extensions: [py, txt]
+      indent: 1
+    ---
+    ```
+
+### Text Headers (`.md`)
+*   Used to create visual separators within modules.
+*   **Metadata**:
+    ```yaml
+    ---
+    title: "Section Header"
+    canvas:
+      type: subheader
+      published: true
+      indent: 0
+    ---
+    ```
+
+### Quizzes (`.json`)
+*   **Format**: A JSON object with a `canvas` block and a `questions` list.
+*   **Note**: Quizzes are **unpublished** by default.
+    ```json
+    {
+      "canvas": {
+        "title": "Quiz Title",
+        "published": false,
+        "indent": 1
+      },
+      "questions": [
+        {
+          "question_name": "Q1",
+          "question_text": "What is 2+2?",
+          "question_type": "multiple_choice_question",
+          "points_possible": 1,
+          "answers": [
+            {"answer_text": "4", "weight": 100},
+            {"answer_text": "5", "weight": 0}
+          ]
+        }
+      ]
+    }
+    ```
+
+---
+
+## 4. Calendar Synchronization
+
+*   **File**: `schedule.yaml` in the content root.
+*   **Command**: Must run with `--sync-calendar` to update.
+*   **Logic**: 
+    *   **Single Events**: Created as-is.
+    *   **Series**: Defined with `days: ["Mon", "Thu"]`. Expanded into individual events.
+*   **Manual Changes**: Syncing without the flag preserves manual changes in Canvas.
+
+**Example `schedule.yaml`**:
+```yaml
+events:
+  - title: "Kickoff Meeting"
+    date: "2024-01-10"
+    time: "09:00-10:00"
+    description: "Introductory session."
+
+  - title: "Weekly Lecture"
+    start_date: "2024-01-15"
+    end_date: "2024-05-15"
+    days: ["Mon", "Wed"]
+    time: "10:15-12:00"
+    location: "Room 101"
+```
+
+---
+
+## 5. Linking & Asset Handling (Power Feature)
+
+The system automatically scans your Quarto content (`.qmd`) for links to local files and converts them into Canvas-ready links using intelligent resolution.
+
+### A. Local Files (Downloads)
+When you link to a non-content file (PDF, ZIP, DOCX, etc.), the system **uploads** it to Canvas (`course_files`) and creates a secure download link.
+*   **Markdown**: `[Download Syllabus](docs/Syllabus.pdf)`
+*   **Result**: Link becomes `https://canvas.../files/123/download`
+
+### B. Images
+Local images are **uploaded** to `course_images` and embedded.
+*   **Markdown**: `![Elephant](graphics/elephant.jpg)`
+*   **Result**: Image displays using Canvas file storage.
+
+### C. Cross-Linking (Smart Navigation)
+You can link directly to other Pages, Assignments, or Quizzes by referencing their **local filename**.
+*   **Markdown**: `[Next Assignment](../02_Python/01_Assignment.qmd)`
+*   **Result**: The system finds the real Canvas Assignment URL and links to it `https://canvas.../courses/101/assignments/555`.
+*   **Circular Links**: If you link to a Page that hasn't been synced yet, the system automatically creates a **"Stub"** (empty placeholder) to generate the URL, ensuring your links never break.
+
+---
+
+## 6. Portable Syncing (Batch Script)
+
+A helper script `run_sync_here.bat` is available to execute the sync from any directory (e.g., if you keep your content separate from the code).
+
+### Usage
+1.  Copy `run_sync_here.bat` into your content folder.
+2.  **Basic Sync**: Double-click the file to sync the content in that folder.
+3.  **Shortcuts & Arguments** (e.g., for Calendar Sync):
+    *   Create a shortcut to the `.bat` file.
+    *   Right-click the Shortcut -> **Properties**.
+    *   In the **Target** field, append the argument: 
+        `...\run_sync_here.bat --sync-calendar`

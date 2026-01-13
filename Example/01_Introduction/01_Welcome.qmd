@@ -1,0 +1,24 @@
+---
+title: "Welcome to the Course!"
+format:
+  html:
+    page-layout: article
+canvas:
+  type: page
+  published: true
+---
+
+
+![This is an Elephant.](../graphics/elephant.jpg){width=50%}
+
+This course will cover everything you need to know about **Python** and **Canvas API**.
+
+Does LaTex work? $E=mc^2$ $\frac{1}{2}$
+
+Try to link to a quiz: [Link](04_NewFormat_Quiz.json)
+
+
+[Link](../02_Python Basics/02_Assignment.qmd)
+
+## Resources
+- [Official Docs](https://docs.python.org)

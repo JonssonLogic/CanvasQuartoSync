@@ -1,0 +1,22 @@
+---
+title: "First Python Program"
+format:
+  html:
+    page-layout: article
+canvas:
+  type: assignment
+  published: true
+  points: 10
+  submission_types: [online_upload]
+  allowed_extensions: [py]
+  due_at: 2024-10-15T23:59:00Z
+---
+
+# Assignment 1
+
+Write a python program that prints "Hello Canvas!".
+
+Read the assignment background in [this page](../01_Introduction/01_Welcome.qmd).
+
+## Submission
+Upload your `.py` file here.

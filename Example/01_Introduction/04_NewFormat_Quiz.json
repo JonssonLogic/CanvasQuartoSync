@@ -1,0 +1,25 @@
+{
+    "canvas": {
+        "title": "Indented Quiz Example",
+        "published": true,
+        "indent": 1
+    },
+    "questions": [
+        {
+            "question_name": "Question 1",
+            "question_text": "Is this quiz indented?",
+            "question_type": "multiple_choice_question",
+            "points_possible": 1,
+            "answers": [
+                {
+                    "answer_text": "Yes",
+                    "weight": 100
+                },
+                {
+                    "answer_text": "No",
+                    "weight": 0
+                }
+            ]
+        }
+    ]
+}

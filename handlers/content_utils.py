@@ -1,0 +1,224 @@
+import os
+import re
+import frontmatter
+import json
+from canvasapi import Canvas
+
+def get_or_create_folder(course, folder_path, parent_folder_id=None):
+    """
+    Finds or creates a folder in the Canvas course files.
+    'folder_path' is target folder name (e.g. "course_images" or "course_files").
+    We keep the structure flat for now for simplicity.
+    """
+    folders = course.get_folders()
+    for f in folders:
+        if f.name == folder_path:
+            # Optionally check parent if we were doing nested
+            return f
+    
+    # Not found, create
+    create_args = {'name': folder_path}
+    if parent_folder_id:
+        create_args['parent_folder_id'] = parent_folder_id
+        
+    print(f"    + Creating folder: {folder_path}")
+    return course.create_folder(create_args)
+
+def upload_file(course, local_path, target_folder_name="course_files"):
+    """
+    Uploads a file (image or asset) to Canvas.
+    Returns the public download/preview URL (file_url).
+    """
+    if not os.path.exists(local_path):
+        print(f"    ! File not found: {local_path}")
+        return local_path # Return original path if missing
+    
+    filename = os.path.basename(local_path)
+    
+    # Decide folder based on extension or passed arg?
+    # Keeping images separate is nice, but 'course_files' is fine for everything else.
+    folder = get_or_create_folder(course, target_folder_name)
+    
+    print(f"    -> Uploading file: {filename}")
+    try:
+        success, json_response = folder.upload(local_path, on_duplicate='overwrite')
+        if success:
+            # json_response['url'] is typically the download URL
+            # For usage in HTML, this is usually what we want.
+            return json_response.get('url')
+        else:
+            print("    ! Upload failed.")
+            return local_path
+    except Exception as e:
+        print(f"    ! Error uploading file: {e}")
+        return local_path
+
+def resolve_cross_link(course, current_file_path, link_target, base_path):
+    """
+    Resolves a link to a local content file (.qmd, .json) into a Canvas object URL.
+    Implements JIT Stubbing: Creates the target object if it doesn't exist.
+    """
+    # 1. Resolve absolute local path
+    if os.path.isabs(link_target):
+        abs_target_path = link_target
+    else:
+        abs_target_path = os.path.normpath(os.path.join(base_path, link_target))
+
+    if not os.path.exists(abs_target_path):
+        print(f"    ! Link target not found: {link_target}")
+        return link_target
+
+    filename = os.path.basename(abs_target_path)
+    ext = os.path.splitext(filename)[1].lower()
+
+    # 2. Determine Title and Type
+    target_title = None
+    target_type = None
+
+    try:
+        if ext == '.qmd':
+            post = frontmatter.load(abs_target_path)
+            # Default title from frontmatter or filename
+            target_title = post.metadata.get('title', os.path.splitext(filename)[0])
+            canvas_meta = post.metadata.get('canvas', {})
+            target_type = canvas_meta.get('type', 'page') # Default to page if unspecified
+
+        elif ext == '.json':
+            # Assume Quiz
+            with open(abs_target_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            target_title = data.get('canvas', {}).get('title', os.path.splitext(filename)[0])
+            target_type = 'quiz'
+            
+        else:
+            # Unknown content type, treat as file upload?
+            # But we only call this for known extensions usually.
+            return link_target
+
+    except Exception as e:
+        print(f"    ! Error parsing target {filename}: {e}")
+        return link_target
+
+    # 3. Find or Create Stub in Canvas
+    # We need to find the object by title.
+    
+    canvas_url = link_target # Fallback
+
+    if target_type == 'page':
+        # Finding pages is tricky because 'url' in API != 'title'. 
+        # But get_pages(search_term=title) works mostly.
+        pages = course.get_pages(search_term=target_title)
+        target_obj = None
+        for p in pages:
+            if p.title == target_title:
+                target_obj = p
+                break
+        
+        if not target_obj:
+            print(f"    + [Stub] Creating Page: {target_title}")
+            target_obj = course.create_page(wiki_page={'title': target_title, 'published': False, 'body': '<i>Placeholder for future sync.</i>'})
+        
+        # HTML URL is needed. 'html_url' property usually exists.
+        canvas_url = target_obj.html_url
+        
+    elif target_type == 'assignment':
+        assignments = course.get_assignments(search_term=target_title)
+        target_obj = None
+        for a in assignments:
+            if a.name == target_title:
+                target_obj = a
+                break
+        
+        if not target_obj:
+            print(f"    + [Stub] Creating Assignment: {target_title}")
+            target_obj = course.create_assignment(assignment={'name': target_title, 'published': False})
+            
+        canvas_url = target_obj.html_url
+
+    elif target_type == 'quiz':
+        quizzes = course.get_quizzes(search_term=target_title)
+        target_obj = None
+        for q in quizzes:
+            if q.title == target_title:
+                target_obj = q
+                break
+        
+        if not target_obj:
+             print(f"    + [Stub] Creating Quiz: {target_title}")
+             target_obj = course.create_quiz(quiz={'title': target_title, 'published': False, 'quiz_type': 'assignment'})
+        
+        canvas_url = target_obj.html_url
+
+    return canvas_url
+
+
+def process_content(content, base_path, course):
+    """
+    Main entry point. Scans for images AND file/content links.
+    """
+    
+    # --- 1. Process Images (![...](...)) ---
+    # Same as before
+    def image_replacer(match):
+        alt_text = match.group(1)
+        rel_path = match.group(2)
+        
+        if rel_path.startswith(('http://', 'https://', 'data:')):
+            return match.group(0)
+            
+        if os.path.isabs(rel_path):
+            abs_path = rel_path
+        else:
+            abs_path = os.path.normpath(os.path.join(base_path, rel_path))
+            
+        # Upload to 'course_images'
+        new_url = upload_file(course, abs_path, "course_images")
+        
+        return f"![{alt_text}]({new_url})"
+
+    # Regex for images
+    content = re.sub(r'!\[(.*?)\]\((.*?)\)', image_replacer, content)
+
+    # --- 2. Process File/Content Links ([...](...)) ---
+    # We use negative lookbehind/lookahead or just simple matching since images are already processed?
+    # Caveat: re.sub matching `[...]` will match `![...]` if we aren't careful?
+    # Better: Match `[...]` but verify start char wasn't `!` 
+    # Or rely on the fact that `![...]` are already replaced by URIs? 
+    # Actually, an image text `![Alt](http://...)` still matches pattern `[...](...)`.
+    # So we use a negative lookbehind `(?<!)`
+    
+    def link_replacer(match):
+        link_text = match.group(1)
+        rel_path = match.group(2)
+        
+        # Ignore external links or anchors
+        if rel_path.startswith(('http://', 'https://', 'data:', '#', 'mailto:')):
+            return match.group(0)
+
+        # Resolve path
+        if os.path.isabs(rel_path):
+            abs_path = rel_path
+        else:
+            abs_path = os.path.normpath(os.path.join(base_path, rel_path))
+            
+        ext = os.path.splitext(rel_path)[1].lower()
+
+        # Decision: Is this Content (Stub) or Asset (Upload)?
+        content_extensions = ['.qmd', '.json'] # .md is usually SubHeader, unlikely to be linked? 
+        
+        if ext in content_extensions:
+            # Cross-Link
+            new_url = resolve_cross_link(course, os.path.join(base_path, "current_context"), rel_path, base_path)
+            return f"[{link_text}]({new_url})"
+        else:
+            # Asset Upload (PDF, ZIP, DOCX, IPYNB, etc)
+            # Upload to 'course_files'
+            new_url = upload_file(course, abs_path, "course_files")
+            return f"[{link_text}]({new_url})"
+            
+    # Regex: `(?<!!)\[(.*?)\]\((.*?)\)`
+    # Only matches `[...]` NOT preceded by `!`
+    pattern_links = r'(?<!\!)\[(.*?)\]\((.*?)\)'
+    content = re.sub(pattern_links, link_replacer, content)
+    
+    return content

@@ -1,0 +1,28 @@
+# Environment & Secrets
+.env
+course_id.txt
+token.txt
+schedule.yaml
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Quarto / Sync Artifacts
+_temp_*
+*_files/
+*.html
+!0*_*.html # Don't ignore manual HTML files if they exist, but do ignore generated ones.
+# Actually, the sync generates HTMLs with random temp names. 
+# Safe to ignore .html if source is .qmd? 
+# Let's stick to _temp_ items which is what our script uses.
+
+# OS
+.DS_Store
+Thumbs.db
