@@ -336,19 +336,33 @@ def save_sync_map(content_root, sync_map):
 
 def get_mapped_id(content_root, file_path):
     """
-    Returns the Canvas ID for a local file path relative to content_root.
+    Returns the Canvas ID for a local file path.
+    Also returns metadata if available (e.g. mtime).
     """
     rel_path = os.path.relpath(file_path, content_root).replace('\\', '/')
     sync_map = load_sync_map(content_root)
-    return sync_map.get(rel_path)
+    entry = sync_map.get(rel_path)
+    
+    if isinstance(entry, dict):
+        return entry.get('id'), entry
+    return entry, None
 
-def save_mapped_id(content_root, file_path, canvas_id):
+def save_mapped_id(content_root, file_path, canvas_id, mtime=None):
     """
-    Saves the Canvas ID for a local file path relative to content_root.
+    Saves the Canvas ID and optionally the mtime for a local file path.
     """
     rel_path = os.path.relpath(file_path, content_root).replace('\\', '/')
     sync_map = load_sync_map(content_root)
-    sync_map[rel_path] = canvas_id
+    
+    if mtime is not None:
+        sync_map[rel_path] = {
+            'id': canvas_id,
+            'mtime': mtime
+        }
+    else:
+        # Backward compatibility / simple ID
+        sync_map[rel_path] = canvas_id
+    
     save_sync_map(content_root, sync_map)
 
 def prune_orphaned_assets(course):

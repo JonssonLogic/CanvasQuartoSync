@@ -25,7 +25,24 @@ class AssignmentHandler(BaseHandler):
         filename = os.path.basename(file_path)
         print(f"Syncing Assignment: {filename}")
         
-        # 1. Parse Metadata
+        # 1. Check for Skip (Smart Sync)
+        current_mtime = os.path.getmtime(file_path)
+        existing_id, map_entry = get_mapped_id(content_root, file_path) if content_root else (None, None)
+        
+        needs_render = True
+        assign_obj = None
+
+        if existing_id and isinstance(map_entry, dict):
+            if map_entry.get('mtime') == current_mtime:
+                print(f"    -> Skipping render (No changes detected).")
+                needs_render = False
+                try:
+                    assign_obj = course.get_assignment(existing_id)
+                except:
+                    print(f"    ! Cached Assignment ID {existing_id} not found. Re-rendering.")
+                    needs_render = True
+
+        # 1b. Parse Metadata
         post = frontmatter.load(file_path)
         title = post.metadata.get('title', os.path.splitext(filename)[0])
         canvas_meta = post.metadata.get('canvas', {})
@@ -36,95 +53,94 @@ class AssignmentHandler(BaseHandler):
         allowed_extensions = canvas_meta.get('allowed_extensions', [])
         indent = canvas_meta.get('indent', 0)
 
-        # 1b. Process Images AND Links
+        # 1c. Process Content (ALWAYS, to track ACTIVE_ASSET_IDS)
         with open(file_path, 'r', encoding='utf-8') as f:
             raw_content = f.read()
             
         base_path = os.path.dirname(file_path)
         processed_content = process_content(raw_content, base_path, course, content_root=content_root)
 
-        # ... (Rendering logic remains same) ...
-        # 2. Render HTML
-        temp_qmd = os.path.join(base_path, f"_temp_{filename}")
-        temp_stem = os.path.splitext(f"_temp_{filename}")[0]
-        temp_files_dir = os.path.join(base_path, f"{temp_stem}_files")
+        # Initialize for cleanup safety
+        temp_qmd = temp_html = temp_files_dir = None
 
-        try:
-            with open(temp_qmd, 'w', encoding='utf-8') as f:
-                f.write(processed_content)
+        if needs_render:
+            # 2. Render HTML
+            temp_qmd = os.path.join(base_path, f"_temp_{filename}")
+            temp_stem = os.path.splitext(f"_temp_{filename}")[0]
+            temp_files_dir = os.path.join(base_path, f"{temp_stem}_files")
 
-            cmd = ["quarto", "render", temp_qmd, "--to", "html"]
-            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            
-            temp_html = temp_qmd.replace('.qmd', '.html')
-            
-            if not os.path.exists(temp_html):
-                 print(f"    ! Error: Expected HTML output from temp render.")
-                 self._cleanup(temp_qmd, None, temp_files_dir)
-                 return
+            try:
+                with open(temp_qmd, 'w', encoding='utf-8') as f:
+                    f.write(processed_content)
 
-            with open(temp_html, 'r', encoding='utf-8') as f:
-                full_html = f.read()
-
-            # 3. Extract Content
-            main_match = re.search(r'<main[^>]*id="quarto-document-content"[^>]*>(.*?)</main>', full_html, re.DOTALL)
-            
-            if main_match:
-                html_body = main_match.group(1)
-                html_body = re.sub(r'<header[^>]*id="title-block-header"[^>]*>.*?</header>', '', html_body, flags=re.DOTALL)
-            else:
-                html_body = full_html
-                html_body = re.sub(r'<header[^>]*id="title-block-header"[^>]*>.*?</header>', '', html_body, flags=re.DOTALL)
+                cmd = ["quarto", "render", temp_qmd, "--to", "html"]
+                subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 
-            # Cleanup
-            self._cleanup(temp_qmd, temp_html, temp_files_dir)
-                   
-        except Exception as e:
-            print(f"    ! Error processing: {e}")
-            self._cleanup(temp_qmd, None, temp_files_dir)
-            return
+                temp_html = temp_qmd.replace('.qmd', '.html')
+                
+                if not os.path.exists(temp_html):
+                     print(f"    ! Error: Expected HTML output from temp render.")
+                     self._cleanup(temp_qmd, None, temp_files_dir)
+                     return
 
-        # 4. Create/Update Assignment
-        existing_assignment = None
+                with open(temp_html, 'r', encoding='utf-8') as f:
+                    full_html = f.read()
 
-        # 4a. Try ID lookup via Sync Map
-        if content_root:
-            mapped_id = get_mapped_id(content_root, file_path)
-            if mapped_id:
-                try:
-                    existing_assignment = course.get_assignment(mapped_id)
-                except:
-                    print(f"    ! Mapped Assignment ID {mapped_id} not found in Canvas. Falling back to search.")
+                # 3. Extract Content
+                main_match = re.search(r'<main[^>]*id="quarto-document-content"[^>]*>(.*?)</main>', full_html, re.DOTALL)
+                
+                if main_match:
+                    html_body = main_match.group(1)
+                    html_body = re.sub(r'<header[^>]*id="title-block-header"[^>]*>.*?</header>', '', html_body, flags=re.DOTALL)
+                else:
+                    html_body = full_html
+                    html_body = re.sub(r'<header[^>]*id="title-block-header"[^>]*>.*?</header>', '', html_body, flags=re.DOTALL)
+                    
+                # Cleanup
+                self._cleanup(temp_qmd, temp_html, temp_files_dir)
+                       
+            except Exception as e:
+                print(f"    ! Error processing: {e}")
+                self._cleanup(temp_qmd, None, temp_files_dir)
+                return
 
-        # 4b. Fallback to Title Search
-        if not existing_assignment:
-            assignments = course.get_assignments(search_term=title)
-            for a in assignments:
-                if a.name == title:
-                    existing_assignment = a
-                    break
-        
-        assignment_args = {
-            'name': title,
-            'description': html_body,
-            'published': published,
-            'points_possible': points,
-            'due_at': due_at,
-            'submission_types': submission_types,
-            'allowed_extensions': allowed_extensions
-        }
+            # 4. Create/Update Assignment
+            assignment_args = {
+                'name': title,
+                'description': html_body,
+                'published': published,
+                'points_possible': points,
+                'due_at': due_at,
+                'submission_types': submission_types,
+                'allowed_extensions': allowed_extensions
+            }
 
-        if existing_assignment:
-            print(f"    -> Updating assignment: {title} (ID: {existing_assignment.id})")
-            existing_assignment.edit(assignment=assignment_args)
-            assign_obj = existing_assignment
+            if assign_obj:
+                print(f"    -> Updating assignment: {title} (ID: {assign_obj.id})")
+                assign_obj.edit(assignment=assignment_args)
+            else:
+                # Double check Title Search
+                assignments = course.get_assignments(search_term=title)
+                existing_item = None
+                for a in assignments:
+                    if a.name == title:
+                        existing_item = a
+                        break
+                
+                if existing_item:
+                    print(f"    -> Updating assignment (by title): {title} (ID: {existing_item.id})")
+                    existing_item.edit(assignment=assignment_args)
+                    assign_obj = existing_item
+                else:
+                    print(f"    -> Creating assignment: {title}")
+                    assign_obj = course.create_assignment(assignment=assignment_args)
+
+            # 4c. Update Sync Map
+            if content_root:
+                save_mapped_id(content_root, file_path, assign_obj.id, mtime=current_mtime)
         else:
-            print(f"    -> Creating assignment: {title}")
-            assign_obj = course.create_assignment(assignment=assignment_args)
-
-        # 4c. Update Sync Map
-        if content_root:
-            save_mapped_id(content_root, file_path, assign_obj.id)
+            # Render skipped, assign_obj already set
+            pass
 
         # 5. Add to Module
         if module:
