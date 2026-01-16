@@ -1,0 +1,14 @@
+context: "course_12345"
+events:
+  - title: "Course Introduction"
+    date: "2026-01-10"
+    time: "10:00-12:00"
+    location: "Lecture Hall A"
+    description: "Overview of the course and syllabus."
+
+  - title: "Weekly Lecture"
+    start_date: "2026-01-10"
+    end_date: "2026-01-16"
+    days: ["Mon"]
+    time: "10:00-12:00"
+    location: "Lecture Hall A"

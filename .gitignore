@@ -1,8 +1,8 @@
 # Environment & Secrets
 .env
-course_id.txt
+# course_id.txt
 token.txt
-schedule.yaml
+# schedule.yaml
 
 # Python
 __pycache__/

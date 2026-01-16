@@ -12,12 +12,21 @@ class CalendarHandler(BaseHandler):
         
         # We need the canvas object to create events with context_code
         if not canvas_obj:
-            # Fallback: try to get it from course if available (internal)
-            if hasattr(course, '_requester'):
-                # Not easy to reconstitute Canvas object from just requester without URL/Token
-                pass
             print("    ! Error: Canvas object required for calendar sync.")
             return
+
+        # 1. Fetch existing events for this course to prevent duplication
+        print("  Fetching existing calendar events...")
+        try:
+            # Note: we filter by context_code to only get events for this course
+            existing_events = list(canvas_obj.get_calendar_events(
+                context_codes=[f"course_{course.id}"],
+                all_events=True
+            ))
+            print(f"    Found {len(existing_events)} existing events.")
+        except Exception as e:
+            print(f"    ! Error fetching existing events: {e}")
+            existing_events = []
 
         with open(file_path, 'r', encoding='utf-8') as f:
             data = yaml.safe_load(f)
@@ -27,17 +36,15 @@ class CalendarHandler(BaseHandler):
             print("  No events found in schedule.yaml.")
             return
 
-        print("  (Note: Duplication check is minimal in this version)")
-
         for event_def in events_config:
             if 'days' in event_def:
-                self._handle_recurring_series(course, event_def, canvas_obj)
+                self._handle_recurring_series(course, event_def, canvas_obj, existing_events)
             else:
-                self._create_single_event(course, event_def, canvas_obj)
+                self._create_single_event(course, event_def, canvas_obj, existing_events)
 
-    def _create_single_event(self, course, event_data: dict, canvas_obj, specific_date=None):
+    def _create_single_event(self, course, event_data: dict, canvas_obj, existing_events, specific_date=None):
         """
-        Creates a single calendar event.
+        Creates a single calendar event if it doesn't already exist.
         """
         title = event_data.get('title', 'Untitled Event')
         
@@ -49,11 +56,21 @@ class CalendarHandler(BaseHandler):
         time_range = event_data.get('time', '12:00-13:00')
         start_time_str, end_time_str = time_range.split('-')
         
-        start_at = f"{date_str}T{start_time_str.strip()}:00"
-        end_at = f"{date_str}T{end_time_str.strip()}:00"
+        start_at = f"{date_str}T{start_time_str.strip()}:00Z" # Assuming UTC for simplicity or following Canvas format
+        end_at = f"{date_str}T{end_time_str.strip()}:00Z"
 
         location = event_data.get('location', '')
         description = event_data.get('description', '')
+
+        # Duplicate Check
+        # We compare Title, Start Time, and Location
+        for ex in existing_events:
+            # Canvas might return times with Z or offset, and might have slight formatting differences
+            # We do a basic string match on the relevant parts
+            if ex.title == title and date_str in ex.start_at and start_time_str.strip() in ex.start_at:
+                if location == getattr(ex, 'location_name', ''):
+                    print(f"    - Event already exists: {title} on {date_str} (Skipping)")
+                    return
 
         event_payload = {
             'context_code': f"course_{course.id}",
@@ -65,14 +82,15 @@ class CalendarHandler(BaseHandler):
         }
 
         try:
-            # Use canvas object directly
             new_event = canvas_obj.create_calendar_event(calendar_event=event_payload)
             print(f"    + Created event: {title} on {date_str}")
+            # Add to local list to prevent duplicates within the same run (e.g. overlapping series)
+            existing_events.append(new_event)
             return new_event
         except Exception as e:
             print(f"    ! Error creating event {title}: {e}")
 
-    def _handle_recurring_series(self, course, series_def: dict, canvas_obj):
+    def _handle_recurring_series(self, course, series_def: dict, canvas_obj, existing_events):
         """
         Generates individual events from a recurrence series.
         """
@@ -93,8 +111,8 @@ class CalendarHandler(BaseHandler):
         count = 0
         while current_date <= end_date:
             if current_date.weekday() in target_weekdays:
-                self._create_single_event(course, series_def, canvas_obj, specific_date=current_date)
+                self._create_single_event(course, series_def, canvas_obj, existing_events, specific_date=current_date)
                 count += 1
             current_date += datetime.timedelta(days=1)
         
-        print(f"  -> Generated {count} events for series.")
+        print(f"  -> Processed {count} dates for series.")
