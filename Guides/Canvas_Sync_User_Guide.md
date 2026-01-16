@@ -46,6 +46,7 @@ The system uses a **strict naming convention** to identify Modules and Content.
 *   **Behavior**: 
     *   The prefix `01_` determines the module order in Canvas.
     *   The part after `_` becomes the Module Name (e.g., "Introduction").
+    *   **Clean Look**: The `NN_` prefix is automatically removed from the title in Canvas.
     *   **Folders NOT matching this pattern are IGNORED.**
 
 ### Content Files
@@ -54,6 +55,7 @@ The system uses a **strict naming convention** to identify Modules and Content.
 *   **Behavior**:
     *   **In a Module Folder**: The file is synced and added to that Module.
     *   **In Root Folder**: The file is synced to Canvas (as a Page/Assignment/etc.) but is **NOT added to any module**. (Useful for "loose" pages or hidden assignments).
+    *   **Clean Titles**: When added to a module, the `NN_` prefix is stripped from the title (e.g. `01_Intro.pdf` becomes "Intro.pdf").
     *   **Files NOT matching this pattern are IGNORED.**
 
 **Example Structure**:
@@ -134,7 +136,11 @@ DailyWork/
     {
       "canvas": {
         "title": "Quiz Title",
-        "published": false,
+        "published": true,
+        "show_correct_answers": true,
+        "shuffle_answers": true,
+        "time_limit": 30,
+        "allowed_attempts": 3,
         "indent": 1
       },
       "questions": [
@@ -151,6 +157,12 @@ DailyWork/
       ]
     }
     ```
+*   **Supported Settings**:
+    *   `show_correct_answers` (Boolean)
+    *   `shuffle_answers` (Boolean)
+    *   `time_limit` (Minutes)
+    *   `allowed_attempts` (Integer, use -1 for unlimited)
+    *   `quiz_type` (`practice_quiz`, `assignment`, `none`)
 
 ### 3.5 Solo Files (PDFs, ZIPs, etc.)
 *   **Format**: `NN_Name.ext` (where `.ext` is NOT `.qmd` or `.json`).
@@ -158,7 +170,8 @@ DailyWork/
 *   **Behavior**: 
     1.  The file is uploaded to the system-managed `synced-files` folder in Canvas.
     2.  It is automatically added to the Module as a **File** item.
-    3.  Because it is a "Module Item", it is protected from the automatic **Orphan Cleanup**.
+    3.  **Clean Titles**: The `NN_` prefix is stripped from the module item title (e.g., `05_Syllabus.pdf` becomes "Syllabus.pdf").
+    4.  Because it is a "Module Item", it is protected from the automatic **Orphan Cleanup**.
 
 ---
 
@@ -212,7 +225,10 @@ You can link directly to other Pages, Assignments, or Quizzes by referencing the
 ### D. Asset Namespacing & Optimization
 To keep your course clean and fast, the system uses a specialized strategy for assets:
 *   **Reserved Folders**: All assets from your `.qmd` files are uploaded to `synced-images` and `synced-files`. 
-*   **Smart Upload**: The system checks the "Last Modified" time of your local files. If a file hasn't changed, it **skips the upload**, making subsequent syncs near-instant.
+*   **Smart Render & Upload**: The system checks the "Last Modified" time (`mtime`) of your local files. 
+    *   If a `.qmd` or `.json` file hasn't changed, it **skips Quarto rendering** and the Canvas `edit()` call.
+    *   If an asset (image/PDF) hasn't changed, it **skips the upload**.
+    *   This makes subsequent syncs for large courses faster.
 *   **Caching**: Folder IDs are cached during the run to minimize API calls.
 
 ### E. Orphan Asset Cleanup (Pruning)
@@ -242,7 +258,7 @@ A helper script `run_sync_here.bat` is available to execute the sync from any di
 To ensure your Canvas course stays in sync through renames and moves, the system uses a **Local Mapping** strategy.
 
 ### The Sync Map (`.canvas_sync_map.json`)
-The first time a file is synced, the system records its unique **Canvas ID** in a hidden file called `.canvas_sync_map.json` in your content root.
+The first time a file is synced, the system records its unique **Canvas ID** and the local **Last Modified Time (mtime)** in a hidden file called `.canvas_sync_map.json` in your content root.
 
 *   **Persistent Tracking**: Even if you change the `title:` in the metadata or rename the physical `.qmd` file, the system uses this ID to find and update the **existing** object in Canvas.
 *   **Safe Renaming**: You can safely change the title of an assignment; it will be updated in both the Canvas Assignment list and the Module without creating duplicates.

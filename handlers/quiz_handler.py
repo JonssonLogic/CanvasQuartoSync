@@ -85,9 +85,26 @@ class QuizHandler(BaseHandler):
         
         quiz_payload = {
             'title': title,
-            'quiz_type': 'practice_quiz',
+            'quiz_type': canvas_meta.get('quiz_type', 'practice_quiz'),
             'published': published
         }
+
+        # Optional Advanced Options
+        # Mapping: { 'Local Key': 'Canvas API Key' }
+        setting_map = {
+            'description': 'description',
+            'show_correct_answers': 'show_correct_answers',
+            'shuffle_answers': 'shuffle_answers',
+            'time_limit': 'time_limit',
+            'allowed_attempts': 'allowed_attempts',
+            'one_question_at_a_time': 'one_question_at_a_time',
+            'cant_go_back': 'cant_go_back',
+            'access_code': 'access_code'
+        }
+
+        for local_key, canvas_key in setting_map.items():
+            if local_key in canvas_meta:
+                quiz_payload[canvas_key] = canvas_meta[local_key]
 
         if existing_quiz:
             print(f"    -> Updating quiz: {title} (ID: {existing_quiz.id})")
