@@ -4,7 +4,24 @@ from handlers.base_handler import BaseHandler
 
 class QuizHandler(BaseHandler):
     def can_handle(self, file_path: str) -> bool:
-        return file_path.endswith('.json') and 'Quiz' in file_path
+        if not file_path.endswith('.json'):
+            return False
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # New Format check
+            if isinstance(data, dict) and 'questions' in data:
+                return True
+            
+            # Legacy Format check (list of questions)
+            if isinstance(data, list) and len(data) > 0 and 'question_name' in data[0]:
+                return True
+                
+            return False
+        except:
+            return False
 
     def sync(self, file_path: str, course, module=None):
         filename = os.path.basename(file_path)
