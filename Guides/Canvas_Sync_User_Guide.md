@@ -152,6 +152,14 @@ DailyWork/
     }
     ```
 
+### 3.5 Solo Files (PDFs, ZIPs, etc.)
+*   **Format**: `NN_Name.ext` (where `.ext` is NOT `.qmd` or `.json`).
+*   **Locality**: Place directly inside a module folder.
+*   **Behavior**: 
+    1.  The file is uploaded to the system-managed `_sync_assets_files` folder in Canvas.
+    2.  It is automatically added to the Module as a **File** item.
+    3.  Because it is a "Module Item", it is protected from the automatic **Orphan Cleanup**.
+
 ---
 
 ## 4. Calendar Synchronization
@@ -201,6 +209,18 @@ You can link directly to other Pages, Assignments, or Quizzes by referencing the
 *   **Result**: The system finds the real Canvas Assignment URL and links to it `https://canvas.../courses/101/assignments/555`.
 *   **Circular Links**: If you link to a Page that hasn't been synced yet, the system automatically creates a **"Stub"** (empty placeholder) to generate the URL, ensuring your links never break.
 
+### D. Asset Namespacing & Optimization
+To keep your course clean and fast, the system uses a specialized strategy for assets:
+*   **Reserved Folders**: All assets from your `.qmd` files are uploaded to `_sync_assets_images` and `_sync_assets_files`. 
+*   **Smart Upload**: The system checks the "Last Modified" time of your local files. If a file hasn't changed, it **skips the upload**, making subsequent syncs near-instant.
+*   **Caching**: Folder IDs are cached during the run to minimize API calls.
+
+### E. Orphan Asset Cleanup (Pruning)
+Over time, course storage can get cluttered with old images you no longer use.
+*   **How it works**: At the end of every sync, the system scans the reserved `_sync` folders.
+*   **Pruning**: Any file in these folders that is **NOT** referenced in your current content is automatically deleted.
+*   **Safety**: This process **only** touches files inside the system's reserved folders. Your manuals uploads in `course_files` or `Documents` are never affected.
+
 ---
 
 ## 6. Portable Syncing (Batch Script)
@@ -217,9 +237,9 @@ A helper script `run_sync_here.bat` is available to execute the sync from any di
 
 ---
 
-## 7. Synchronization Strategy & Renaming
+## 7. Synchronization Strategy & Tracking
 
-To ensure that your Canvas course stays in sync even when you rename files or titles, the system uses a **Local Mapping** strategy.
+To ensure your Canvas course stays in sync through renames and moves, the system uses a **Local Mapping** strategy.
 
 ### The Sync Map (`.canvas_sync_map.json`)
 The first time a file is synced, the system records its unique **Canvas ID** in a hidden file called `.canvas_sync_map.json` in your content root.

@@ -12,6 +12,10 @@ Allows you to manage your entire course as a local code repository (Git) while k
     *   **Cross-References**: Link to other content by filename (`[Next Lab](02_Lab.qmd)`). The system resolves the correct Canvas URL.
     *   **JIT Stubbing**: Handles circular dependencies by creating placeholders ("stubs") if a link target doesn't exist yet.
 *   **Safe Updates**: Edits existing Canvas items instead of overwriting them, preserving student submissions and grades.
+*   **Performance & Caching**: 
+    - **Smart Upload**: Only re-uploads assets (images/PDFs) if they have changed locally.
+    - **Caching**: Minimizes API calls by remembering Canvas folder IDs.
+*   **Auto-Cleanup**: Automatically "prunes" (deletes) orphaned assets from Canvas when they are removed from your local files.
 *   **Opt-in Calendar**: Manage your course schedule in a simple YAML file (`--sync-calendar`).
 *   **Clean Output**: Semantic HTML rendering without duplicate headers or metadata clutter.
 
@@ -81,7 +85,8 @@ MyCourse/
 ├── schedule.yaml           # (Optional) Calendar Events
 ├── 01_Introduction/        # -> Module: "Introduction"
 │   ├── 01_Welcome.qmd      # -> Page
-│   └── 02_Syllabus.qmd     # -> Page
+│   ├── 02_Syllabus.qmd     # -> Page
+│   └── 03_Resources.pdf    # -> Solo File (Synced to module)
 ├── 02_Python_Basics/       # -> Module: "Python_Basics"
 │   ├── 01_Lab.qmd          # -> Assignment
 │   └── 05_Quiz.json        # -> Quiz
