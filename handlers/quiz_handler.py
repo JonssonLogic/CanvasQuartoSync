@@ -65,99 +65,96 @@ class QuizHandler(BaseHandler):
 
         # 2. Find/Create Quiz
         existing_quiz = None
+        current_mtime = os.path.getmtime(file_path)
+        existing_id, map_entry = get_mapped_id(content_root, file_path) if content_root else (None, None)
+        
+        needs_update = True
+        quiz_obj = None
 
         # 2a. Try ID lookup via Sync Map
-        if content_root:
-            mapped_id = get_mapped_id(content_root, file_path)
-            if mapped_id:
-                try:
-                    existing_quiz = course.get_quiz(mapped_id)
-                except:
-                    print(f"    ! Mapped Quiz ID {mapped_id} not found in Canvas. Falling back to search.")
+        if existing_id:
+            try:
+                quiz_obj = course.get_quiz(existing_id)
+                # Smart Sync: Skip if mtime matches
+                if isinstance(map_entry, dict) and map_entry.get('mtime') == current_mtime:
+                    print(f"    -> Skipping update (No changes detected).")
+                    needs_update = False
+            except:
+                print(f"    ! Mapped Quiz ID {existing_id} not found in Canvas. Falling back to search.")
 
         # 2b. Fallback to Title Search
-        if not existing_quiz:
+        if not quiz_obj:
             quizzes = course.get_quizzes(search_term=title)
             for q in quizzes:
                 if q.title == title:
-                    existing_quiz = q
+                    quiz_obj = q
                     break
         
-        quiz_payload = {
-            'title': title,
-            'quiz_type': canvas_meta.get('quiz_type', 'practice_quiz'),
-            'published': published
-        }
+        if needs_update:
+            quiz_payload = {
+                'title': title,
+                'quiz_type': canvas_meta.get('quiz_type', 'practice_quiz'),
+                'published': published
+            }
 
-        # Optional Advanced Options
-        # Mapping: { 'Local Key': 'Canvas API Key' }
-        setting_map = {
-            'description': 'description',
-            'show_correct_answers': 'show_correct_answers',
-            'shuffle_answers': 'shuffle_answers',
-            'time_limit': 'time_limit',
-            'allowed_attempts': 'allowed_attempts',
-            'one_question_at_a_time': 'one_question_at_a_time',
-            'cant_go_back': 'cant_go_back',
-            'access_code': 'access_code'
-        }
+            # Optional Advanced Options
+            setting_map = {
+                'description': 'description',
+                'show_correct_answers': 'show_correct_answers',
+                'shuffle_answers': 'shuffle_answers',
+                'time_limit': 'time_limit',
+                'allowed_attempts': 'allowed_attempts',
+                'one_question_at_a_time': 'one_question_at_a_time',
+                'cant_go_back': 'cant_go_back',
+                'access_code': 'access_code'
+            }
 
-        for local_key, canvas_key in setting_map.items():
-            if local_key in canvas_meta:
-                quiz_payload[canvas_key] = canvas_meta[local_key]
+            for local_key, canvas_key in setting_map.items():
+                if local_key in canvas_meta:
+                    quiz_payload[canvas_key] = canvas_meta[local_key]
 
-        if existing_quiz:
-            print(f"    -> Updating quiz: {title} (ID: {existing_quiz.id})")
-            existing_quiz.edit(quiz=quiz_payload)
-            quiz_obj = existing_quiz
-        else:
-            print(f"    -> Creating quiz: {title}")
-            quiz_obj = course.create_quiz(quiz=quiz_payload)
-
-        # 2c. Update Sync Map
-        if content_root:
-            save_mapped_id(content_root, file_path, quiz_obj.id)
-
-        # 3. Add/Update Questions
-        # ... (Remaining logic same) ...
-        print(f"    -> Syncing {len(questions_data)} questions...")
-        existing_questions = list(quiz_obj.get_questions())
-        existing_q_map = {q.question_name: q for q in existing_questions}
-        
-        for q_data in questions_data:
-            q_name = q_data.get('question_name')
-            if q_name in existing_q_map:
-                existing_q = existing_q_map[q_name]
-                
-                # Safer Comparison logic
-                needs_update = False
-                
-                # 1. Text check
-                if getattr(existing_q, 'question_text', '') != q_data.get('question_text', ''):
-                    needs_update = True
-                
-                # 2. Points check
-                elif getattr(existing_q, 'points_possible', 0) != q_data.get('points_possible', 0):
-                    needs_update = True
-                
-                # 3. Type check
-                elif getattr(existing_q, 'question_type', '') != q_data.get('question_type', ''):
-                    needs_update = True
-                
-                # 4. Answers check (basic comparison)
-                # Canvas API returns answers as a list of dicts. 
-                # Local q_data also has answers as a list of dicts.
-                elif getattr(existing_q, 'answers', []) != q_data.get('answers', []):
-                    needs_update = True
-                
-                if needs_update:
-                    print(f"    -> Updating question: {q_name}")
-                    existing_q.edit(question=q_data)
-                else:
-                    pass # Already matches
+            if quiz_obj:
+                print(f"    -> Updating quiz: {title} (ID: {quiz_obj.id})")
+                quiz_obj.edit(quiz=quiz_payload)
             else:
-                print(f"    + Adding new question: {q_name}")
-                quiz_obj.create_question(question=q_data)
+                print(f"    -> Creating quiz: {title}")
+                quiz_obj = course.create_quiz(quiz=quiz_payload)
+
+            # 2c. Update Sync Map
+            if content_root:
+                save_mapped_id(content_root, file_path, quiz_obj.id, mtime=current_mtime)
+
+            # 3. Add/Update Questions
+            print(f"    -> Syncing {len(questions_data)} questions...")
+            existing_questions = list(quiz_obj.get_questions())
+            existing_q_map = {q.question_name: q for q in existing_questions}
+            
+            for q_data in questions_data:
+                q_name = q_data.get('question_name')
+                if q_name in existing_q_map:
+                    existing_q = existing_q_map[q_name]
+                    
+                    # Safer Comparison logic
+                    q_needs_update = False
+                    
+                    if getattr(existing_q, 'question_text', '') != q_data.get('question_text', ''):
+                        q_needs_update = True
+                    elif getattr(existing_q, 'points_possible', 0) != q_data.get('points_possible', 0):
+                        q_needs_update = True
+                    elif getattr(existing_q, 'question_type', '') != q_data.get('question_type', ''):
+                        q_needs_update = True
+                    elif getattr(existing_q, 'answers', []) != q_data.get('answers', []):
+                        q_needs_update = True
+                    
+                    if q_needs_update:
+                        print(f"    -> Updating question: {q_name}")
+                        existing_q.edit(question=q_data)
+                else:
+                    print(f"    + Adding new question: {q_name}")
+                    quiz_obj.create_question(question=q_data)
+        else:
+            # Smart Sync skipped update, but we already have quiz_obj
+            pass
 
         # 4. Add to Module
         if module:
