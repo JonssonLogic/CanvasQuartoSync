@@ -222,3 +222,50 @@ def process_content(content, base_path, course):
     content = re.sub(pattern_links, link_replacer, content)
     
     return content
+
+import time
+import shutil
+
+def safe_delete_file(path, retries=5, delay=0.5):
+    """
+    Attempts to delete a file multiple times if it's locked by another process.
+    """
+    if not os.path.exists(path):
+        return
+
+    for i in range(retries):
+        try:
+            os.remove(path)
+            # print(f"    - Deleted file: {os.path.basename(path)}")
+            return
+        except PermissionError:
+            if i < retries - 1:
+                # print(f"    ! File locked, retrying {i+1}/{retries}...")
+                time.sleep(delay)
+            else:
+                print(f"    ! Final Error: Could not delete {path} after {retries} attempts.")
+        except Exception as e:
+            print(f"    ! Error deleting file {path}: {e}")
+            break
+
+def safe_delete_dir(path, retries=5, delay=0.5):
+    """
+    Attempts to delete a directory and its contents multiple times.
+    """
+    if not os.path.exists(path):
+        return
+
+    for i in range(retries):
+        try:
+            shutil.rmtree(path)
+            # print(f"    - Deleted directory: {os.path.basename(path)}")
+            return
+        except PermissionError:
+            if i < retries - 1:
+                # print(f"    ! Directory locked, retrying {i+1}/{retries}...")
+                time.sleep(delay)
+            else:
+                print(f"    ! Final Error: Could not delete directory {path} after {retries} attempts.")
+        except Exception as e:
+            print(f"    ! Error deleting directory {path}: {e}")
+            break

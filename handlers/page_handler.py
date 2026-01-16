@@ -5,7 +5,7 @@ import re
 import shutil
 from canvasapi import Canvas
 from handlers.base_handler import BaseHandler
-from handlers.content_utils import process_content
+from handlers.content_utils import process_content, safe_delete_file, safe_delete_dir
 
 class PageHandler(BaseHandler):
     def can_handle(self, file_path: str) -> bool:
@@ -128,12 +128,9 @@ class PageHandler(BaseHandler):
             }, indent=indent)
 
     def _cleanup(self, qmd_path, html_path, files_dir):
-        try:
-            if qmd_path and os.path.exists(qmd_path):
-                os.remove(qmd_path)
-            if html_path and os.path.exists(html_path):
-                os.remove(html_path)
-            if files_dir and os.path.exists(files_dir):
-                shutil.rmtree(files_dir)
-        except Exception as e:
-            print(f"    ! Warning: Cleanup failed: {e}")
+        if qmd_path:
+            safe_delete_file(qmd_path)
+        if html_path:
+            safe_delete_file(html_path)
+        if files_dir:
+            safe_delete_dir(files_dir)
