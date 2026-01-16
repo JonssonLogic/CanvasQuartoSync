@@ -13,6 +13,7 @@ from handlers.assignment_handler import AssignmentHandler
 from handlers.quiz_handler import QuizHandler
 from handlers.calendar_handler import CalendarHandler
 from handlers.subheader_handler import SubHeaderHandler
+from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES
 
 # --- Configuration ---
 API_URL = os.environ.get("CANVAS_API_URL")
@@ -175,7 +176,22 @@ def main():
                             break
                     
                     if not handled:
-                        pass
+                        # Case C: Solo Asset (PDF, ZIP, etc) with NN_ prefix in Module
+                        ext = os.path.splitext(filename)[1].lower()
+                        print(f"    (Non-content file detected: {filename})")
+                        
+                        # Upload to namespaced folder
+                        file_url, file_id = upload_file(course, file_path, FOLDER_FILES, content_root=content_root)
+                        
+                        if file_id and module_obj:
+                            # Add to module as File item
+                            # We use handlers[0] (or any handler) to access the add_to_module helper
+                            handlers[0].add_to_module(module_obj, {
+                                'type': 'File',
+                                'content_id': file_id,
+                                'title': filename,
+                                'published': True
+                            })
             except Exception as e:
                  print(f"  Error processing module {module_name}: {e}")
 
@@ -202,6 +218,9 @@ def main():
                         traceback.print_exc()
                     handled = True
                     break
+
+    # 3. Cleanup Orphans
+    prune_orphaned_assets(course)
 
 if __name__ == "__main__":
     main()

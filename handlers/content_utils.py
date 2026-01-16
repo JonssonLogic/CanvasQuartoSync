@@ -7,6 +7,13 @@ from canvasapi import Canvas
 # Global cache for folder names to IDs to avoid redundant API lookups
 FOLDER_CACHE = {}
 
+# System-managed namespaces for orphan cleanup
+FOLDER_IMAGES = "_sync_assets_images"
+FOLDER_FILES = "_sync_assets_files"
+
+# Global set of asset IDs currently referenced in synced content
+ACTIVE_ASSET_IDS = set()
+
 def get_or_create_folder(course, folder_path, parent_folder_id=None):
     """
     Finds or creates a folder in the Canvas course files.
@@ -39,11 +46,12 @@ def get_or_create_folder(course, folder_path, parent_folder_id=None):
 def upload_file(course, local_path, target_folder_name="course_files", content_root=None):
     """
     Uploads a file (image or asset) to Canvas.
-    Returns the public download/preview URL (file_url).
+    Returns a tuple (file_url, file_id).
     """
+    global ACTIVE_ASSET_IDS
     if not os.path.exists(local_path):
         print(f"    ! File not found: {local_path}")
-        return local_path
+        return local_path, None
     
     filename = os.path.basename(local_path)
     
@@ -57,8 +65,11 @@ def upload_file(course, local_path, target_folder_name="course_files", content_r
         if isinstance(cached_entry, dict):
             # We strictly check url too in case it failed previously
             if cached_entry.get('mtime') == mtime and cached_entry.get('url'):
-                # print(f"    -> Skipping upload (no changes): {filename}")
-                return cached_entry.get('url')
+                # Track as active even if cached
+                asset_id = cached_entry.get('id')
+                if asset_id:
+                    ACTIVE_ASSET_IDS.add(asset_id)
+                return cached_entry.get('url'), asset_id
     
     folder = get_or_create_folder(course, target_folder_name)
     
@@ -67,24 +78,30 @@ def upload_file(course, local_path, target_folder_name="course_files", content_r
         success, json_response = folder.upload(local_path, on_duplicate='overwrite')
         if success:
             file_url = json_response.get('url')
+            file_id = json_response.get('id')
             
+            # Track as active
+            if file_id:
+                ACTIVE_ASSET_IDS.add(file_id)
+
             # Update Sync Map
             if content_root:
                 sync_map = load_sync_map(content_root)
                 rel_path = os.path.relpath(local_path, content_root).replace('\\', '/')
                 sync_map[rel_path] = {
                     'mtime': mtime,
-                    'url': file_url
+                    'url': file_url,
+                    'id': file_id
                 }
                 save_sync_map(content_root, sync_map)
                 
-            return file_url
+            return file_url, file_id
         else:
             print("    ! Upload failed.")
-            return local_path
+            return local_path, None
     except Exception as e:
         print(f"    ! Error uploading file: {e}")
-        return local_path
+        return local_path, None
 
 def resolve_cross_link(course, current_file_path, link_target, base_path):
     """
@@ -202,8 +219,8 @@ def process_content(content, base_path, course, content_root=None):
         else:
             abs_path = os.path.normpath(os.path.join(base_path, rel_path))
             
-        # Upload to 'course_images'
-        new_url = upload_file(course, abs_path, "course_images", content_root=content_root)
+        # Upload to namespaced folder
+        new_url, _ = upload_file(course, abs_path, FOLDER_IMAGES, content_root=content_root)
         
         return f"![{alt_text}]({new_url})"
 
@@ -232,7 +249,7 @@ def process_content(content, base_path, course, content_root=None):
             return f"[{link_text}]({new_url})"
         else:
             # Asset Upload (PDF, ZIP, DOCX, IPYNB, etc)
-            new_url = upload_file(course, abs_path, "course_files", content_root=content_root)
+            new_url, _ = upload_file(course, abs_path, FOLDER_FILES, content_root=content_root)
             return f"[{link_text}]({new_url})"
             
     pattern_links = r'(?<!\!)\[(.*?)\]\((.*?)\)'
@@ -326,3 +343,33 @@ def save_mapped_id(content_root, file_path, canvas_id):
     sync_map = load_sync_map(content_root)
     sync_map[rel_path] = canvas_id
     save_sync_map(content_root, sync_map)
+
+def prune_orphaned_assets(course):
+    """
+    Deletes files from namespaced folders that are no longer in ACTIVE_ASSET_IDS.
+    """
+    global ACTIVE_ASSET_IDS
+    print(f">> Starting Asset Orphan Cleanup...")
+    print(f"   Active assets tracked: {len(ACTIVE_ASSET_IDS)}")
+    
+    deleted_count = 0
+    managed_folders = [FOLDER_IMAGES, FOLDER_FILES]
+    
+    for folder_name in managed_folders:
+        try:
+            # We don't want to create them if they don't exist during pruning?
+            # Actually get_or_create_folder is safe and caches.
+            folder = get_or_create_folder(course, folder_name)
+            files = folder.get_files()
+            for f in files:
+                if f.id not in ACTIVE_ASSET_IDS:
+                    print(f"   - Deleting orphaned asset: {f.filename} (ID: {f.id}) from {folder_name}")
+                    f.delete()
+                    deleted_count += 1
+        except Exception as e:
+            print(f"   ! Error pruning folder {folder_name}: {e}")
+            
+    if deleted_count > 0:
+        print(f"   Cleanup complete. Removed {deleted_count} orphaned files.")
+    else:
+        print(f"   Cleanup complete. No orphans found.")

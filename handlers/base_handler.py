@@ -44,7 +44,7 @@ class BaseHandler(ABC):
                 match = True
             elif item_type == 'SubHeader' and item.title == title:
                 match = True
-            elif item_type in ['Assignment', 'Quiz'] and item.content_id == content_id:
+            elif item_type in ['Assignment', 'Quiz', 'File'] and item.content_id == content_id:
                 match = True
             
             if match:
