@@ -15,7 +15,7 @@ Allows you to manage your entire course as a local code repository (Git) while k
 *   **Performance & Caching**: 
     - **Smart Upload**: Only re-uploads assets (images/PDFs) if they have changed locally.
     - **Caching**: Minimizes API calls by remembering Canvas folder IDs.
-*   **Auto-Cleanup**: Automatically "prunes" (deletes) orphaned assets from Canvas when they are removed from your local files.
+*   **Auto-Cleanup**: Automatically "prunes" (deletes) orphaned assets from Canvas `synced-` folders when they are removed from your local files.
 *   **Opt-in Calendar**: Manage your course schedule in a simple YAML file (`--sync-calendar`).
 *   **Clean Output**: Semantic HTML rendering without duplicate headers or metadata clutter.
 

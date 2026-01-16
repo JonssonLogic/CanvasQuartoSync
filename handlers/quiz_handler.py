@@ -1,5 +1,6 @@
 import json
 import os
+from handlers.base_handler import BaseHandler
 from handlers.content_utils import get_mapped_id, save_mapped_id
 
 class QuizHandler(BaseHandler):

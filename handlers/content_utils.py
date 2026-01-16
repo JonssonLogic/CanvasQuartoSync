@@ -8,8 +8,8 @@ from canvasapi import Canvas
 FOLDER_CACHE = {}
 
 # System-managed namespaces for orphan cleanup
-FOLDER_IMAGES = "_sync_assets_images"
-FOLDER_FILES = "_sync_assets_files"
+FOLDER_IMAGES = "synced-images"
+FOLDER_FILES = "synced-files"
 
 # Global set of asset IDs currently referenced in synced content
 ACTIVE_ASSET_IDS = set()
@@ -18,30 +18,37 @@ def get_or_create_folder(course, folder_path, parent_folder_id=None):
     """
     Finds or creates a folder in the Canvas course files.
     """
-    # Check cache first
     global FOLDER_CACHE
-    if folder_path in FOLDER_CACHE:
-        # If we have the ID, we can fetch the specific folder object 
-        # but get_folder(id) might be another API call.
-        # Better: get_folders() once and cache ALL of them.
-        return FOLDER_CACHE[folder_path]
+    
+    # 1. Check cache first (normalized)
+    cache_key = folder_path.lower()
+    if cache_key in FOLDER_CACHE:
+        return FOLDER_CACHE[cache_key]
 
+    # 2. Fetch all folders and populate cache if empty
+    # We do this once per run mostly
+    print(f"    Checking for folder: {folder_path}...")
     folders = course.get_folders()
     for f in folders:
-        # Cache every folder we see
-        FOLDER_CACHE[f.name] = f
-        if f.name == folder_path:
-            return f
+        FOLDER_CACHE[f.name.lower()] = f
     
-    # Not found, create
-    create_args = {'name': folder_path}
-    if parent_folder_id:
-        create_args['parent_folder_id'] = parent_folder_id
-        
+    # 3. Check cache again after populating
+    if cache_key in FOLDER_CACHE:
+        return FOLDER_CACHE[cache_key]
+    
+    # 4. Not found, create
     print(f"    + Creating folder: {folder_path}")
-    new_folder = course.create_folder(create_args)
-    FOLDER_CACHE[new_folder.name] = new_folder
-    return new_folder
+    try:
+        if parent_folder_id:
+            new_folder = course.create_folder(name=folder_path, parent_folder_id=parent_folder_id)
+        else:
+            new_folder = course.create_folder(name=folder_path)
+            
+        FOLDER_CACHE[new_folder.name.lower()] = new_folder
+        return new_folder
+    except Exception as e:
+        print(f"    ! Error creating folder '{folder_path}': {e}")
+        raise
 
 def upload_file(course, local_path, target_folder_name="course_files", content_root=None):
     """

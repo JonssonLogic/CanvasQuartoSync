@@ -156,7 +156,7 @@ DailyWork/
 *   **Format**: `NN_Name.ext` (where `.ext` is NOT `.qmd` or `.json`).
 *   **Locality**: Place directly inside a module folder.
 *   **Behavior**: 
-    1.  The file is uploaded to the system-managed `_sync_assets_files` folder in Canvas.
+    1.  The file is uploaded to the system-managed `synced-files` folder in Canvas.
     2.  It is automatically added to the Module as a **File** item.
     3.  Because it is a "Module Item", it is protected from the automatic **Orphan Cleanup**.
 
@@ -211,13 +211,13 @@ You can link directly to other Pages, Assignments, or Quizzes by referencing the
 
 ### D. Asset Namespacing & Optimization
 To keep your course clean and fast, the system uses a specialized strategy for assets:
-*   **Reserved Folders**: All assets from your `.qmd` files are uploaded to `_sync_assets_images` and `_sync_assets_files`. 
+*   **Reserved Folders**: All assets from your `.qmd` files are uploaded to `synced-images` and `synced-files`. 
 *   **Smart Upload**: The system checks the "Last Modified" time of your local files. If a file hasn't changed, it **skips the upload**, making subsequent syncs near-instant.
 *   **Caching**: Folder IDs are cached during the run to minimize API calls.
 
 ### E. Orphan Asset Cleanup (Pruning)
 Over time, course storage can get cluttered with old images you no longer use.
-*   **How it works**: At the end of every sync, the system scans the reserved `_sync` folders.
+*   **How it works**: At the end of every sync, the system scans the reserved `synced` folders.
 *   **Pruning**: Any file in these folders that is **NOT** referenced in your current content is automatically deleted.
 *   **Safety**: This process **only** touches files inside the system's reserved folders. Your manuals uploads in `course_files` or `Documents` are never affected.
 
