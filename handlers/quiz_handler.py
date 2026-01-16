@@ -90,13 +90,41 @@ class QuizHandler(BaseHandler):
         # 3. Add/Update Questions
         print(f"    -> Syncing {len(questions_data)} questions...")
         existing_questions = list(quiz_obj.get_questions())
-        existing_q_names = {q.question_name for q in existing_questions}
+        existing_q_map = {q.question_name: q for q in existing_questions}
         
         for q_data in questions_data:
             q_name = q_data.get('question_name')
-            if q_name in existing_q_names:
-                pass 
+            if q_name in existing_q_map:
+                existing_q = existing_q_map[q_name]
+                
+                # Safer Comparison logic
+                needs_update = False
+                
+                # 1. Text check
+                if getattr(existing_q, 'question_text', '') != q_data.get('question_text', ''):
+                    needs_update = True
+                
+                # 2. Points check
+                elif getattr(existing_q, 'points_possible', 0) != q_data.get('points_possible', 0):
+                    needs_update = True
+                
+                # 3. Type check
+                elif getattr(existing_q, 'question_type', '') != q_data.get('question_type', ''):
+                    needs_update = True
+                
+                # 4. Answers check (basic comparison)
+                # Canvas API returns answers as a list of dicts. 
+                # Local q_data also has answers as a list of dicts.
+                elif getattr(existing_q, 'answers', []) != q_data.get('answers', []):
+                    needs_update = True
+                
+                if needs_update:
+                    print(f"    -> Updating question: {q_name}")
+                    existing_q.edit(question=q_data)
+                else:
+                    pass # Already matches
             else:
+                print(f"    + Adding new question: {q_name}")
                 quiz_obj.create_question(question=q_data)
 
         # 4. Add to Module
