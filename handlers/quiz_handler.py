@@ -1,6 +1,6 @@
 import json
 import os
-from handlers.base_handler import BaseHandler
+from handlers.content_utils import get_mapped_id, save_mapped_id
 
 class QuizHandler(BaseHandler):
     def can_handle(self, file_path: str) -> bool:
@@ -23,7 +23,7 @@ class QuizHandler(BaseHandler):
         except:
             return False
 
-    def sync(self, file_path: str, course, module=None):
+    def sync(self, file_path: str, course, module=None, canvas_obj=None, content_root=None):
         filename = os.path.basename(file_path)
         print(f"Syncing Quiz: {filename}")
         
@@ -67,11 +67,23 @@ class QuizHandler(BaseHandler):
 
         # 2. Find/Create Quiz
         existing_quiz = None
-        quizzes = course.get_quizzes(search_term=title)
-        for q in quizzes:
-            if q.title == title:
-                existing_quiz = q
-                break
+
+        # 2a. Try ID lookup via Sync Map
+        if content_root:
+            mapped_id = get_mapped_id(content_root, file_path)
+            if mapped_id:
+                try:
+                    existing_quiz = course.get_quiz(mapped_id)
+                except:
+                    print(f"    ! Mapped Quiz ID {mapped_id} not found in Canvas. Falling back to search.")
+
+        # 2b. Fallback to Title Search
+        if not existing_quiz:
+            quizzes = course.get_quizzes(search_term=title)
+            for q in quizzes:
+                if q.title == title:
+                    existing_quiz = q
+                    break
         
         quiz_payload = {
             'title': title,
@@ -80,14 +92,19 @@ class QuizHandler(BaseHandler):
         }
 
         if existing_quiz:
-            print(f"    -> Updating quiz: {title}")
+            print(f"    -> Updating quiz: {title} (ID: {existing_quiz.id})")
             existing_quiz.edit(quiz=quiz_payload)
             quiz_obj = existing_quiz
         else:
             print(f"    -> Creating quiz: {title}")
             quiz_obj = course.create_quiz(quiz=quiz_payload)
 
+        # 2c. Update Sync Map
+        if content_root:
+            save_mapped_id(content_root, file_path, quiz_obj.id)
+
         # 3. Add/Update Questions
+        # ... (Remaining logic same) ...
         print(f"    -> Syncing {len(questions_data)} questions...")
         existing_questions = list(quiz_obj.get_questions())
         existing_q_map = {q.question_name: q for q in existing_questions}

@@ -166,7 +166,7 @@ def main():
                     for handler in handlers:
                         if handler.can_handle(file_path):
                             try:
-                                handler.sync(file_path, course, module_obj)
+                                handler.sync(file_path, course, module_obj, canvas_obj=canvas, content_root=content_root)
                             except Exception as e:
                                 print(f"    ERROR syncing {filename}: {e}")
                                 import traceback
@@ -195,7 +195,7 @@ def main():
                     # print(f"Syncing root item: {item}")
                     try:
                         # Pass module=None
-                        handler.sync(item_path, course, module=None)
+                        handler.sync(item_path, course, module=None, canvas_obj=canvas, content_root=content_root)
                     except Exception as e:
                         print(f"    ERROR syncing root item {item}: {e}")
                         import traceback

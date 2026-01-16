@@ -14,7 +14,7 @@ class SubHeaderHandler(BaseHandler):
         except:
             return False
 
-    def sync(self, file_path: str, course, module=None):
+    def sync(self, file_path: str, course, module=None, canvas_obj=None, content_root=None):
         filename = os.path.basename(file_path)
         post = frontmatter.load(file_path)
         title = post.metadata.get('title', os.path.splitext(filename)[0])

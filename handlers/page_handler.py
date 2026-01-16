@@ -5,7 +5,7 @@ import re
 import shutil
 from canvasapi import Canvas
 from handlers.base_handler import BaseHandler
-from handlers.content_utils import process_content, safe_delete_file, safe_delete_dir
+from handlers.content_utils import process_content, safe_delete_file, safe_delete_dir, get_mapped_id, save_mapped_id
 
 class PageHandler(BaseHandler):
     def can_handle(self, file_path: str) -> bool:
@@ -21,7 +21,7 @@ class PageHandler(BaseHandler):
         except:
             return False
 
-    def sync(self, file_path: str, course, module=None):
+    def sync(self, file_path: str, course, module=None, canvas_obj=None, content_root=None):
         filename = os.path.basename(file_path)
         print(f"Syncing Page: {filename}")
         
@@ -39,10 +39,7 @@ class PageHandler(BaseHandler):
         base_path = os.path.dirname(file_path)
         processed_content = process_content(raw_content, base_path, course)
         
-        # 1c. Modify Temp Metadata
-        # We KEEP the title so Quarto renders it normally (no fallback to filename), 
-        # but we will extract only the body content later to remove duplication.
-        
+        # ... (Rendering logic remains same) ...
         # 2. Render HTML
         temp_qmd = os.path.join(base_path, f"_temp_{filename}")
         temp_stem = os.path.splitext(f"_temp_{filename}")[0]
@@ -65,30 +62,18 @@ class PageHandler(BaseHandler):
                 full_html = f.read()
             
             # 3. Extract Content
-            # Strategy: Extract <main id="quarto-document-content">...</main>
-            # This skips the <header id="title-block-header"> which is usually outside main in 'article' layout
-            # or we explicitly remove the header if inside.
-            
-            # Regex to find the main block
             main_match = re.search(r'<main[^>]*id="quarto-document-content"[^>]*>(.*?)</main>', full_html, re.DOTALL)
             
             if main_match:
                 html_body = main_match.group(1)
-                # Just in case title block is INSIDE main, strip it too.
                 html_body = re.sub(r'<header[^>]*id="title-block-header"[^>]*>.*?</header>', '', html_body, flags=re.DOTALL)
             else:
-                # Fallback: Use full body but try to strip header
-                print("    ! Warning: Could not find main content block, using full body.")
                 html_body = full_html
                 html_body = re.sub(r'<header[^>]*id="title-block-header"[^>]*>.*?</header>', '', html_body, flags=re.DOTALL)
             
             # Cleanup success
             self._cleanup(temp_qmd, temp_html, temp_files_dir)
 
-        except subprocess.CalledProcessError as e:
-            print(f"    ! Error rendering Quarto: {e.stderr.decode()}")
-            self._cleanup(temp_qmd, None, temp_files_dir)
-            return
         except Exception as e:
             print(f"    ! Error processing: {e}")
             self._cleanup(temp_qmd, None, temp_files_dir)
@@ -96,11 +81,23 @@ class PageHandler(BaseHandler):
 
         # 4. Create/Update Page
         existing_page = None
-        pages = course.get_pages(search_term=title)
-        for p in pages:
-            if p.title == title:
-                existing_page = p
-                break
+
+        # 4a. Try ID lookup via Sync Map
+        if content_root:
+            mapped_id = get_mapped_id(content_root, file_path)
+            if mapped_id:
+                try:
+                    existing_page = course.get_page(mapped_id)
+                except:
+                    print(f"    ! Mapped Page ID {mapped_id} not found in Canvas. Falling back to search.")
+
+        # 4b. Fallback to Title Search
+        if not existing_page:
+            pages = course.get_pages(search_term=title)
+            for p in pages:
+                if p.title == title:
+                    existing_page = p
+                    break
         
         page_args = {
             'wiki_page': {
@@ -111,12 +108,16 @@ class PageHandler(BaseHandler):
         }
 
         if existing_page:
-            print(f"    -> Updating existing page: {title}")
+            print(f"    -> Updating existing page: {title} (ID: {existing_page.page_id})")
             existing_page.edit(**page_args)
             page_obj = existing_page
         else:
             print(f"    -> Creating new page: {title}")
             page_obj = course.create_page(**page_args)
+
+        # 4c. Update Sync Map
+        if content_root:
+            save_mapped_id(content_root, file_path, page_obj.page_id)
 
         # 5. Add to Module
         if module:

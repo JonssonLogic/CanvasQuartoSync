@@ -6,7 +6,7 @@ import shutil
 from datetime import datetime
 from canvasapi import Canvas
 from handlers.base_handler import BaseHandler
-from handlers.content_utils import process_content, safe_delete_file, safe_delete_dir
+from handlers.content_utils import process_content, safe_delete_file, safe_delete_dir, get_mapped_id, save_mapped_id
 
 class AssignmentHandler(BaseHandler):
     def can_handle(self, file_path: str) -> bool:
@@ -21,7 +21,7 @@ class AssignmentHandler(BaseHandler):
         except:
             return False
 
-    def sync(self, file_path: str, course, module=None):
+    def sync(self, file_path: str, course, module=None, canvas_obj=None, content_root=None):
         filename = os.path.basename(file_path)
         print(f"Syncing Assignment: {filename}")
         
@@ -43,9 +43,7 @@ class AssignmentHandler(BaseHandler):
         base_path = os.path.dirname(file_path)
         processed_content = process_content(raw_content, base_path, course)
 
-        # 1c. Modify Temp Metadata
-        # Keep title for standard rendering, strip later.
-        
+        # ... (Rendering logic remains same) ...
         # 2. Render HTML
         temp_qmd = os.path.join(base_path, f"_temp_{filename}")
         temp_stem = os.path.splitext(f"_temp_{filename}")[0]
@@ -82,17 +80,29 @@ class AssignmentHandler(BaseHandler):
             self._cleanup(temp_qmd, temp_html, temp_files_dir)
                    
         except Exception as e:
-            print(f"    ! Error rendering: {e}")
+            print(f"    ! Error processing: {e}")
             self._cleanup(temp_qmd, None, temp_files_dir)
             return
 
         # 4. Create/Update Assignment
         existing_assignment = None
-        assignments = course.get_assignments(search_term=title)
-        for a in assignments:
-            if a.name == title:
-                existing_assignment = a
-                break
+
+        # 4a. Try ID lookup via Sync Map
+        if content_root:
+            mapped_id = get_mapped_id(content_root, file_path)
+            if mapped_id:
+                try:
+                    existing_assignment = course.get_assignment(mapped_id)
+                except:
+                    print(f"    ! Mapped Assignment ID {mapped_id} not found in Canvas. Falling back to search.")
+
+        # 4b. Fallback to Title Search
+        if not existing_assignment:
+            assignments = course.get_assignments(search_term=title)
+            for a in assignments:
+                if a.name == title:
+                    existing_assignment = a
+                    break
         
         assignment_args = {
             'name': title,
@@ -105,12 +115,16 @@ class AssignmentHandler(BaseHandler):
         }
 
         if existing_assignment:
-            print(f"    -> Updating assignment: {title}")
+            print(f"    -> Updating assignment: {title} (ID: {existing_assignment.id})")
             existing_assignment.edit(assignment=assignment_args)
             assign_obj = existing_assignment
         else:
             print(f"    -> Creating assignment: {title}")
             assign_obj = course.create_assignment(assignment=assignment_args)
+
+        # 4c. Update Sync Map
+        if content_root:
+            save_mapped_id(content_root, file_path, assign_obj.id)
 
         # 5. Add to Module
         if module:

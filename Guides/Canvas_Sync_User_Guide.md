@@ -74,11 +74,10 @@ DailyWork/
 ## 3. Content Types & Metadata
 
 > [!IMPORTANT]
-> **Safe Updates**: When the system syncs, it checks if an item with the same title already exists. 
+> **Safe Updates**: When the system syncs, it checks if an item with the same title or internal ID already exists. 
 > *   **If Found**: It **updates** the existing item (description, points, dates, etc.). This ensures student submissions and grades are **preserved**.
-> *   **If Not Found**: It creates a new item.
->  
-> *Exception: If you rename a file/title locally, it will be treated as a new item.*
+> *   **Dynamic Renaming**: If you change the `title` in your frontmatter (or JSON), the system will update the title of the existing Page/Assignment in Canvas. The link within the Canvas Module will also be updated to match the new title automatically.
+> *   **File Rename**: Renaming the physical file (e.g., `01_Intro.qmd` -> `01_Introduction.qmd`) while keeping the same `title` in the frontmatter is perfectly safe and will not create a duplicate.
 
 ### Quarto Pages (`.qmd`)
 *   **Locality**: Place in a module folder.
@@ -215,4 +214,19 @@ A helper script `run_sync_here.bat` is available to execute the sync from any di
     *   Create a shortcut to the `.bat` file.
     *   Right-click the Shortcut -> **Properties**.
     *   In the **Target** field, append the argument: 
-        `...\run_sync_here.bat --sync-calendar`
+
+---
+
+## 7. Synchronization Strategy & Renaming
+
+To ensure that your Canvas course stays in sync even when you rename files or titles, the system uses a **Local Mapping** strategy.
+
+### The Sync Map (`.canvas_sync_map.json`)
+The first time a file is synced, the system records its unique **Canvas ID** in a hidden file called `.canvas_sync_map.json` in your content root.
+
+*   **Persistent Tracking**: Even if you change the `title:` in the metadata or rename the physical `.qmd` file, the system uses this ID to find and update the **existing** object in Canvas.
+*   **Safe Renaming**: You can safely change the title of an assignment; it will be updated in both the Canvas Assignment list and the Module without creating duplicates.
+*   **Preserving Data**: Because it updates the existing object by ID, student submissions, grades, and quiz results are always preserved.
+
+> [!CAUTION]
+> **Do not delete `.canvas_sync_map.json`**. If this file is lost, the system will fall back to "Matching by Title". If you then rename a title, it will likely create a duplicate object in Canvas.

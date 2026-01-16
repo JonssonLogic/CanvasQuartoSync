@@ -10,7 +10,7 @@ class BaseHandler(ABC):
         pass
 
     @abstractmethod
-    def sync(self, file_path: str, course, module=None):
+    def sync(self, file_path: str, course, module=None, canvas_obj=None, content_root=None):
         pass
 
     def add_to_module(self, module, item_dict, indent=0):
@@ -50,10 +50,14 @@ class BaseHandler(ABC):
             if match:
                 existing_item = item
                 break
-        
         if existing_item:
             print(f"    -> Module Item found: {title}")
             updates = {}
+            
+            # Check Title
+            if existing_item.title != title:
+                print(f"       Updating title: {existing_item.title} -> {title}")
+                updates['title'] = title
             
             # Check Indent
             if existing_item.indent != indent:

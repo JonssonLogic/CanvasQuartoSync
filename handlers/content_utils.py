@@ -269,3 +269,43 @@ def safe_delete_dir(path, retries=5, delay=0.5):
         except Exception as e:
             print(f"    ! Error deleting directory {path}: {e}")
             break
+
+# --- Sync Mapping Utilities ---
+
+def get_sync_map_path(content_root):
+    return os.path.join(content_root, ".canvas_sync_map.json")
+
+def load_sync_map(content_root):
+    path = get_sync_map_path(content_root)
+    if os.path.exists(path):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"    ! Error loading sync map: {e}")
+    return {}
+
+def save_sync_map(content_root, sync_map):
+    path = get_sync_map_path(content_root)
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(sync_map, f, indent=4)
+    except Exception as e:
+        print(f"    ! Error saving sync map: {e}")
+
+def get_mapped_id(content_root, file_path):
+    """
+    Returns the Canvas ID for a local file path relative to content_root.
+    """
+    rel_path = os.path.relpath(file_path, content_root).replace('\\', '/')
+    sync_map = load_sync_map(content_root)
+    return sync_map.get(rel_path)
+
+def save_mapped_id(content_root, file_path, canvas_id):
+    """
+    Saves the Canvas ID for a local file path relative to content_root.
+    """
+    rel_path = os.path.relpath(file_path, content_root).replace('\\', '/')
+    sync_map = load_sync_map(content_root)
+    sync_map[rel_path] = canvas_id
+    save_sync_map(content_root, sync_map)
