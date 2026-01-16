@@ -6,7 +6,7 @@ import shutil
 from datetime import datetime
 from canvasapi import Canvas
 from handlers.base_handler import BaseHandler
-from handlers.content_utils import process_content, safe_delete_file, safe_delete_dir, get_mapped_id, save_mapped_id
+from handlers.content_utils import process_content, safe_delete_file, safe_delete_dir, get_mapped_id, save_mapped_id, parse_module_name
 
 class AssignmentHandler(BaseHandler):
     def can_handle(self, file_path: str) -> bool:
@@ -44,7 +44,7 @@ class AssignmentHandler(BaseHandler):
 
         # 1b. Parse Metadata
         post = frontmatter.load(file_path)
-        title = post.metadata.get('title', os.path.splitext(filename)[0])
+        title = post.metadata.get('title', parse_module_name(os.path.splitext(filename)[0]))
         canvas_meta = post.metadata.get('canvas', {})
         published = canvas_meta.get('published', False)
         points = canvas_meta.get('points', 0)

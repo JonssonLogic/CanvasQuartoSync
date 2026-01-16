@@ -13,7 +13,7 @@ from handlers.assignment_handler import AssignmentHandler
 from handlers.quiz_handler import QuizHandler
 from handlers.calendar_handler import CalendarHandler
 from handlers.subheader_handler import SubHeaderHandler
-from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES
+from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name
 
 # --- Configuration ---
 API_URL = os.environ.get("CANVAS_API_URL")
@@ -26,15 +26,6 @@ def is_valid_name(name):
     """
     return bool(re.match(r'^\d{2}_', name))
 
-def parse_module_name(directory_name):
-    """
-    Removes leading numbers/underscores from directory name.
-    Example: '01_Introduction' -> 'Introduction'
-    """
-    parts = directory_name.split('_', 1)
-    if len(parts) > 1 and parts[0].isdigit():
-        return parts[1]
-    return directory_name
 
 def get_course_id(content_root, arg_course_id):
     """
@@ -189,7 +180,7 @@ def main():
                             handlers[0].add_to_module(module_obj, {
                                 'type': 'File',
                                 'content_id': file_id,
-                                'title': filename,
+                                'title': parse_module_name(filename),
                                 'published': True
                             })
             except Exception as e:

@@ -1,7 +1,7 @@
 import json
 import os
 from handlers.base_handler import BaseHandler
-from handlers.content_utils import get_mapped_id, save_mapped_id
+from handlers.content_utils import get_mapped_id, save_mapped_id, parse_module_name
 
 class QuizHandler(BaseHandler):
     def can_handle(self, file_path: str) -> bool:
@@ -57,10 +57,7 @@ class QuizHandler(BaseHandler):
         if title_override:
             title = title_override
         else:
-            title = os.path.splitext(filename)[0]
-            parts = title.split('_', 1)
-            if len(parts) > 1 and parts[0].isdigit():
-                title = parts[1].replace('_', ' ')
+            title = parse_module_name(os.path.splitext(filename)[0])
         
         # Metadata
         published = canvas_meta.get('published', False)

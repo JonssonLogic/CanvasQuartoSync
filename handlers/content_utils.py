@@ -2,10 +2,38 @@ import os
 import re
 import frontmatter
 import json
+import shutil
 from canvasapi import Canvas
 
 # Global cache for folder names to IDs to avoid redundant API lookups
 FOLDER_CACHE = {}
+
+def parse_module_name(text):
+    """
+    Removes leading digits and underscore from a name (e.g. '01_Intro' -> 'Intro').
+    Strictly matches 'NN_' where N is a digit.
+    """
+    if not text:
+        return text
+    match = re.match(r'^(\d{2})_(.*)', text)
+    if match:
+        return match.group(2)
+    return text
+
+def clean_title(filename):
+    """
+    Removes NN_ prefix and file extension.
+    Example: '05_Syllabus.pdf' -> 'Syllabus.pdf' or '02_Intro.qmd' -> 'Intro'
+    """
+    # 1. Strip extension for content types like .qmd
+    base = os.path.splitext(filename)[0]
+    # 2. But for solo assets like .pdf, maybe we want to keep extension?
+    # Actually, Canvas module items for files usually look better with names.
+    # The user said: "remove the 'NN_' in the filename".
+    # Let's keep the extension if it's a solo asset, but strip it for Pages/Assignments.
+    
+    # Actually, let's just implement the 'NN_' stripping logic specifically.
+    return parse_module_name(filename)
 
 # System-managed namespaces for orphan cleanup
 FOLDER_IMAGES = "synced-images"

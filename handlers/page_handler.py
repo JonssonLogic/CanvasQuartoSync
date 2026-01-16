@@ -5,7 +5,7 @@ import re
 import shutil
 from canvasapi import Canvas
 from handlers.base_handler import BaseHandler
-from handlers.content_utils import process_content, safe_delete_file, safe_delete_dir, get_mapped_id, save_mapped_id
+from handlers.content_utils import process_content, safe_delete_file, safe_delete_dir, get_mapped_id, save_mapped_id, parse_module_name
 
 class PageHandler(BaseHandler):
     def can_handle(self, file_path: str) -> bool:
@@ -44,7 +44,7 @@ class PageHandler(BaseHandler):
 
         # 1b. Parse Metadata (Needed for Module indent even if skipping render)
         post = frontmatter.load(file_path)
-        title = post.metadata.get('title', os.path.splitext(filename)[0])
+        title = post.metadata.get('title', parse_module_name(os.path.splitext(filename)[0]))
         canvas_meta = post.metadata.get('canvas', {})
         published = canvas_meta.get('published', False)
         indent = canvas_meta.get('indent', 0)

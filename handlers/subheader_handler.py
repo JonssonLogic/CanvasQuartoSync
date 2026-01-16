@@ -1,6 +1,7 @@
 import frontmatter
 import os
 from handlers.base_handler import BaseHandler
+from handlers.content_utils import parse_module_name
 
 class SubHeaderHandler(BaseHandler):
     def can_handle(self, file_path: str) -> bool:
@@ -17,7 +18,9 @@ class SubHeaderHandler(BaseHandler):
     def sync(self, file_path: str, course, module=None, canvas_obj=None, content_root=None):
         filename = os.path.basename(file_path)
         post = frontmatter.load(file_path)
-        title = post.metadata.get('title', os.path.splitext(filename)[0])
+        title = post.metadata.get('title')
+        if not title:
+            title = parse_module_name(os.path.splitext(filename)[0])
         canvas_meta = post.metadata.get('canvas', {})
         published = canvas_meta.get('published', True) 
         indent = canvas_meta.get('indent', 0)
