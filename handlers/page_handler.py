@@ -37,7 +37,7 @@ class PageHandler(BaseHandler):
             raw_content = f.read()
             
         base_path = os.path.dirname(file_path)
-        processed_content = process_content(raw_content, base_path, course)
+        processed_content = process_content(raw_content, base_path, course, content_root=content_root)
         
         # ... (Rendering logic remains same) ...
         # 2. Render HTML

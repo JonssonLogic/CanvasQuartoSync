@@ -4,16 +4,26 @@ import frontmatter
 import json
 from canvasapi import Canvas
 
+# Global cache for folder names to IDs to avoid redundant API lookups
+FOLDER_CACHE = {}
+
 def get_or_create_folder(course, folder_path, parent_folder_id=None):
     """
     Finds or creates a folder in the Canvas course files.
-    'folder_path' is target folder name (e.g. "course_images" or "course_files").
-    We keep the structure flat for now for simplicity.
     """
+    # Check cache first
+    global FOLDER_CACHE
+    if folder_path in FOLDER_CACHE:
+        # If we have the ID, we can fetch the specific folder object 
+        # but get_folder(id) might be another API call.
+        # Better: get_folders() once and cache ALL of them.
+        return FOLDER_CACHE[folder_path]
+
     folders = course.get_folders()
     for f in folders:
+        # Cache every folder we see
+        FOLDER_CACHE[f.name] = f
         if f.name == folder_path:
-            # Optionally check parent if we were doing nested
             return f
     
     # Not found, create
@@ -22,30 +32,53 @@ def get_or_create_folder(course, folder_path, parent_folder_id=None):
         create_args['parent_folder_id'] = parent_folder_id
         
     print(f"    + Creating folder: {folder_path}")
-    return course.create_folder(create_args)
+    new_folder = course.create_folder(create_args)
+    FOLDER_CACHE[new_folder.name] = new_folder
+    return new_folder
 
-def upload_file(course, local_path, target_folder_name="course_files"):
+def upload_file(course, local_path, target_folder_name="course_files", content_root=None):
     """
     Uploads a file (image or asset) to Canvas.
     Returns the public download/preview URL (file_url).
     """
     if not os.path.exists(local_path):
         print(f"    ! File not found: {local_path}")
-        return local_path # Return original path if missing
+        return local_path
     
     filename = os.path.basename(local_path)
     
-    # Decide folder based on extension or passed arg?
-    # Keeping images separate is nice, but 'course_files' is fine for everything else.
+    # Smart Upload Logic: Check Sync Map for mtime match
+    mtime = os.path.getmtime(local_path)
+    if content_root:
+        sync_map = load_sync_map(content_root)
+        rel_path = os.path.relpath(local_path, content_root).replace('\\', '/')
+        cached_entry = sync_map.get(rel_path)
+        
+        if isinstance(cached_entry, dict):
+            # We strictly check url too in case it failed previously
+            if cached_entry.get('mtime') == mtime and cached_entry.get('url'):
+                # print(f"    -> Skipping upload (no changes): {filename}")
+                return cached_entry.get('url')
+    
     folder = get_or_create_folder(course, target_folder_name)
     
     print(f"    -> Uploading file: {filename}")
     try:
         success, json_response = folder.upload(local_path, on_duplicate='overwrite')
         if success:
-            # json_response['url'] is typically the download URL
-            # For usage in HTML, this is usually what we want.
-            return json_response.get('url')
+            file_url = json_response.get('url')
+            
+            # Update Sync Map
+            if content_root:
+                sync_map = load_sync_map(content_root)
+                rel_path = os.path.relpath(local_path, content_root).replace('\\', '/')
+                sync_map[rel_path] = {
+                    'mtime': mtime,
+                    'url': file_url
+                }
+                save_sync_map(content_root, sync_map)
+                
+            return file_url
         else:
             print("    ! Upload failed.")
             return local_path
@@ -151,14 +184,12 @@ def resolve_cross_link(course, current_file_path, link_target, base_path):
 
     return canvas_url
 
-
-def process_content(content, base_path, course):
+def process_content(content, base_path, course, content_root=None):
     """
     Main entry point. Scans for images AND file/content links.
     """
     
     # --- 1. Process Images (![...](...)) ---
-    # Same as before
     def image_replacer(match):
         alt_text = match.group(1)
         rel_path = match.group(2)
@@ -172,7 +203,7 @@ def process_content(content, base_path, course):
             abs_path = os.path.normpath(os.path.join(base_path, rel_path))
             
         # Upload to 'course_images'
-        new_url = upload_file(course, abs_path, "course_images")
+        new_url = upload_file(course, abs_path, "course_images", content_root=content_root)
         
         return f"![{alt_text}]({new_url})"
 
@@ -180,22 +211,13 @@ def process_content(content, base_path, course):
     content = re.sub(r'!\[(.*?)\]\((.*?)\)', image_replacer, content)
 
     # --- 2. Process File/Content Links ([...](...)) ---
-    # We use negative lookbehind/lookahead or just simple matching since images are already processed?
-    # Caveat: re.sub matching `[...]` will match `![...]` if we aren't careful?
-    # Better: Match `[...]` but verify start char wasn't `!` 
-    # Or rely on the fact that `![...]` are already replaced by URIs? 
-    # Actually, an image text `![Alt](http://...)` still matches pattern `[...](...)`.
-    # So we use a negative lookbehind `(?<!)`
-    
     def link_replacer(match):
         link_text = match.group(1)
         rel_path = match.group(2)
         
-        # Ignore external links or anchors
         if rel_path.startswith(('http://', 'https://', 'data:', '#', 'mailto:')):
             return match.group(0)
 
-        # Resolve path
         if os.path.isabs(rel_path):
             abs_path = rel_path
         else:
@@ -203,21 +225,16 @@ def process_content(content, base_path, course):
             
         ext = os.path.splitext(rel_path)[1].lower()
 
-        # Decision: Is this Content (Stub) or Asset (Upload)?
-        content_extensions = ['.qmd', '.json'] # .md is usually SubHeader, unlikely to be linked? 
+        content_extensions = ['.qmd', '.json'] 
         
         if ext in content_extensions:
-            # Cross-Link
             new_url = resolve_cross_link(course, os.path.join(base_path, "current_context"), rel_path, base_path)
             return f"[{link_text}]({new_url})"
         else:
             # Asset Upload (PDF, ZIP, DOCX, IPYNB, etc)
-            # Upload to 'course_files'
-            new_url = upload_file(course, abs_path, "course_files")
+            new_url = upload_file(course, abs_path, "course_files", content_root=content_root)
             return f"[{link_text}]({new_url})"
             
-    # Regex: `(?<!!)\[(.*?)\]\((.*?)\)`
-    # Only matches `[...]` NOT preceded by `!`
     pattern_links = r'(?<!\!)\[(.*?)\]\((.*?)\)'
     content = re.sub(pattern_links, link_replacer, content)
     
