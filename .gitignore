@@ -26,3 +26,6 @@ _temp_*
 # OS
 .DS_Store
 Thumbs.db
+
+# Admin
+BUGS_AND_IMPROVEMENTS.md
