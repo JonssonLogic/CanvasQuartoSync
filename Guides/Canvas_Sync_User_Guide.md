@@ -119,7 +119,7 @@ DailyWork/
     ---
     ```
 
-### Text Headers (`.md`)
+### Text Headers (`.qmd`)
 *   Used to create visual separators within modules.
 *   **Metadata**:
     ```yaml

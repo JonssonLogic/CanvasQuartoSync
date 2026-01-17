@@ -5,7 +5,7 @@ from handlers.content_utils import parse_module_name
 
 class SubHeaderHandler(BaseHandler):
     def can_handle(self, file_path: str) -> bool:
-        if not file_path.endswith('.md'):
+        if not (file_path.endswith('.md') or file_path.endswith('.qmd')):
             return False
         
         try:
