@@ -114,8 +114,9 @@ class QuizHandler(BaseHandler):
 
             for local_key, canvas_key in setting_map.items():
                 if local_key in ['due_at', 'unlock_at', 'lock_at']:
-                    # Source of Truth: always include dates (clears if missing)
-                    quiz_payload[canvas_key] = canvas_meta.get(local_key)
+                    # Source of Truth: Use empty string to explicitly clear dates in Canvas API
+                    # (None values are ignored by the API, but '' clears the field)
+                    quiz_payload[canvas_key] = canvas_meta.get(local_key) or ''
                 elif local_key in canvas_meta:
                     quiz_payload[canvas_key] = canvas_meta[local_key]
 

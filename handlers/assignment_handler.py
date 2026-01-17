@@ -48,10 +48,12 @@ class AssignmentHandler(BaseHandler):
         canvas_meta = post.metadata.get('canvas', {})
         published = canvas_meta.get('published', False)
         points = canvas_meta.get('points', 0)
-        due_at = canvas_meta.get('due_at')
-        unlock_at = canvas_meta.get('unlock_at')
-        lock_at = canvas_meta.get('lock_at')
-        grading_type = canvas_meta.get('grading_type')
+        # Source of Truth: Use empty string to explicitly clear dates in Canvas API
+        # (None values are ignored by the API, but '' clears the field)
+        due_at = canvas_meta.get('due_at') or ''
+        unlock_at = canvas_meta.get('unlock_at') or ''
+        lock_at = canvas_meta.get('lock_at') or ''
+        grading_type = canvas_meta.get('grading_type') or ''
         submission_types = canvas_meta.get('submission_types', ['online_upload'])
         allowed_extensions = canvas_meta.get('allowed_extensions', [])
         indent = canvas_meta.get('indent', 0)
