@@ -7,6 +7,7 @@ Allows you to manage your entire course as a local code repository (Git) while k
 ## 🚀 Key Features
 
 *   **Quarto Integration**: Renders `.qmd` files to HTML and syncs them as Canvas Pages or Assignments.
+*   **Rich Quiz Descriptions**: Support for external `.qmd` description files for quizzes, enabling full markdown formatting and images.
 *   **Smart Linking**:
     *   **Auto-Uploads**: Links to local PDFs, ZIPs, or images (`[Syllabus](docs/syllabus.pdf)`) are automatically uploaded to Canvas and securely linked.
     *   **Cross-References**: Link to other content by filename (`[Next Lab](02_Lab.qmd)`). The system resolves the correct Canvas URL.

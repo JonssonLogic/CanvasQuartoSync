@@ -140,7 +140,8 @@ DailyWork/
       "canvas": {
         "title": "Quiz Title",
         "published": true,                // (optional)
-        "due_at": "2024-10-15T23:59:00Z", // (optional)
+        "description_file": "Quiz_Description.qmd", // (optional) - Path to .qmd file for rich description
+        "due_at": "2024-10-15T23:59:00Z", // (optional) - Removing this clears the date
         "unlock_at": "2024-10-01T08:00:00Z", // (optional)
         "lock_at": "2024-10-20T23:59:00Z", // (optional)
         "show_correct_answers": true,     // (optional)
@@ -163,10 +164,14 @@ DailyWork/
       ]
     }
     ```
+
+    > [!IMPORTANT] 
+    > Do **not** use the `NN_` prefix for description files (e.g., `Quiz_Description.qmd`, NOT `04_Quiz_Description.qmd`), or they might be synced as separate pages.
 *   **Supported Settings**:
-    *   `due_at` (optional, ISO 8601 String)
-    *   `unlock_at` (optional, ISO 8601 String)
-    *   `lock_at` (optional, ISO 8601 String)
+    *   `due_at` (optional, ISO 8601 String) - *Removing this clears the date in Canvas*
+    *   `unlock_at` (optional, ISO 8601 String) - *Removing this clears the date in Canvas*
+    *   `lock_at` (optional, ISO 8601 String) - *Removing this clears the date in Canvas*
+    *   `description_file` (optional, String) - *Relative path to a `.qmd` file containing the quiz description (supports images/markdown)*
     *   `show_correct_answers` (optional, Boolean)
     *   `shuffle_answers` (optional, Boolean)
     *   `time_limit` (optional, Minutes)
