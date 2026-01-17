@@ -83,7 +83,11 @@ class BaseHandler(ABC):
                 payload['content_id'] = content_id
             if page_url:
                 payload['page_url'] = page_url
-            if published is not None:
-                payload['published'] = published
+            # Note: Canvas API ignores 'published' during create, so we don't include it here
                 
-            module.create_module_item(module_item=payload)
+            new_item = module.create_module_item(module_item=payload)
+            
+            # Canvas API ignores 'published' during creation, so we must update it separately
+            if published is not None:
+                print(f"       Setting published: {published}")
+                new_item.edit(module_item={'published': published})
