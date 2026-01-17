@@ -49,6 +49,9 @@ class AssignmentHandler(BaseHandler):
         published = canvas_meta.get('published', False)
         points = canvas_meta.get('points', 0)
         due_at = canvas_meta.get('due_at')
+        unlock_at = canvas_meta.get('unlock_at')
+        lock_at = canvas_meta.get('lock_at')
+        grading_type = canvas_meta.get('grading_type')
         submission_types = canvas_meta.get('submission_types', ['online_upload'])
         allowed_extensions = canvas_meta.get('allowed_extensions', [])
         indent = canvas_meta.get('indent', 0)
@@ -111,6 +114,9 @@ class AssignmentHandler(BaseHandler):
                 'published': published,
                 'points_possible': points,
                 'due_at': due_at,
+                'unlock_at': unlock_at,
+                'lock_at': lock_at,
+                'grading_type': grading_type,
                 'submission_types': submission_types,
                 'allowed_extensions': allowed_extensions
             }

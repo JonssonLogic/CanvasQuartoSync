@@ -92,8 +92,8 @@ DailyWork/
         page-layout: article # Recommended
     canvas:
       type: page
-      published: true      # Optional (Default: false)
-      indent: 0            # Optional (0-5)
+      published: true      # (optional, Default: false)
+      indent: 0            # (optional, 0-5)
     ---
     ```
 
@@ -107,12 +107,15 @@ DailyWork/
         page-layout: article
     canvas:
       type: assignment
-      published: true
-      points: 10
-      due_at: 2024-10-15T23:59:00Z
-      submission_types: [online_upload] # e.g., online_text_entry, online_url
-      allowed_extensions: [py, txt]
-      indent: 1
+      published: true                   # (optional)
+      points: 10                       # (optional)
+      due_at: 2024-10-15T23:59:00Z      # (optional, ISO 8601)
+      unlock_at: 2024-10-01T08:00:00Z   # (optional)
+      lock_at: 2024-10-20T23:59:00Z     # (optional)
+      grading_type: points              # (optional: points, percentage, pass_fail, letter_grade, gpa_scale, not_graded)
+      submission_types: [online_upload] # (optional: [online_upload, online_text_entry, online_url, media_recording, student_annotation, none, external_tool])
+      allowed_extensions: [py, txt]     # (optional)
+      indent: 1                       # (optional)
     ---
     ```
 
@@ -124,8 +127,8 @@ DailyWork/
     title: "Section Header"
     canvas:
       type: subheader
-      published: true
-      indent: 0
+      published: true      # (optional)
+      indent: 0            # (optional)
     ---
     ```
 
@@ -136,18 +139,21 @@ DailyWork/
     {
       "canvas": {
         "title": "Quiz Title",
-        "published": true,
-        "show_correct_answers": true,
-        "shuffle_answers": true,
-        "time_limit": 30,
-        "allowed_attempts": 3,
-        "indent": 1
+        "published": true,                // (optional)
+        "due_at": "2024-10-15T23:59:00Z", // (optional)
+        "unlock_at": "2024-10-01T08:00:00Z", // (optional)
+        "lock_at": "2024-10-20T23:59:00Z", // (optional)
+        "show_correct_answers": true,     // (optional)
+        "shuffle_answers": true,          // (optional)
+        "time_limit": 30,                 // (optional)
+        "allowed_attempts": 3,            // (optional)
+        "indent": 1                       // (optional)
       },
       "questions": [
         {
           "question_name": "Q1",
           "question_text": "What is 2+2?",
-          "question_type": "multiple_choice_question",
+          "question_type": "multiple_choice_question", // (multiple_choice_question, true_false_question, short_answer_question, fill_in_multiple_blanks_question, multiple_answers_question, multiple_dropdowns_question, matching_question, numerical_question, calculated_question, essay_question, file_upload_question, text_only_question)
           "points_possible": 1,
           "answers": [
             {"answer_text": "4", "weight": 100},
@@ -158,11 +164,14 @@ DailyWork/
     }
     ```
 *   **Supported Settings**:
-    *   `show_correct_answers` (Boolean)
-    *   `shuffle_answers` (Boolean)
-    *   `time_limit` (Minutes)
-    *   `allowed_attempts` (Integer, use -1 for unlimited)
-    *   `quiz_type` (`practice_quiz`, `assignment`, `none`)
+    *   `due_at` (optional, ISO 8601 String)
+    *   `unlock_at` (optional, ISO 8601 String)
+    *   `lock_at` (optional, ISO 8601 String)
+    *   `show_correct_answers` (optional, Boolean)
+    *   `shuffle_answers` (optional, Boolean)
+    *   `time_limit` (optional, Minutes)
+    *   `allowed_attempts` (optional, Integer, use -1 for unlimited)
+    *   `quiz_type` (optional: practice_quiz, assignment, graded_survey, survey)
 
 ### 3.5 Solo Files (PDFs, ZIPs, etc.)
 *   **Format**: `NN_Name.ext` (where `.ext` is NOT `.qmd` or `.json`).

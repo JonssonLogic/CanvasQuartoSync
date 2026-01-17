@@ -100,6 +100,9 @@ class QuizHandler(BaseHandler):
             # Optional Advanced Options
             setting_map = {
                 'description': 'description',
+                'due_at': 'due_at',
+                'unlock_at': 'unlock_at',
+                'lock_at': 'lock_at',
                 'show_correct_answers': 'show_correct_answers',
                 'shuffle_answers': 'shuffle_answers',
                 'time_limit': 'time_limit',
@@ -110,7 +113,10 @@ class QuizHandler(BaseHandler):
             }
 
             for local_key, canvas_key in setting_map.items():
-                if local_key in canvas_meta:
+                if local_key in ['due_at', 'unlock_at', 'lock_at']:
+                    # Source of Truth: always include dates (clears if missing)
+                    quiz_payload[canvas_key] = canvas_meta.get(local_key)
+                elif local_key in canvas_meta:
                     quiz_payload[canvas_key] = canvas_meta[local_key]
 
             if quiz_obj:
