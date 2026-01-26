@@ -151,12 +151,35 @@ class QuizHandler(BaseHandler):
                 elif local_key in canvas_meta:
                     quiz_payload[canvas_key] = canvas_meta[local_key]
 
+            # 2c. Prepare Quiz (Enter Draft Mode)
+            # We enforce 'published=False' during the update process to ensure
+            # that we can "Republish" at the end, which triggers the visibility update.
+            
+            # Save the desired final state
+            target_published = quiz_payload['published']
+            
+            # Temporarily set to False for the "Work" phase
+            quiz_payload['published'] = False
+
             if quiz_obj:
-                print(f"    -> Updating quiz: {title} (ID: {quiz_obj.id})")
+                print(f"    -> Updating quiz (Draft Mode): {title} (ID: {quiz_obj.id})")
+                try:
+                    # Try to unpublish. This might fail if students have submitted.
+                    quiz_obj.edit(quiz={'published': False})
+                except Exception as e:
+                    print(f"    ! Warning: Could not unpublish quiz (likely has submissions). Syncing anyway. Error: {e}")
+                    # If we can't unpublish, we just proceed. The final save might still warn,
+                    # but it's the best we can do.
+                
+                # Apply other settings (description, time limit, etc.)
                 quiz_obj.edit(quiz=quiz_payload)
             else:
-                print(f"    -> Creating quiz: {title}")
+                print(f"    -> Creating quiz (Draft Mode): {title}")
+                # Create as unpublished
                 quiz_obj = course.create_quiz(quiz=quiz_payload)
+
+            # Restore target published state for later
+            quiz_payload['published'] = target_published
 
             # 2c. Update Sync Map
             if content_root:
@@ -193,6 +216,17 @@ class QuizHandler(BaseHandler):
         else:
             # Smart Sync skipped update, but we already have quiz_obj
             pass
+
+        # 3b. Finalize Quiz
+        # Re-publish (or strict set to target state) to trigger visibility
+        if needs_update:
+            print(f"    -> Finalizing quiz (Publishing: {quiz_payload['published']})...")
+            try:
+                # Add notify_of_update to force propagation
+                quiz_payload['notify_of_update'] = True
+                quiz_obj.edit(quiz=quiz_payload)
+            except Exception as e:
+                print(f"    ! Warning: Final save failed: {e}")
 
         # 4. Add to Module
         if module:

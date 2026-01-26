@@ -1,5 +1,7 @@
 # Canvas Sync System User Guide
 
+[toc]
+
 This system automates the synchronization of local course content to a Canvas course. It supports pages, assignments, quizzes, module headers, and calendar events.
 
 ## 1. Getting Started
@@ -177,6 +179,13 @@ DailyWork/
     *   `time_limit` (optional, Minutes)
     *   `allowed_attempts` (optional, Integer, use -1 for unlimited)
     *   `quiz_type` (optional: practice_quiz, assignment, graded_survey, survey)
+
+    > [!WARNING]
+    > **Modifying Active Quizzes**
+    > To safely update questions, the sync tool uses an **"Unpublish -> Modify -> Republish"** workflow.
+    > *   **If no students have started**: This is seamless. The quiz briefly flips to "Draft" mode, updates, and re-publishes.
+    > *   **If students have submissions**: Canvas **blocks** unpublishing. The tool will warn you, then attempt to update questions anyway. 
+    >     *   *Result*: New questions are added, but changes to existing questions might not affect students who already took it. You may need to manually "Regrade" in Canvas.
 
 ### 3.5 Solo Files (PDFs, ZIPs, etc.)
 *   **Format**: `NN_Name.ext` (where `.ext` is NOT `.qmd` or `.json`).
