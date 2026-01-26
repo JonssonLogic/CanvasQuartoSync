@@ -4,7 +4,18 @@ A Python tool to synchronize local **Quarto** content, assignments, quizzes, and
 
 Allows you to manage your entire course as a local code repository (Git) while keeping Canvas perfectly in sync for students.
 
-[toc]
+## Table of Contents
+
+- [🚀 Key Features](#-key-features)
+- [📚 Documentation & Examples](#-documentation--examples)
+- [🛠️ Prerequisites](#-prerequisites)
+- [📦 Installation](#-installation)
+- [⚙️ Configuration](#-configuration)
+- [🏃 Usage](#-usage)
+- [📂 File Organization](#-file-organization)
+- [📝 Content Metadata](#-content-metadata)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
 
 ## 🚀 Key Features
 

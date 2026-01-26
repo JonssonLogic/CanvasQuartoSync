@@ -1,6 +1,31 @@
 # Canvas Sync System User Guide
 
-[toc]
+## Table of Contents
+
+- [1. Getting Started](#1-getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Configuration](#configuration)
+  - [Usage](#usage)
+- [2. File Organization & Naming Conventions](#2-file-organization--naming-conventions)
+  - [Modules (Directories)](#modules-directories)
+  - [Content Files](#content-files)
+- [3. Content Types & Metadata](#3-content-types--metadata)
+  - [Quarto Pages (.qmd)](#quarto-pages-qmd)
+  - [Quarto Assignments (.qmd)](#quarto-assignments-qmd)
+  - [Text Headers (.qmd)](#text-headers-qmd)
+  - [Quizzes (.json)](#quizzes-json)
+  - [3.5 Solo Files (PDFs, ZIPs, etc.)](#35-solo-files-pdfs-zips-etc)
+- [4. Calendar Synchronization](#4-calendar-synchronization)
+- [5. Linking & Asset Handling (Power Feature)](#5-linking--asset-handling-power-feature)
+  - [A. Local Files (Downloads)](#a-local-files-downloads)
+  - [B. Images](#b-images)
+  - [C. Cross-Linking (Smart Navigation)](#c-cross-linking-smart-navigation)
+  - [D. Asset Namespacing & Optimization](#d-asset-namespacing--optimization)
+  - [E. Orphan Asset Cleanup (Pruning)](#e-orphan-asset-cleanup-pruning)
+- [6. Portable Syncing (Batch Script)](#6-portable-syncing-batch-script)
+  - [Usage](#usage-1)
+- [7. Synchronization Strategy & Tracking](#7-synchronization-strategy--tracking)
+  - [The Sync Map (.canvas_sync_map.json)](#the-sync-map-canvas_sync_mapjson)
 
 This system automates the synchronization of local course content to a Canvas course. It supports pages, assignments, quizzes, module headers, and calendar events.
 
