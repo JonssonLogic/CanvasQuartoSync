@@ -1,5 +1,8 @@
 # Canvas Quarto Sync
 
+> [!NOTE]
+> 🤖 Generated with [**Gemini 3 Pro**](https://antigravity.google/)
+
 A Python tool to synchronize local **Quarto** content, assignments, quizzes, and calendar events directly to **Instructure Canvas**.
 
 Allows you to manage your entire course as a local code repository (Git) while keeping Canvas perfectly in sync for students.
