@@ -144,6 +144,10 @@ def main():
 
                 # Walk files inside the module
                 module_files = sorted(os.listdir(item_path))
+                
+                # Track synced items for reordering
+                synced_module_items = []
+                
                 for filename in module_files:
                     file_path = os.path.join(item_path, filename)
                     
@@ -158,7 +162,9 @@ def main():
                     for handler in handlers:
                         if handler.can_handle(file_path):
                             try:
-                                handler.sync(file_path, course, module_obj, canvas_obj=canvas, content_root=content_root)
+                                item = handler.sync(file_path, course, module_obj, canvas_obj=canvas, content_root=content_root)
+                                if item:
+                                    synced_module_items.append(item)
                             except Exception as e:
                                 print(f"    ERROR syncing {filename}: {e}")
                                 import traceback
@@ -177,12 +183,28 @@ def main():
                         if file_id and module_obj:
                             # Add to module as File item
                             # We use handlers[0] (or any handler) to access the add_to_module helper
-                            handlers[0].add_to_module(module_obj, {
+                            item = handlers[0].add_to_module(module_obj, {
                                 'type': 'File',
                                 'content_id': file_id,
                                 'title': parse_module_name(filename),
                                 'published': True
                             })
+                            if item:
+                                synced_module_items.append(item)
+
+                # Reorder Module Items
+                if synced_module_items:
+                    print(f"  -> Verifying module item order ({len(synced_module_items)} items)...")
+                    for i, mod_item in enumerate(synced_module_items):
+                        expected_position = i + 1
+                        if mod_item.position != expected_position:
+                            print(f"     [Reorder] Moving '{mod_item.title}' to position {expected_position} (was {mod_item.position})")
+                            try:
+                                mod_item.edit(module_item={'position': expected_position})
+                                mod_item.position = expected_position 
+                            except Exception as e:
+                                print(f"     ! Error reordering item {mod_item.title}: {e}")
+
             except Exception as e:
                  print(f"  Error processing module {module_name}: {e}")
 

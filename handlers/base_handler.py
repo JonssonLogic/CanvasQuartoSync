@@ -72,6 +72,7 @@ class BaseHandler(ABC):
                 
             if updates:
                 existing_item.edit(module_item=updates)
+            return existing_item
         else:
             print(f"    -> Adding to module: {module.name} (Indent: {indent})")
             payload = {
@@ -91,3 +92,4 @@ class BaseHandler(ABC):
             if published is not None:
                 print(f"       Setting published: {published}")
                 new_item.edit(module_item={'published': published})
+            return new_item

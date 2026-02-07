@@ -137,7 +137,7 @@ class PageHandler(BaseHandler):
 
         # 5. Add to Module
         if module:
-            self.add_to_module(module, {
+            return self.add_to_module(module, {
                 'type': 'Page',
                 'page_url': page_obj.url,
                 'title': page_obj.title,

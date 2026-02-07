@@ -30,7 +30,7 @@ class SubHeaderHandler(BaseHandler):
         if not module:
             return
 
-        self.add_to_module(module, {
+        return self.add_to_module(module, {
             'type': 'SubHeader',
             'title': title,
             'published': published

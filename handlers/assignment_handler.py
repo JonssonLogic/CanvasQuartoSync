@@ -152,7 +152,7 @@ class AssignmentHandler(BaseHandler):
 
         # 5. Add to Module
         if module:
-            self.add_to_module(module, {
+            return self.add_to_module(module, {
                 'type': 'Assignment',
                 'content_id': assign_obj.id,
                 'title': assign_obj.name,

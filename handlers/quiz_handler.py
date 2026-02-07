@@ -230,7 +230,7 @@ class QuizHandler(BaseHandler):
 
         # 4. Add to Module
         if module:
-            self.add_to_module(module, {
+            return self.add_to_module(module, {
                 'type': 'Quiz',
                 'content_id': quiz_obj.id,
                 'title': quiz_obj.title,
