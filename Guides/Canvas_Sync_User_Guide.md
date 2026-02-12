@@ -207,10 +207,10 @@ DailyWork/
 
     > [!WARNING]
     > **Modifying Active Quizzes**
-    > To safely update questions, the sync tool uses an **"Unpublish -> Modify -> Republish"** workflow.
+    > To safely update questions, the sync tool uses an **"Unpublish → Modify → Republish"** workflow.
     > *   **If no students have started**: This is seamless. The quiz briefly flips to "Draft" mode, updates, and re-publishes.
-    > *   **If students have submissions**: Canvas **blocks** unpublishing. The tool will warn you, then attempt to update questions anyway. 
-    >     *   *Result*: New questions are added, but changes to existing questions might not affect students who already took it. You may need to manually "Regrade" in Canvas.
+    > *   **If students have submissions**: Canvas **blocks** unpublishing. The tool detects this, skips draft mode, and updates questions in-place. All changes are saved to the Canvas database, but you will need to click **"Save It Now"** in Canvas to regenerate the quiz snapshot. The tool prints a direct link to the quiz for convenience.
+    >     *   *This is a known Canvas API limitation — the REST API cannot trigger the internal snapshot regeneration for already-published quizzes.*
 
 ### 3.5 Solo Files (PDFs, ZIPs, etc.)
 *   **Format**: `NN_Name.ext` (where `.ext` is NOT `.qmd` or `.json`).

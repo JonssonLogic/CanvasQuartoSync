@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import re
+
 from handlers.base_handler import BaseHandler
 from handlers.content_utils import get_mapped_id, save_mapped_id, parse_module_name, process_content, safe_delete_file, safe_delete_dir
 
@@ -151,37 +152,35 @@ class QuizHandler(BaseHandler):
                 elif local_key in canvas_meta:
                     quiz_payload[canvas_key] = canvas_meta[local_key]
 
-            # 2c. Prepare Quiz (Enter Draft Mode)
-            # We enforce 'published=False' during the update process to ensure
-            # that we can "Republish" at the end, which triggers the visibility update.
+            # 2c. Prepare Quiz
+            # For quizzes without submissions: unpublish -> update -> republish
+            # For quizzes with submissions: update in-place -> trigger quiz data regeneration
             
             # Save the desired final state
             target_published = quiz_payload['published']
-            
-            # Temporarily set to False for the "Work" phase
-            quiz_payload['published'] = False
+            has_submissions = False
 
             if quiz_obj:
-                print(f"    -> Updating quiz (Draft Mode): {title} (ID: {quiz_obj.id})")
+                print(f"    -> Updating quiz: {title} (ID: {quiz_obj.id})")
                 try:
-                    # Try to unpublish. This might fail if students have submitted.
+                    # Try to unpublish (Draft Mode). This triggers generate_quiz_data on republish.
                     quiz_obj.edit(quiz={'published': False})
+                    quiz_payload['published'] = False
                 except Exception as e:
-                    # Clean up error message if it's the known "Can't unpublish" error
                     err_str = str(e)
                     if "Can't unpublish" in err_str:
-                         print(f"    ! Warning: Quiz has submissions; cannot unpublish. Changes will comprise a new version.")
+                         print(f"    ! Quiz has submissions; skipping draft mode.")
+                         has_submissions = True
+                         quiz_payload['published'] = True
                     else:
                          print(f"    ! Warning: Could not unpublish quiz: {e}")
-                    
-                    # Prevent crashing on subsequent update
-                    quiz_payload['published'] = True
+                         quiz_payload['published'] = True
                 
-                # Apply other settings (description, time limit, etc.)
+                # Apply settings (description, time limit, etc.)
                 quiz_obj.edit(quiz=quiz_payload)
             else:
                 print(f"    -> Creating quiz (Draft Mode): {title}")
-                # Create as unpublished
+                quiz_payload['published'] = False
                 quiz_obj = course.create_quiz(quiz=quiz_payload)
 
             # Restore target published state for later
@@ -224,19 +223,27 @@ class QuizHandler(BaseHandler):
             pass
 
         # 3b. Finalize Quiz
-        # Re-publish (or strict set to target state) to trigger visibility
         if needs_update:
-            print(f"    -> Finalizing quiz (Publishing: {quiz_payload['published']})...")
-            try:
-                # Send a minimal payload to force the state update
-                # This helps avoid confusion if the detailed payload was already sent
-                final_payload = {
-                    'published': quiz_payload['published'],
-                    'notify_of_update': True
-                }
-                quiz_obj.edit(quiz=final_payload)
-            except Exception as e:
-                print(f"    ! Warning: Final save failed: {e}")
+            if has_submissions:
+                # Quiz has student submissions — Canvas API limitation:
+                # The REST API cannot trigger generate_quiz_data for already-published
+                # quizzes (it only fires on workflow_state transitions). The UI endpoint
+                # requires SSO session auth. Provide a direct link for manual save.
+                requester = canvas_obj._Canvas__requester
+                quiz_url = f"{requester.original_url}/courses/{course.id}/quizzes/{quiz_obj.id}"
+                print(f"    ! Note: Quiz has submissions. Please click 'Save It Now' in Canvas:")
+                print(f"      {quiz_url}")
+            else:
+                # Normal flow: republish to trigger generate_quiz_data via state transition
+                print(f"    -> Finalizing quiz (Publishing: {quiz_payload['published']})...")
+                try:
+                    final_payload = {
+                        'published': quiz_payload['published'],
+                        'notify_of_update': True
+                    }
+                    quiz_obj.edit(quiz=final_payload)
+                except Exception as e:
+                    print(f"    ! Warning: Final save failed: {e}")
 
         # 4. Add to Module
         if module:
@@ -246,6 +253,7 @@ class QuizHandler(BaseHandler):
                 'title': quiz_obj.title,
                 'published': published
             }, indent=indent)
+
 
     def _render_description_file(self, desc_file_path, course, content_root):
         """
