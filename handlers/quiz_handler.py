@@ -167,9 +167,15 @@ class QuizHandler(BaseHandler):
                     # Try to unpublish. This might fail if students have submitted.
                     quiz_obj.edit(quiz={'published': False})
                 except Exception as e:
-                    print(f"    ! Warning: Could not unpublish quiz (likely has submissions). Syncing anyway. Error: {e}")
-                    # If we can't unpublish, we just proceed. The final save might still warn,
-                    # but it's the best we can do.
+                    # Clean up error message if it's the known "Can't unpublish" error
+                    err_str = str(e)
+                    if "Can't unpublish" in err_str:
+                         print(f"    ! Warning: Quiz has submissions; cannot unpublish. Changes will comprise a new version.")
+                    else:
+                         print(f"    ! Warning: Could not unpublish quiz: {e}")
+                    
+                    # Prevent crashing on subsequent update
+                    quiz_payload['published'] = True
                 
                 # Apply other settings (description, time limit, etc.)
                 quiz_obj.edit(quiz=quiz_payload)
@@ -222,9 +228,13 @@ class QuizHandler(BaseHandler):
         if needs_update:
             print(f"    -> Finalizing quiz (Publishing: {quiz_payload['published']})...")
             try:
-                # Add notify_of_update to force propagation
-                quiz_payload['notify_of_update'] = True
-                quiz_obj.edit(quiz=quiz_payload)
+                # Send a minimal payload to force the state update
+                # This helps avoid confusion if the detailed payload was already sent
+                final_payload = {
+                    'published': quiz_payload['published'],
+                    'notify_of_update': True
+                }
+                quiz_obj.edit(quiz=final_payload)
             except Exception as e:
                 print(f"    ! Warning: Final save failed: {e}")
 
