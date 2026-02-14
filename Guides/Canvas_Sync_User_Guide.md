@@ -14,7 +14,8 @@
   - [Quarto Assignments (.qmd)](#quarto-assignments-qmd)
   - [Text Headers (.qmd)](#text-headers-qmd)
   - [Quizzes (.json)](#quizzes-json)
-  - [3.5 Solo Files (PDFs, ZIPs, etc.)](#35-solo-files-pdfs-zips-etc)
+  - [QMD Quizzes (.qmd)](#qmd-quizzes-qmd)
+  - [Solo Files (PDFs, ZIPs, etc.)](#solo-files-pdfs-zips-etc)
 - [4. Calendar Synchronization](#4-calendar-synchronization)
 - [5. Linking & Asset Handling (Power Feature)](#5-linking--asset-handling-power-feature)
   - [A. Local Files (Downloads)](#a-local-files-downloads)
@@ -212,7 +213,99 @@ DailyWork/
     > *   **If students have submissions**: Canvas **blocks** unpublishing. The tool detects this, skips draft mode, and updates questions in-place. All changes are saved to the Canvas database, but you will need to click **"Save It Now"** in Canvas to regenerate the quiz snapshot. The tool prints a direct link to the quiz for convenience.
     >     *   *This is a known Canvas API limitation — the REST API cannot trigger the internal snapshot regeneration for already-published quizzes.*
 
-### 3.5 Solo Files (PDFs, ZIPs, etc.)
+### QMD Quizzes (`.qmd`)
+
+Quizzes can also be written as `.qmd` files, enabling **rich content** (formatted text, LaTeX, images) in both question text and answer text. The system detects a `.qmd` as a quiz if it contains `:::: {.question` blocks.
+
+*   **Structure**: YAML frontmatter (quiz settings) + `:::: {.question}` fenced div blocks.
+*   **Rendering**: All markdown content is rendered to HTML via Quarto and images are uploaded to Canvas automatically.
+
+**Frontmatter** (identical settings as JSON quizzes):
+```yaml
+---
+canvas:
+  title: "Quiz Title"
+  quiz_type: practice_quiz
+  published: true
+  shuffle_answers: true
+  show_correct_answers: true
+  allowed_attempts: -1
+---
+```
+
+**Question Block Reference**:
+
+| Element | Syntax | Default |
+|---|---|---|
+| Question block | `:::: {.question name="..." points=N type=...}` | `points=1`, `type=multiple_choice_question` |
+| Question name | `name="..."` attribute | Auto: "Fråga 1", "Fråga 2", ... |
+| Simple answer ✓ | `- [x] answer text` | `answer_weight: 100` |
+| Simple answer ✗ | `- [ ] answer text` | `answer_weight: 0` |
+| Simple answer comment | Indented sub-item: `  - comment text` | Optional |
+| Rich answer | `::: {.answer correct=true comment="..."}` | `correct=false`, no comment |
+| Correct feedback | `::: correct-comment` ... `:::` | Optional |
+| Incorrect feedback | `::: incorrect-comment` ... `:::` | Optional |
+
+> [!IMPORTANT]
+> Each question uses **either** checklist answers (`- [x]`/`- [ ]`) **or** div answers (`::: .answer`) — never both in the same question.
+>
+> - **Checklist style**: Best for short text/formula answers. Per-answer comments are indented sub-items.
+> - **Div style**: Best when answers need images, multiple paragraphs, or rich formatting. Per-answer comments use the `comment="..."` attribute.
+
+**Example — Checklist answers** (simple, short answers):
+```markdown
+:::: {.question name="Stress Definition"}
+
+  Which formula describes **normal stress**?
+
+  ![](graphics/stress_diagram.png)
+
+  - [x] $\sigma = F/A$
+    - Correct! Stress is force per area.
+  - [ ] $\sigma = F \cdot A$
+    - This gives the wrong units.
+  - [ ] $\sigma = F + A$
+  - [ ] $\sigma = F - A$
+
+  ::: correct-comment
+  Well done! Stress is defined as force per unit area.
+  :::
+
+  ::: incorrect-comment
+  Think about what the unit Pa represents.
+  :::
+
+::::
+```
+
+**Example — Rich div answers** (multi-line, images in answers):
+```markdown
+:::: {.question name="Hooke's Law" points=2}
+
+  What does $E$ represent in **Hooke's law**?
+
+  ::: {.answer correct=true comment="Correct! Also known as Young's modulus."}
+  **Elastic modulus** (Young's modulus) — a material constant
+  that describes the material's stiffness.
+
+  ![](graphics/e_modulus.png)
+  :::
+
+  ::: {.answer comment="No, strain is denoted by ε."}
+  Strain
+  :::
+
+  ::: {.answer}
+  Cross-sectional area
+  :::
+
+::::
+```
+
+> [!TIP]
+> **Indentation is optional.** Content inside `:::: question` and `::: answer` blocks can be indented (e.g., 2 spaces) for readability — the parser handles both indented and non-indented content.
+
+### Solo Files (PDFs, ZIPs, etc.)
 *   **Format**: `NN_Name.ext` (where `.ext` is NOT `.qmd` or `.json`).
 *   **Locality**: Place directly inside a module folder.
 *   **Behavior**: 

@@ -1,0 +1,71 @@
+---
+canvas:
+  title: "QMD Quiz Example"
+  quiz_type: practice_quiz
+  published: true
+  shuffle_answers: true
+  show_correct_answers: true
+  allowed_attempts: -1
+---
+
+:::: {.question name="Simple Question"}
+
+  This is a **simple** question with checklist-style answers.
+
+  Which formula describes **normal stress**?
+
+  - [x] $\sigma = F/A$
+    - Correct! Stress is force per area.
+  - [ ] $\sigma = F \cdot A$
+    - This gives units of N·m², not stress.
+  - [ ] $\sigma = F + A$
+  - [ ] $\sigma = F - A$
+
+  ::: correct-comment
+  Well done! Stress is defined as force per unit area (Pa = N/m²).
+  :::
+
+  ::: incorrect-comment
+  Think about what the unit Pa (Pascal) represents.
+  :::
+
+::::
+
+
+:::: {.question name="Rich Answers" points=2}
+
+  What does $E$ represent in **Hooke's law** ($\sigma = E \cdot \varepsilon$)?
+
+  ::: {.answer correct=true comment="Correct! Also known as Young's modulus."}
+  **Elastic modulus** (Young's modulus) — a material constant
+  that describes the material's stiffness.
+  :::
+
+  ::: {.answer comment="No, strain is denoted by ε."}
+  Strain
+  :::
+
+  ::: {.answer}
+  Cross-sectional area
+  :::
+
+  ::: {.answer}
+  Poisson's ratio
+  :::
+
+  ::: incorrect-comment
+  Review section 2.3 about material properties.
+  :::
+
+::::
+
+
+:::: {.question name="Minimal Question"}
+
+  What is 2 + 2?
+
+  - [x] 4
+  - [ ] 3
+  - [ ] 5
+
+::::

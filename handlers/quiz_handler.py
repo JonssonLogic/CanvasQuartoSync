@@ -5,27 +5,38 @@ import re
 
 from handlers.base_handler import BaseHandler
 from handlers.content_utils import get_mapped_id, save_mapped_id, parse_module_name, process_content, safe_delete_file, safe_delete_dir
+from handlers.qmd_quiz_parser import parse_qmd_quiz
 
 class QuizHandler(BaseHandler):
     def can_handle(self, file_path: str) -> bool:
-        if not file_path.endswith('.json'):
-            return False
-        
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            # New Format check
-            if isinstance(data, dict) and 'questions' in data:
-                return True
-            
-            # Legacy Format check (list of questions)
-            if isinstance(data, list) and len(data) > 0 and 'question_name' in data[0]:
-                return True
+        # JSON quiz files
+        if file_path.endswith('.json'):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
                 
-            return False
-        except:
-            return False
+                # New Format check
+                if isinstance(data, dict) and 'questions' in data:
+                    return True
+                
+                # Legacy Format check (list of questions)
+                if isinstance(data, list) and len(data) > 0 and 'question_name' in data[0]:
+                    return True
+                    
+                return False
+            except:
+                return False
+        
+        # QMD quiz files
+        if file_path.endswith('.qmd'):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read(4096)  # Read enough to check
+                return ':::: {.question' in content or '::::{.question' in content
+            except:
+                return False
+        
+        return False
 
     def sync(self, file_path: str, course, module=None, canvas_obj=None, content_root=None):
         filename = os.path.basename(file_path)
@@ -35,26 +46,43 @@ class QuizHandler(BaseHandler):
         questions_data = []
         canvas_meta = {}
         title_override = None
+        is_qmd = file_path.endswith('.qmd')
         
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                
-            if isinstance(data, dict) and 'questions' in data:
-                # New Format: {"canvas": {...}, "questions": [...]}
-                questions_data = data.get('questions', [])
-                canvas_meta = data.get('canvas', {})
+        if is_qmd:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    raw_content = f.read()
+                canvas_meta, questions_data = parse_qmd_quiz(raw_content)
                 title_override = canvas_meta.get('title')
-            elif isinstance(data, list):
-                # Legacy Format: [...]
-                questions_data = data
-            else:
-                print("    ! Check JSON format.")
-                return
                 
-        except Exception as e:
-            print(f"    ! Error loading JSON: {e}")
-            return
+                # Render question/answer markdown content to HTML
+                base_path = os.path.dirname(file_path)
+                questions_data = self._render_qmd_questions(
+                    questions_data, base_path, course, content_root
+                )
+            except Exception as e:
+                print(f"    ! Error loading QMD quiz: {e}")
+                return
+        else:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    
+                if isinstance(data, dict) and 'questions' in data:
+                    # New Format: {"canvas": {...}, "questions": [...]}
+                    questions_data = data.get('questions', [])
+                    canvas_meta = data.get('canvas', {})
+                    title_override = canvas_meta.get('title')
+                elif isinstance(data, list):
+                    # Legacy Format: [...]
+                    questions_data = data
+                else:
+                    print("    ! Check JSON format.")
+                    return
+                    
+            except Exception as e:
+                print(f"    ! Error loading JSON: {e}")
+                return
 
         # Title Logic
         if title_override:
@@ -254,6 +282,133 @@ class QuizHandler(BaseHandler):
                 'published': published
             }, indent=indent)
 
+
+    def _render_qmd_questions(self, questions_data, base_path, course, content_root):
+        """
+        Render markdown content in QMD quiz questions to HTML.
+        
+        Batches all markdown content into a single Quarto render for performance.
+        Uses <div id="qchunk-N"> markers to split the rendered output back into
+        individual pieces.
+        """
+        print(f"    -> Rendering {len(questions_data)} questions...")
+        
+        # Step 1: Collect all markdown pieces that need rendering
+        # Each entry: (piece_key, markdown_text)
+        # piece_key is used to map the rendered HTML back to the question data
+        chunks = []  # list of (key, markdown_text)
+        
+        for qi, q in enumerate(questions_data):
+            if q.get('question_text'):
+                chunks.append((f"q{qi}_text", q['question_text']))
+            
+            for ai, ans in enumerate(q.get('answers', [])):
+                if ans.get('answer_html'):
+                    chunks.append((f"q{qi}_a{ai}", ans['answer_html']))
+                elif ans.get('answer_text'):
+                    # Also render checklist answer_text through Quarto
+                    # so that LaTeX and formatting work correctly
+                    chunks.append((f"q{qi}_a{ai}", ans['answer_text']))
+            
+            for comment_key in ['correct_comments', 'incorrect_comments']:
+                if q.get(comment_key):
+                    chunks.append((f"q{qi}_{comment_key}", q[comment_key]))
+        
+        if not chunks:
+            return questions_data
+        
+        # Step 2: Process images/links in all chunks
+        processed_chunks = {}
+        for key, md_text in chunks:
+            processed_chunks[key] = process_content(
+                md_text, base_path, course, content_root=content_root
+            )
+        
+        # Step 3: Combine into a single QMD document with div markers
+        qmd_parts = ["---\ntitle: \"\"\n---\n"]
+        chunk_keys = list(processed_chunks.keys())
+        
+        for key in chunk_keys:
+            qmd_parts.append(f'\n\n::: {{#qchunk-{key}}}\n{processed_chunks[key]}\n:::\n')
+        
+        qmd_content = ''.join(qmd_parts)
+        
+        # Step 4: Single Quarto render
+        temp_qmd = os.path.join(base_path, "_temp_quiz_render.qmd")
+        temp_html = os.path.join(base_path, "_temp_quiz_render.html")
+        temp_files_dir = os.path.join(base_path, "_temp_quiz_render_files")
+        
+        rendered_map = {}
+        
+        try:
+            with open(temp_qmd, 'w', encoding='utf-8') as f:
+                f.write(qmd_content)
+            
+            cmd = ["quarto", "render", temp_qmd, "--to", "html"]
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            
+            if os.path.exists(temp_html):
+                with open(temp_html, 'r', encoding='utf-8') as f:
+                    full_html = f.read()
+                
+                # Extract main content
+                main_match = re.search(
+                    r'<main[^>]*id="quarto-document-content"[^>]*>(.*?)</main>',
+                    full_html, re.DOTALL
+                )
+                html_body = main_match.group(1) if main_match else full_html
+                html_body = re.sub(
+                    r'<header[^>]*id="title-block-header"[^>]*>.*?</header>',
+                    '', html_body, flags=re.DOTALL
+                )
+                
+                # Step 5: Split by div markers
+                for key in chunk_keys:
+                    pattern = rf'<div\s+id="qchunk-{re.escape(key)}"[^>]*>\s*(.*?)\s*</div>'
+                    match = re.search(pattern, html_body, re.DOTALL)
+                    if match:
+                        rendered_map[key] = match.group(1).strip()
+                    else:
+                        # Fallback: use processed markdown
+                        rendered_map[key] = processed_chunks[key]
+            else:
+                print(f"    ! Warning: Quarto render failed, using processed markdown.")
+                rendered_map = processed_chunks
+            
+        except Exception as e:
+            print(f"    ! Warning: Quarto render error: {e}")
+            rendered_map = processed_chunks
+        finally:
+            self._cleanup(temp_qmd, temp_html, temp_files_dir)
+        
+        # Step 6: Apply rendered HTML back to question data
+        rendered_questions = []
+        for qi, q in enumerate(questions_data):
+            q = dict(q)
+            
+            text_key = f"q{qi}_text"
+            if text_key in rendered_map:
+                q['question_text'] = rendered_map[text_key]
+            
+            if q.get('answers'):
+                rendered_answers = []
+                for ai, ans in enumerate(q['answers']):
+                    ans = dict(ans)
+                    ans_key = f"q{qi}_a{ai}"
+                    if ans_key in rendered_map:
+                        ans['answer_html'] = rendered_map[ans_key]
+                        ans.pop('answer_text', None)  # Use HTML version instead
+                    rendered_answers.append(ans)
+                q['answers'] = rendered_answers
+            
+            for comment_key in ['correct_comments', 'incorrect_comments']:
+                ck = f"q{qi}_{comment_key}"
+                if ck in rendered_map:
+                    q[comment_key] = rendered_map[ck]
+            
+            rendered_questions.append(q)
+        
+        return rendered_questions
 
     def _render_description_file(self, desc_file_path, course, content_root):
         """
