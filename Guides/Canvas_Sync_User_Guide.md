@@ -162,6 +162,8 @@ DailyWork/
 
 ### Quizzes (`.json`)
 *   **Format**: A JSON object with a `canvas` block and a `questions` list.
+*   **LaTeX Support**: Supports LaTeX math (e.g., `$x^2$` or `$$ \int dx $$`).
+    > **Note**: JSON quizzes are processed through Quarto to render Markdown and LaTeX. This ensures consistent formatting but may be slightly slower than syncing raw text.
 *   **Note**: Quizzes are **unpublished** by default.
     ```json
     {

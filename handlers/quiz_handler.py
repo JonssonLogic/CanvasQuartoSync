@@ -55,11 +55,6 @@ class QuizHandler(BaseHandler):
                 canvas_meta, questions_data = parse_qmd_quiz(raw_content)
                 title_override = canvas_meta.get('title')
                 
-                # Render question/answer markdown content to HTML
-                base_path = os.path.dirname(file_path)
-                questions_data = self._render_qmd_questions(
-                    questions_data, base_path, course, content_root
-                )
             except Exception as e:
                 print(f"    ! Error loading QMD quiz: {e}")
                 return
@@ -83,6 +78,8 @@ class QuizHandler(BaseHandler):
             except Exception as e:
                 print(f"    ! Error loading JSON: {e}")
                 return
+
+
 
         # Title Logic
         if title_override:
@@ -138,6 +135,17 @@ class QuizHandler(BaseHandler):
                     break
         
         if needs_update:
+            # Render question/answer markdown content to HTML (for both QMD and JSON)
+            # This fixes LaTeX rendering issues in JSON quizzes by passing them through Quarto.
+            # Moved here to avoid rendering if the quiz is already up-to-date.
+            try:
+                base_path = os.path.dirname(file_path)
+                questions_data = self._render_qmd_questions(
+                    questions_data, base_path, course, content_root
+                )
+            except Exception as e:
+                print(f"    ! Warning: Error rendering quiz content: {e}")
+
             # 1b. Render description_file if provided (Only if updating)
             description_html = None
             if desc_file_path and os.path.exists(desc_file_path):

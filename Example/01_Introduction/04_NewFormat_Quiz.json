@@ -7,7 +7,7 @@
     "questions": [
         {
             "question_name": "Question 1",
-            "question_text": "Is this quiz indented?",
+            "question_text": "Is this quiz indented $\\frac{1}{2}$?",
             "question_type": "multiple_choice_question",
             "points_possible": 1,
             "answers": [
