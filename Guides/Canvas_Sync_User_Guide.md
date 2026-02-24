@@ -350,9 +350,9 @@ events:
 The system automatically scans your Quarto content (`.qmd`) for links to local files and converts them into Canvas-ready links using intelligent resolution.
 
 ### A. Local Files (Downloads)
-When you link to a non-content file (PDF, ZIP, DOCX, etc.), the system **uploads** it to Canvas (`course_files`) and creates a secure download link.
-*   **Markdown**: `[Download Syllabus](docs/Syllabus.pdf)`
-*   **Result**: Link becomes `https://canvas.../files/123/download`
+When you link to a non-content file (PDF, ZIP, DOCX, PY, etc.), the system **uploads** it to Canvas and links to the **Canvas file preview page**, which has a built-in **Download** button.
+*   **Markdown**: `[Download Syllabus](docs/Syllabus.pdf)` or `[Get Script](files/script.py)`
+*   **Result**: Link becomes `https://canvas.../courses/101/files/123`
 
 ### B. Images
 Local images are **uploaded** to `course_images` and embedded.

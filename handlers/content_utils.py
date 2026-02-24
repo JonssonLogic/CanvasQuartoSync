@@ -283,8 +283,15 @@ def process_content(content, base_path, course, content_root=None):
             new_url = resolve_cross_link(course, os.path.join(base_path, "current_context"), rel_path, base_path)
             return f"[{link_text}]({new_url})"
         else:
-            # Asset Upload (PDF, ZIP, DOCX, IPYNB, etc)
-            new_url, _ = upload_file(course, abs_path, FOLDER_FILES, content_root=content_root)
+            # Asset Upload (PDF, ZIP, DOCX, PY, IPYNB, etc)
+            new_url, file_id = upload_file(course, abs_path, FOLDER_FILES, content_root=content_root)
+            if file_id:
+                # Link to Canvas file preview page (has built-in Download button)
+                # This avoids CDN redirect issues where text-based files are
+                # displayed inline instead of downloaded.
+                api_url = course._requester.original_url
+                preview_url = f"{api_url}/courses/{course.id}/files/{file_id}"
+                return f"[{link_text}]({preview_url})"
             return f"[{link_text}]({new_url})"
             
     pattern_links = r'(?<!\!)\[(.*?)\]\((.*?)\)'
