@@ -1,4 +1,8 @@
 from abc import ABC, abstractmethod
+import os
+import subprocess
+import re
+from handlers.content_utils import safe_delete_file, safe_delete_dir
 
 class BaseHandler(ABC):
     """
@@ -93,3 +97,58 @@ class BaseHandler(ABC):
                 print(f"       Setting published: {published}")
                 new_item.edit(module_item={'published': published})
             return new_item
+
+    def _cleanup(self, qmd_path, html_path, files_dir):
+        """Clean up temporary files from Quarto render."""
+        if qmd_path:
+            safe_delete_file(qmd_path)
+        if html_path:
+            safe_delete_file(html_path)
+        if files_dir:
+            safe_delete_dir(files_dir)
+
+    def render_quarto_document(self, processed_content, base_path, filename):
+        """
+        Renders a processed QMD document to HTML via Quarto.
+        Extracts the <main> content block and cleans up temp files.
+        """
+        temp_qmd = os.path.join(base_path, f"_temp_{filename}")
+        temp_stem = os.path.splitext(f"_temp_{filename}")[0]
+        temp_files_dir = os.path.join(base_path, f"{temp_stem}_files")
+        temp_html = None
+        
+        try:
+            with open(temp_qmd, 'w', encoding='utf-8') as f:
+                f.write(processed_content)
+                
+            cmd = ["quarto", "render", temp_qmd, "--to", "html"]
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            
+            temp_html = temp_qmd.replace('.qmd', '.html')
+            
+            if not os.path.exists(temp_html):
+                 print(f"    ! Error: Expected HTML output from temp render.")
+                 self._cleanup(temp_qmd, None, temp_files_dir)
+                 return None
+
+            with open(temp_html, 'r', encoding='utf-8') as f:
+                full_html = f.read()
+
+            # Extract Content
+            main_match = re.search(r'<main[^>]*id="quarto-document-content"[^>]*>(.*?)</main>', full_html, re.DOTALL)
+            
+            if main_match:
+                html_body = main_match.group(1)
+                html_body = re.sub(r'<header[^>]*id="title-block-header"[^>]*>.*?</header>', '', html_body, flags=re.DOTALL)
+            else:
+                html_body = full_html
+                html_body = re.sub(r'<header[^>]*id="title-block-header"[^>]*>.*?</header>', '', html_body, flags=re.DOTALL)
+                
+            # Cleanup
+            self._cleanup(temp_qmd, temp_html, temp_files_dir)
+            return html_body
+                   
+        except Exception as e:
+            print(f"    ! Error processing: {e}")
+            self._cleanup(temp_qmd, None, temp_files_dir)
+            return None

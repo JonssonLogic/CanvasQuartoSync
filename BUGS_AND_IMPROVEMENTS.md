@@ -21,17 +21,7 @@ This document tracks **active** known issues and planned enhancements for the **
 
 ## 🚀 Future Improvements
 
-### 1. Refactor Quarto Rendering Logic
-Both `PageHandler` and `AssignmentHandler` contain nearly identical code for:
-- Writing a temporary `.qmd` file.
-- Running the `quarto render` subprocess.
-- Extracting content from the `<main>` tag.
-
-**Proposal**: Move this to a `QuartoRenderer` utility or a shared base class method to reduce maintenance overhead.
-
----
-
-### 2. Support for Custom Quarto Profiles/Args
+### 1. Support for Custom Quarto Profiles/Args
 The system uses a hardcoded render command: `quarto render ... --to html`.
 
 **Enhancement**:
@@ -40,8 +30,18 @@ The system uses a hardcoded render command: `quarto render ... --to html`.
 
 ---
 
-### 3. Logging System
+### 2. Logging System
 Replace `print()` statements with the standard Python `logging` module. This would allow:
 - Saving logs to a file.
 - Enabling `--verbose` or `--debug` modes.
 - Cleaner output for automated CI/CD runners.
+
+---
+
+### 3. Support for New Quizzes API
+The project currently targets **Classic Quizzes** only. Canvas is migrating to **New Quizzes** (powered by a different engine with a separate API). Adding support would future-proof the tool.
+
+**Considerations**:
+- The `canvasapi` library does not support New Quizzes — direct REST calls would be needed.
+- The New Quizzes API uses a different data model (item banks, stimulus questions, etc.).
+- Ideally, the quiz format (JSON/QMD) stays the same for users, with a `quiz_engine: new` metadata flag to toggle the target API.

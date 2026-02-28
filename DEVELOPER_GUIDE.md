@@ -154,7 +154,7 @@ quarto             # External CLI — must be in PATH
 
 ## Important Notes
 
-- **Read `LESSONS_LEARNED.md`** for Canvas API quirks and design rationale.
+- **Read `LESSONS_LEARNED.md`** for Canvas API quirks and design rationale. This file captures things a contributor still needs to be aware of (API limitations, non-obvious design choices, gotchas). Once an issue or limitation is resolved, its entry can be removed.
 - **Read `Guides/Canvas_Sync_User_Guide.md`** for the full user-facing feature documentation.
 - The project targets **Classic Quizzes** (not New Quizzes yet) in Canvas.
 - All dates in Canvas API use ISO 8601 format. Empty string `''` clears a date field; `None` is ignored.

@@ -217,7 +217,7 @@ DailyWork/
 
 ### QMD Quizzes (`.qmd`)
 
-Quizzes can also be written as `.qmd` files, enabling **rich content** (formatted text, LaTeX, images) in both question text and answer text. The system detects a `.qmd` as a quiz if it contains `:::: {.question` blocks.
+Quizzes can also be written as `.qmd` files, enabling **rich content** (formatted text, LaTeX, images) in both question text and answer text. The system detects a `.qmd` file as a quiz primarily by checking for the `type: quiz` key within the `canvas` YAML frontmatter. (If omitted, it will attempt a fallback scan for `:::: {.question` blocks).
 
 *   **Structure**: YAML frontmatter (quiz settings) + `:::: {.question}` fenced div blocks.
 *   **Rendering**: All markdown content is rendered to HTML via Quarto and images are uploaded to Canvas automatically.
@@ -226,6 +226,7 @@ Quizzes can also be written as `.qmd` files, enabling **rich content** (formatte
 ```yaml
 ---
 canvas:
+  type: quiz
   title: "Quiz Title"
   quiz_type: practice_quiz
   published: true

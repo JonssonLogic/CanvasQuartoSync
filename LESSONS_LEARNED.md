@@ -62,8 +62,6 @@ When the project lives inside a Dropbox/OneDrive folder, the sync service can lo
 ### Extracting Content from Rendered HTML
 Quarto wraps the rendered body in `<main id="quarto-document-content">`. We extract only the inner content to avoid injecting Quarto's full page shell into Canvas. We also strip the `<header id="title-block-header">` to avoid duplicating the title (Canvas provides its own).
 
-### Duplicate Rendering Logic
-`PageHandler.sync()` and `AssignmentHandler.sync()` contain **near-identical** Quarto rendering code. This is a known tech debt item. A future refactor should extract this into a shared `QuartoRenderer` utility.
 
 ### Batch Rendering for QMD Quizzes
 QMD quizzes can have many questions, each with markdown and LaTeX. Rendering them individually would invoke Quarto N times. Instead, `_render_qmd_questions()` batches all question/answer content into a **single** temp `.qmd` file using `<div id="qchunk-N">` markers, renders once, then splits the output back into individual pieces. This is a significant performance optimization.

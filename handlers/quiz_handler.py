@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import re
+import frontmatter
 
 from handlers.base_handler import BaseHandler
 from handlers.content_utils import get_mapped_id, save_mapped_id, parse_module_name, process_content, safe_delete_file, safe_delete_dir
@@ -30,8 +31,18 @@ class QuizHandler(BaseHandler):
         # QMD quiz files
         if file_path.endswith('.qmd'):
             try:
+                post = frontmatter.load(file_path)
+                if post.metadata.get('canvas', {}).get('type') == 'quiz':
+                    return True
+            except:
+                pass
+                
+            try:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     content = f.read(4096)  # Read enough to check
+                
+                # Check for structural quiz components as a fallback
+                # This ensures we still support .qmd quizzes that are missing the `canvas: type: quiz` frontmatter flag
                 return ':::: {.question' in content or '::::{.question' in content
             except:
                 return False
@@ -434,52 +445,8 @@ class QuizHandler(BaseHandler):
         
         processed_content = process_content(raw_content, base_path, course, content_root=content_root)
         
-        # Create temp file for Quarto render
-        temp_qmd = os.path.join(base_path, f"_temp_desc_{filename}")
-        temp_stem = os.path.splitext(f"_temp_desc_{filename}")[0]
-        temp_html = temp_qmd.replace('.qmd', '.html')
-        temp_files_dir = os.path.join(base_path, f"{temp_stem}_files")
-        
-        try:
-            with open(temp_qmd, 'w', encoding='utf-8') as f:
-                f.write(processed_content)
-            
-            cmd = ["quarto", "render", temp_qmd, "--to", "html"]
-            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            
-            if not os.path.exists(temp_html):
-                print(f"    ! Error: Expected HTML output from description render.")
-                self._cleanup(temp_qmd, None, temp_files_dir)
-                return None
-            
-            with open(temp_html, 'r', encoding='utf-8') as f:
-                full_html = f.read()
-            
-            # Extract main content (same as assignment_handler)
-            main_match = re.search(r'<main[^>]*id="quarto-document-content"[^>]*>(.*?)</main>', full_html, re.DOTALL)
-            
-            if main_match:
-                html_body = main_match.group(1)
-                html_body = re.sub(r'<header[^>]*id="title-block-header"[^>]*>.*?</header>', '', html_body, flags=re.DOTALL)
-            else:
-                html_body = full_html
-                html_body = re.sub(r'<header[^>]*id="title-block-header"[^>]*>.*?</header>', '', html_body, flags=re.DOTALL)
-            
-            # Cleanup temp files
-            self._cleanup(temp_qmd, temp_html, temp_files_dir)
-            
-            return html_body.strip()
-            
-        except Exception as e:
-            print(f"    ! Error rendering description: {e}")
-            self._cleanup(temp_qmd, temp_html, temp_files_dir)
-            return None
+        html_body = self.render_quarto_document(processed_content, base_path, f"desc_{filename}")
+        if html_body is not None:
+             return html_body.strip()
+        return None
 
-    def _cleanup(self, qmd_path, html_path, files_dir):
-        """Clean up temporary files from Quarto render."""
-        if qmd_path:
-            safe_delete_file(qmd_path)
-        if html_path:
-            safe_delete_file(html_path)
-        if files_dir:
-            safe_delete_dir(files_dir)
