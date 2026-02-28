@@ -1,0 +1,42 @@
+---
+canvas:
+  type: new_quiz
+  title: "New Quiz Example"
+  published: true
+  shuffle_answers: true
+  points: 10
+  allowed_attempts: 2
+---
+
+:::: {.question name="Multiple Choice" points_possible="2.0"}
+
+Which of the following describes the Canvas New Quizzes API?
+
+- [x] It uses its own set of REST endpoints under `/api/quiz/v1/`.
+  - Correct! It is distinct from the Classic Quizzes API.
+- [ ] It uses the standard `/api/v1/` endpoints.
+  - Incorrect. Classic Quizzes use those endpoints.
+- [ ] It is part of the Assignments API only.
+
+::::
+
+:::: {.question type="multiple_answers_question" name="Multiple Answers Example" points_possible="3.0"}
+
+Select all true statements about New Quizzes formatting.
+
+- [x] They are assignment-backed.
+- [x] They support completely different question interaction structures.
+- [ ] They have exactly the same item ID tracking format as Classic Quizzes.
+  - No, they track item IDs internally instead of name matching.
+
+::::
+
+:::: {.question type="true_false_question" name="True/False Question" points_possible="1.0"}
+
+Canvas New Quizzes are backwards compatible natively with Classic Quiz Question Groups natively through standard assignments.
+
+- [ ] True
+- [x] False
+  - Correct, question groups don't exist in New Quizzes the same way.
+
+::::

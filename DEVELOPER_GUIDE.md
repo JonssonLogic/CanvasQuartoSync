@@ -23,6 +23,8 @@ CanvasQuartoSync/
 │   ├── page_handler.py        # .qmd → Canvas Page
 │   ├── assignment_handler.py  # .qmd → Canvas Assignment
 │   ├── quiz_handler.py        # .json / .qmd → Canvas Quiz (Classic Quizzes API)
+│   ├── new_quiz_handler.py    # .json / .qmd → Canvas Quiz (New Quizzes API)
+│   ├── new_quiz_api.py        # REST client wrapper for New Quizzes API
 │   ├── qmd_quiz_parser.py     # Parser for QMD quiz format (fenced-div syntax)
 │   ├── calendar_handler.py    # schedule.yaml → Canvas calendar events
 │   ├── subheader_handler.py   # .md/.qmd → Module SubHeader (visual separator)
@@ -98,7 +100,9 @@ All handlers inherit `BaseHandler` (ABC):
 | `.qmd` | `page` | `PageHandler` | Wiki Page |
 | `.qmd` | `assignment` | `AssignmentHandler` | Assignment |
 | `.qmd` | `subheader` | `SubHeaderHandler` | Module Text Header |
+| `.qmd` | `new_quiz` | `NewQuizHandler` | Quiz (New Quizzes) |
 | `.qmd` | *(contains `:::: {.question` blocks)* | `QuizHandler` | Quiz (Classic) |
+| `.json` | *(has `quiz_engine: new`)* | `NewQuizHandler` | Quiz (New Quizzes) |
 | `.json` | *(structural check)* | `QuizHandler` | Quiz (Classic) |
 | `.pdf`, `.zip`, etc. | N/A | Solo file logic in `sync_to_canvas.py` | Uploaded File + Module Item |
 | `schedule.yaml` | N/A | `CalendarHandler` | Calendar Events |
@@ -122,6 +126,7 @@ The project uses a **virtual environment** at `.venv/`. Always activate it befor
 
 ```
 canvasapi          # Canvas REST API wrapper
+requests           # Raw HTTP client for New Quizzes API
 python-frontmatter # YAML frontmatter parser
 PyYAML             # YAML parsing (calendar, quiz metadata)
 quarto             # External CLI — must be in PATH

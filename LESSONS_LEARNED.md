@@ -22,8 +22,19 @@ The Canvas API silently **ignores** the `published` field when creating a new mo
 ### Quiz Detection: Structural, Not Name-Based
 Early versions detected quizzes by checking if the filename contained `"Quiz"`. This was brittle. The current approach checks the **JSON structure** (presence of `questions` array and `canvas` metadata block) or the presence of `:::: {.question` blocks in `.qmd` files.
 
-### Classic Quizzes Only
-This project targets the **Classic Quizzes** API. Canvas also has "New Quizzes" (backed by a different engine) which use a completely different API. The `canvasapi` library does not support New Quizzes.
+### New Quizzes API (`/api/quiz/v1/`)
+The New Quizzes engine uses a **completely separate API** from Classic Quizzes. Key differences and gotchas:
+
+- **`canvasapi` has no support** — all New Quizzes calls must use raw `requests` against `/api/quiz/v1/courses/:id/quizzes`.
+- **Payload wrapping is mandatory** — quiz creation/update requires `{"quiz": {...}}`, and item creation requires `{"item": {...}}`. Sending the data directly returns `{"errors":[{"message":"quiz is missing"}]}`.
+- **`scoring_algorithm` is required** on every question item. Valid values are **not** obvious from the error messages:
+  - `"Equivalence"` for `choice` and `true-false` questions
+  - `"AllOrNothing"` for `multi-answer` questions
+  - `"None"` for `essay` and `file-upload` questions
+  - Using an invalid value (e.g., `"ExactMatch"`) returns an internal Ruby error: `"uninitialized constant Scoring::Algorithms::...::ExactMatch"`.
+- **Quizzes are assignment-backed** — creating a New Quiz also creates an Assignment. Module items must use `type: 'Assignment'`, not `type: 'Quiz'`.
+- **Time limits are in seconds**, not minutes (unlike Classic Quizzes).
+- **The `properties` field** (even if empty `{}`) should be included in item payloads — the official API examples always include it.
 
 ---
 
@@ -54,6 +65,9 @@ Rendering uses `_temp_{filename}.qmd` → `quarto render` → extract from `_tem
 
 ### Retry-With-Backoff for File Deletion
 When the project lives inside a Dropbox/OneDrive folder, the sync service can lock temp files immediately after creation. `safe_delete_file()` and `safe_delete_dir()` retry up to 5 times with 0.5s delays to handle this.
+
+### Always Fetch Before Create-or-Update
+When implementing update logic for any Canvas object, **always try to fetch the existing object** before deciding to create a new one — even if the local file has changed. A common bug pattern: putting the "fetch existing" call inside the "skip if unchanged" branch means that when the file *does* change, the handler thinks no object exists and creates a duplicate. The fetch must happen unconditionally whenever a sync map ID is available.
 
 ---
 

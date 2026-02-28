@@ -36,12 +36,4 @@ Replace `print()` statements with the standard Python `logging` module. This wou
 - Enabling `--verbose` or `--debug` modes.
 - Cleaner output for automated CI/CD runners.
 
----
 
-### 3. Support for New Quizzes API
-The project currently targets **Classic Quizzes** only. Canvas is migrating to **New Quizzes** (powered by a different engine with a separate API). Adding support would future-proof the tool.
-
-**Considerations**:
-- The `canvasapi` library does not support New Quizzes — direct REST calls would be needed.
-- The New Quizzes API uses a different data model (item banks, stimulus questions, etc.).
-- Ideally, the quiz format (JSON/QMD) stays the same for users, with a `quiz_engine: new` metadata flag to toggle the target API.

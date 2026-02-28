@@ -11,6 +11,7 @@ from handlers.base_handler import BaseHandler
 from handlers.page_handler import PageHandler
 from handlers.assignment_handler import AssignmentHandler
 from handlers.quiz_handler import QuizHandler
+from handlers.new_quiz_handler import NewQuizHandler
 from handlers.calendar_handler import CalendarHandler
 from handlers.subheader_handler import SubHeaderHandler
 from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name
@@ -86,10 +87,10 @@ def main():
         print(f"Connection failed: {e}")
         return
 
-    # Handlers
     handlers = [
         PageHandler(),
         AssignmentHandler(),
+        NewQuizHandler(),
         QuizHandler(),
         SubHeaderHandler()
     ]

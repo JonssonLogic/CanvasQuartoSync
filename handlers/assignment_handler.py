@@ -56,6 +56,7 @@ class AssignmentHandler(BaseHandler):
         grading_type = canvas_meta.get('grading_type') or ''
         submission_types = canvas_meta.get('submission_types', ['online_upload'])
         allowed_extensions = canvas_meta.get('allowed_extensions', [])
+        omit_from_final_grade = canvas_meta.get('omit_from_final_grade', False)
         indent = canvas_meta.get('indent', 0)
 
         # 1c. Process Content (ALWAYS, to track ACTIVE_ASSET_IDS)
@@ -71,7 +72,6 @@ class AssignmentHandler(BaseHandler):
             if html_body is None:
                 return
 
-            # 4. Create/Update Assignment
             assignment_args = {
                 'name': title,
                 'description': html_body,
@@ -82,7 +82,8 @@ class AssignmentHandler(BaseHandler):
                 'lock_at': lock_at,
                 'grading_type': grading_type,
                 'submission_types': submission_types,
-                'allowed_extensions': allowed_extensions
+                'allowed_extensions': allowed_extensions,
+                'omit_from_final_grade': omit_from_final_grade
             }
 
             if assign_obj:

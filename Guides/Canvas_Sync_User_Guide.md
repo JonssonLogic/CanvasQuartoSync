@@ -15,6 +15,7 @@
   - [Text Headers (.qmd)](#text-headers-qmd)
   - [Quizzes (.json)](#quizzes-json)
   - [QMD Quizzes (.qmd)](#qmd-quizzes-qmd)
+  - [New Quizzes (.qmd and .json)](#new-quizzes-qmd-and-json)
   - [Solo Files (PDFs, ZIPs, etc.)](#solo-files-pdfs-zips-etc)
 - [4. Calendar Synchronization](#4-calendar-synchronization)
 - [5. Linking & Asset Handling (Power Feature)](#5-linking--asset-handling-power-feature)
@@ -143,6 +144,7 @@ DailyWork/
       grading_type: points              # (optional: points, percentage, pass_fail, letter_grade, gpa_scale, not_graded)
       submission_types: [online_upload] # (optional: [online_upload, online_text_entry, online_url, media_recording, student_annotation, none, external_tool])
       allowed_extensions: [py, txt]     # (optional)
+      omit_from_final_grade: true       # (optional, Default: false) — do not count towards final grade
       indent: 1                       # (optional)
     ---
     ```
@@ -307,6 +309,47 @@ canvas:
 
 > [!TIP]
 > **Indentation is optional.** Content inside `:::: question` and `::: answer` blocks can be indented (e.g., 2 spaces) for readability — the parser handles both indented and non-indented content.
+
+### New Quizzes (`.qmd` and `.json`)
+
+The system also supports the Canvas **New Quizzes** API (which acts as Assignments in Canvas).
+The question and answer formatting within a New Quiz is **identical** to Classic Quizzes (both Checklist and Rich div answers are supported for Choice, True/False, and Multi-Answer types). 
+
+To define a New Quiz, update the frontmatter to use `type: new_quiz` (for `.qmd`), or set `quiz_engine: new` for `.json`.
+
+**QMD Example:**
+```yaml
+---
+canvas:
+  type: new_quiz
+  title: "New Quiz Title"
+  published: true
+  points: 10
+  shuffle_answers: true
+  allowed_attempts: 2
+---
+# ... standard question blocks ...
+```
+
+**JSON Example:**
+```json
+{
+  "canvas": {
+    "quiz_engine": "new",
+    "title": "New Quiz Title",
+    "published": true
+  },
+  "questions": [ ... ]
+}
+```
+
+**Supported Settings for New Quizzes:**
+*   `points` (optional, float) - total points possible for the quiz.
+*   `due_at`, `unlock_at`, `lock_at` (optional, ISO 8601 String)
+*   `shuffle_answers`, `shuffle_questions` (optional, Boolean)
+*   `time_limit` (optional, seconds) - Note: New quizzes uses seconds whereas Classic uses minutes.
+*   `allowed_attempts` (optional, Integer)
+*   `omit_from_final_grade` (optional, Boolean) — do not count towards the final grade
 
 ### Solo Files (PDFs, ZIPs, etc.)
 *   **Format**: `NN_Name.ext` (where `.ext` is NOT `.qmd` or `.json`).

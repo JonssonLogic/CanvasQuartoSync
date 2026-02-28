@@ -1,0 +1,28 @@
+{
+    "canvas": {
+        "quiz_engine": "new",
+        "title": "New Quiz JSON Example",
+        "published": true,
+        "points": 5,
+        "shuffle_answers": true,
+        "allowed_attempts": 1
+    },
+    "questions": [
+        {
+            "question_name": "Simple Choice",
+            "question_text": "Is this a New Quiz?",
+            "question_type": "multiple_choice_question",
+            "points_possible": 1,
+            "answers": [
+                {
+                    "answer_text": "Yes",
+                    "weight": 100
+                },
+                {
+                    "answer_text": "No",
+                    "weight": 0
+                }
+            ]
+        }
+    ]
+}
