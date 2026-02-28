@@ -35,5 +35,27 @@ Replace `print()` statements with the standard Python `logging` module. This wou
 - Saving logs to a file.
 - Enabling `--verbose` or `--debug` modes.
 - Cleaner output for automated CI/CD runners.
+---
 
+### 3. New Quizzes: Additional Question Types
+Currently only `choice`, `true-false`, and `multi-answer` are supported. The New Quizzes API also supports:
+- `matching` — match items to categories
+- `categorization` — sort items into groups
+- `ordering` — arrange items in sequence
+- `numeric` — numeric input with margin of error
+- `essay` — free-text response (manually graded)
+- `file-upload` — student file submission
+- `rich-fill-blank` — fill-in-the-blank with rich content
+- `hot-spot` — click on a region of an image
 
+Each type has its own `interaction_data` and `scoring_data` structure. See the [official API docs](https://canvas.instructure.com/doc/api/new_quiz_items.html#Question+Types-appendix) for details.
+
+---
+
+### 4. New Quizzes: Formula Questions with Variables
+The New Quizzes `formula` question type supports **parameterized questions** — variables with defined ranges that generate unique values per student attempt. This would enable questions like _"What is the stress if F = [x] N and A = [y] mm²?"_ where `x` and `y` are randomized.
+
+**Considerations**:
+- Requires defining variables (name, min, max, precision) and a formula string in the question metadata.
+- The API uses `generated_solutions` — pre-computed answer sets that must be calculated and included in the payload.
+- A new frontmatter/JSON syntax would be needed to define variables and formulas in a user-friendly way.
