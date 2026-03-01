@@ -37,8 +37,8 @@ Replace `print()` statements with the standard Python `logging` module. This wou
 - Cleaner output for automated CI/CD runners.
 ---
 
-### 3. New Quizzes: Additional Question Types
-Currently only `choice`, `true-false`, and `multi-answer` are supported. The New Quizzes API also supports:
+### ~~3. New Quizzes: Additional Question Types~~ (Partially Implemented)
+`numeric` and `formula` questions were added. The remaining New Quizzes API types are:
 - `matching` — match items to categories
 - `categorization` — sort items into groups
 - `ordering` — arrange items in sequence
@@ -52,8 +52,10 @@ Each type has its own `interaction_data` and `scoring_data` structure. See the [
 
 ---
 
-### 4. New Quizzes: Formula Questions with Variables
-The New Quizzes `formula` question type supports **parameterized questions** — variables with defined ranges that generate unique values per student attempt. This would enable questions like _"What is the stress if F = [x] N and A = [y] mm²?"_ where `x` and `y` are randomized.
+### ~~4. New Quizzes: Formula Questions with Variables~~ (Implemented)
+The New Quizzes `formula` question type supports **parameterized questions**.
+
+_Implemented via local evaluation utilizing `asteval` to precalculate and upload data sets per the Canvas API requirements._
 
 **Considerations**:
 - Requires defining variables (name, min, max, precision) and a formula string in the question metadata.

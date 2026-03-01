@@ -181,21 +181,61 @@ def _parse_question_block(attrs_str, content, index=0):
     question = {
         'question_name': attrs.get('name', f'Fråga {index + 1}'),
         'question_type': attrs.get('type', 'multiple_choice_question'),
-        'points_possible': attrs.get('points', 1),
+        'points_possible': attrs.get('points_possible', attrs.get('points', 1)),
     }
     
-    # Detect answer format: div-based or checklist-based
-    has_div_answers = re.search(r'^:::+\s*\{\.answer', content, re.MULTILINE)
-    
-    if has_div_answers:
-        _parse_div_answers(content, question)
+    if question['question_type'] == 'formula_question':
+        _parse_formula_blocks(content, question)
     else:
-        _parse_checklist_answers(content, question)
+        # Detect answer format: div-based or checklist-based
+        has_div_answers = re.search(r'^:::+\s*\{\.answer', content, re.MULTILINE)
+        if has_div_answers:
+            _parse_div_answers(content, question)
+        else:
+            _parse_checklist_answers(content, question)
     
     # Extract comment divs (correct-comment, incorrect-comment)
     _parse_comment_divs(content, question)
     
     return question
+
+def _parse_formula_blocks(content, question):
+    """
+    Parse ::: {.formula} and ::: {.variable} blocks.
+    Sets question variables and formula data, and extracts question_text.
+    """
+    formula_blocks = _extract_inner_divs(content, 'formula')
+    if formula_blocks:
+        attrs_str, formula_content = formula_blocks[0]
+        try:
+            f_data = yaml.safe_load(formula_content) or {}
+            question.update(f_data)
+        except Exception as e:
+            print(f"Error parsing formula block: {e}")
+            
+    variables = []
+    variable_blocks = _extract_inner_divs(content, 'variable')
+    for attrs_str, var_content in variable_blocks:
+        attrs = _parse_attributes(attrs_str)
+        name = attrs.get('name')
+        if name:
+            try:
+                v_data = yaml.safe_load(var_content) or {}
+                v_data['name'] = name
+                variables.append(v_data)
+            except Exception as e:
+                print(f"Error parsing variable block {name}: {e}")
+                
+    if variables:
+        question['variables'] = variables
+        
+    # Remove formula and variable blocks from content to get clean question text
+    for block_name in ['formula', 'variable']:
+        pattern = rf'^\s*:::+\s*\{{\.{block_name}[^}}]*\}}\s*\n.*?\n\s*:::+\s*$'
+        content = re.sub(pattern, '', content, flags=re.MULTILINE | re.DOTALL)
+        
+    question_text = _remove_comment_divs(content)
+    question['question_text'] = _clean_question_text(question_text)
 
 
 def _parse_checklist_answers(content, question):
@@ -302,9 +342,17 @@ def _parse_div_answers(content, question):
         answer_content = _strip_indent(answer_content).strip()
         
         answer_dict = {
-            'answer_html': answer_content,  # Rich content, will be rendered to HTML  
             'answer_weight': 100 if is_correct else 0,
         }
+        
+        # Only set answer_html if there is actual content (numeric .answer blocks have empty bodies)
+        if answer_content:
+            answer_dict['answer_html'] = answer_content
+        
+        # Add all other attributes to answer_dict (valuable for numeric questions, etc.)
+        for k, v in attrs.items():
+            if k not in ['correct', 'comment']:
+                answer_dict[k] = v
         
         comment = attrs.get('comment', '')
         if comment:

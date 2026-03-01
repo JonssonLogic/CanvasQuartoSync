@@ -1,0 +1,51 @@
+---
+canvas:
+  type: new_quiz
+  title: "New Quiz - Numeric and Formula Examples"
+  published: true
+  points: 15
+  allowed_attempts: 1
+---
+
+:::: {.question type="numeric_question" name="Simple Numeric" points_possible="5.0"}
+
+A steel beam has a cross-sectional area of $200 \text{ mm}^2$ and is 
+subjected to a tensile force of $40 \text{ kN}$. What is the nominal stress 
+in MPa?
+
+::: {.answer value="200" margin="5" margin_type="percent" correct=true}
+:::
+
+<!-- You can also have multiple valid answers in numeric questions -->
+::: {.answer start="199" end="201" correct=true}
+:::
+
+::::
+
+:::: {.question type="formula_question" name="Parametric Stress Formula" points_possible="10.0"}
+
+A steel beam has a cross-sectional area of Area = [A] $\text{mm}^2$ and 
+is subjected to a tensile force of Force = [F] $\text{kN}$. 
+What is the theoretical stress in MPa?
+
+::: {.formula}
+formula: F * 1000 / A
+margin: 2
+margin_type: percent
+answer_count: 5
+distribution: even
+:::
+
+::: {.variable name="F"}
+min: 10
+max: 100
+precision: 0
+:::
+
+::: {.variable name="A"}
+min: 50
+max: 500
+precision: 0
+:::
+
+::::

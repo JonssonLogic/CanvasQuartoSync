@@ -138,6 +138,7 @@ class NewQuizHandler(BaseHandler):
                     print(f"    -> Creating New Quiz: {title}")
                     quiz_obj = client.create_quiz(course_id, quiz_payload)
                     existing_id = str(quiz_obj['id'])
+                    map_entry = None  # Clear stale item IDs — new quiz has no items yet
                 
                 # Sync questions
                 self._sync_questions(client, course_id, existing_id, questions_data, content_root, file_path, current_mtime, map_entry)
@@ -334,6 +335,10 @@ class NewQuizHandler(BaseHandler):
             interaction_slug = 'true-false'
         elif q_type == 'multiple_answers_question':
             interaction_slug = 'multi-answer'
+        elif q_type == 'numeric_question':
+            interaction_slug = 'numeric'
+        elif q_type == 'formula_question':
+            interaction_slug = 'formula'
 
         # Scoring algorithm per official Canvas API docs:
         # choice / true-false -> "Equivalence"
@@ -341,6 +346,8 @@ class NewQuizHandler(BaseHandler):
         scoring_algorithm = "Equivalence"
         if interaction_slug == 'multi-answer':
             scoring_algorithm = "AllOrNothing"
+        elif interaction_slug in ('numeric', 'formula'):
+            scoring_algorithm = "None"
             
         item_data = {
             "entry_type": "Item",
@@ -401,7 +408,7 @@ class NewQuizHandler(BaseHandler):
             
             correct_value = False
             for ans in answers:
-                if ans.get('weight', 0) == 100:
+                if ans.get('weight', 0) == 100 or ans.get('answer_weight', 0) == 100:
                     ans_text = str(ans.get('answer_text', '')).lower()
                     if 'true' in ans_text or 't' == ans_text or 'rätt' == ans_text:
                         correct_value = True
@@ -409,4 +416,140 @@ class NewQuizHandler(BaseHandler):
                     
             item_data['entry']['scoring_data']['value'] = correct_value
 
+        elif interaction_slug == 'numeric':
+            scoring_values = []
+            for ans in answers:
+                if ans.get('answer_weight', 100) == 0:
+                    continue  # only correct numeric answers
+                
+                ans_id = str(uuid.uuid4())
+                ans_obj = {"id": ans_id}
+                
+                if 'start' in ans and 'end' in ans:
+                    ans_obj['type'] = 'withinARange'
+                    ans_obj['start'] = str(ans['start'])
+                    ans_obj['end'] = str(ans['end'])
+                elif 'margin' in ans:
+                    ans_obj['type'] = 'marginOfError'
+                    ans_obj['value'] = str(ans.get('value', '0'))
+                    ans_obj['margin'] = str(ans['margin'])
+                    ans_obj['margin_type'] = str(ans.get('margin_type', 'absolute'))
+                elif 'precision' in ans:
+                    ans_obj['type'] = 'preciseResponse'
+                    ans_obj['value'] = str(ans.get('value', '0'))
+                    ans_obj['precision'] = str(ans['precision'])
+                    ans_obj['precision_type'] = str(ans.get('precision_type', 'decimals'))
+                else:
+                    ans_obj['type'] = 'exactResponse'
+                    ans_obj['value'] = str(ans.get('value', '0'))
+                    
+                scoring_values.append(ans_obj)
+                
+            item_data['entry']['scoring_data']['value'] = scoring_values
+
+        elif interaction_slug == 'formula':
+            formula = str(q_data.get('formula', '0'))
+            variables = q_data.get('variables', [])
+            answer_count = int(q_data.get('answer_count', 10))
+            
+            margin = str(q_data.get('margin', '0'))
+            margin_type = str(q_data.get('margin_type', 'absolute'))
+            numeric_config = {
+                "type": "marginOfError",
+                "margin": margin,
+                "margin_type": margin_type
+            }
+            
+            api_vars = []
+            for v in variables:
+                api_vars.append({
+                    "name": v.get('name'),
+                    "min": str(v.get('min', '0')),
+                    "max": str(v.get('max', '10')),
+                    "precision": int(v.get('precision', 0))
+                })
+                
+            distribution = str(q_data.get('distribution', 'random'))
+            
+            generated_solutions = self._generate_formula_solutions(formula, variables, answer_count, distribution)
+            
+            item_data['entry']['scoring_data']['value'] = {
+                "formula": formula,
+                "numeric": numeric_config,
+                "variables": api_vars,
+                "answer_count": str(answer_count),
+                "generated_solutions": generated_solutions
+            }
+
         return item_data
+
+    def _generate_formula_solutions(self, formula, variables, count, distribution='random'):
+        import random
+        import math
+        try:
+            from asteval import Interpreter
+        except ImportError:
+            raise ImportError("The 'asteval' library is required to sync formula questions. Please run `uv pip install asteval`")
+            
+        aeval = Interpreter()
+        solutions = []
+        
+        # Pre-compute evenly spaced values per variable if distribution == 'even'
+        even_values = {}
+        if distribution == 'even':
+            for v in variables:
+                name = v.get('name')
+                vmin = float(v.get('min', 0))
+                vmax = float(v.get('max', 10))
+                prec = int(v.get('precision', 0))
+                
+                if prec == 0:
+                    # Integer steps: pick count evenly spaced integers
+                    step = (vmax - vmin) / (count - 1) if count > 1 else 0
+                    vals = [float(round(vmin + i * step)) for i in range(count)]
+                else:
+                    step = (vmax - vmin) / (count - 1) if count > 1 else 0
+                    vals = [round(vmin + i * step, prec) for i in range(count)]
+                even_values[name] = vals
+        
+        for iteration in range(count):
+            inputs = []
+            for v in variables:
+                name = v.get('name')
+                vmin = float(v.get('min', 0))
+                vmax = float(v.get('max', 10))
+                prec = int(v.get('precision', 0))
+                
+                if distribution == 'even':
+                    val = even_values[name][iteration]
+                else:
+                    if prec == 0:
+                        val = float(random.randint(int(vmin), int(vmax)))
+                    else:
+                        val = round(random.uniform(vmin, vmax), prec)
+                
+                inputs.append({"name": name, "value": str(val)})
+                
+            # Clear errors from previous iterations
+            aeval.error = []
+            
+            for i_var in inputs:
+                aeval.symtable[i_var['name']] = float(i_var['value'])
+                
+            output_val = aeval(formula)
+            if aeval.error:
+                error_msgs = "\n".join(str(e) for e in aeval.error)
+                raise ValueError(f"Formula evaluation error for '{formula}':\n{error_msgs}")
+            
+            # Guard against division by zero or invalid results
+            if output_val is None or (isinstance(output_val, float) and (math.isnan(output_val) or math.isinf(output_val))):
+                raise ValueError(f"Formula '{formula}' produced invalid result ({output_val}) with inputs: {inputs}")
+                
+            output_str = str(round(output_val, 4)) if isinstance(output_val, float) else str(output_val)
+            
+            solutions.append({
+                "inputs": inputs,
+                "output": output_str
+            })
+            
+        return solutions

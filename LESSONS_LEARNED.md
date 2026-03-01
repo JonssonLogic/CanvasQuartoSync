@@ -35,6 +35,9 @@ The New Quizzes engine uses a **completely separate API** from Classic Quizzes. 
 - **Quizzes are assignment-backed** — creating a New Quiz also creates an Assignment. Module items must use `type: 'Assignment'`, not `type: 'Quiz'`.
 - **Time limits are in seconds**, not minutes (unlike Classic Quizzes).
 - **The `properties` field** (even if empty `{}`) should be included in item payloads — the official API examples always include it.
+- **Formulas are NOT evaluated by Canvas server-side** — when creating a Formula question, the API requires `generated_solutions` (an array of pre-computed outputs for randomized inputs). The sync tool must bundle a safe math lexer/parser (`asteval`) to randomly generate these inputs, calculate the result, and upload the fixed datasets. Canvas then blindly picks one of the pre-computed arrays for each student attempt.
+- **`scoring_data.value` must be a raw object/array for numeric and formula** — despite Canvas returning a 422 "must be string or boolean" when `scoring_algorithm` is wrong, the correct combination is `scoring_algorithm: "None"` with a raw object (formula) or array (numeric). Sending `json.dumps()` passes API validation but causes the Canvas quiz builder to fail rendering. When in doubt, fetch items from a manually-created quiz via `GET /items` to see the expected format.
+- **`scoring_algorithm` values for New Quizzes** — `"Equivalence"` for choice/true-false, `"AllOrNothing"` for multi-answer, `"None"` for essay/file-upload/numeric/formula. Using the wrong algorithm can cause 422 errors or rendering failures in the Canvas quiz builder.
 
 ---
 

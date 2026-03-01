@@ -57,7 +57,7 @@ Allows you to manage your entire course as a local code repository (Git) while k
 
 2.  Install dependencies:
     ```bash
-    pip install canvasapi python-frontmatter PyYAML
+    pip install canvasapi python-frontmatter PyYAML asteval
     ```
 
 ## ⚙️ Configuration

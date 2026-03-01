@@ -162,75 +162,64 @@ DailyWork/
     ---
     ```
 
-### Quizzes (`.json`)
-*   **Format**: A JSON object with a `canvas` block and a `questions` list.
-*   **LaTeX Support**: Supports LaTeX math (e.g., `$x^2$` or `$$ \int dx $$`).
-    > **Note**: JSON quizzes are processed through Quarto to render Markdown and LaTeX. This ensures consistent formatting but may be slightly slower than syncing raw text.
+### Quizzes — JSON Format (`.json`)
+
+JSON is the **concise format** for quizzes. It supports basic question types, LaTeX math, and works with both Classic and New quiz engines. Use this format when you don't need images in answers or advanced question types like formula/numeric.
+
+*   **LaTeX Support**: LaTeX math (e.g., `$x^2$` or `$$ \int dx $$`) is rendered through Quarto automatically.
 *   **Note**: Quizzes are **unpublished** by default.
-    ```json
+
+**Example:**
+```json
+{
+  "canvas": {
+    "title": "Quiz Title",
+    "published": true,
+    "shuffle_answers": true,
+    "show_correct_answers": true,
+    "allowed_attempts": 3
+  },
+  "questions": [
     {
-      "canvas": {
-        "title": "Quiz Title",
-        "published": true,                // (optional)
-        "description_file": "Quiz_Description.qmd", // (optional) - Path to .qmd file for rich description
-        "due_at": "2024-10-15T23:59:00Z", // (optional) - Removing this clears the date
-        "unlock_at": "2024-10-01T08:00:00Z", // (optional)
-        "lock_at": "2024-10-20T23:59:00Z", // (optional)
-        "show_correct_answers": true,     // (optional)
-        "shuffle_answers": true,          // (optional)
-        "time_limit": 30,                 // (optional)
-        "allowed_attempts": 3,            // (optional)
-        "indent": 1                       // (optional)
-      },
-      "questions": [
-        {
-          "question_name": "Q1",
-          "question_text": "What is 2+2?",
-          "question_type": "multiple_choice_question", // (multiple_choice_question, true_false_question, short_answer_question, fill_in_multiple_blanks_question, multiple_answers_question, multiple_dropdowns_question, matching_question, numerical_question, calculated_question, essay_question, file_upload_question, text_only_question)
-          "points_possible": 1,
-          "answers": [
-            {"answer_text": "4", "weight": 100},
-            {"answer_text": "5", "weight": 0}
-          ]
-        }
+      "question_name": "Q1",
+      "question_text": "What is $2+2$?",
+      "question_type": "multiple_choice_question",
+      "points_possible": 1,
+      "answers": [
+        {"answer_text": "4", "weight": 100},
+        {"answer_text": "5", "weight": 0}
       ]
     }
-    ```
+  ]
+}
+```
 
-    > [!IMPORTANT] 
-    > Do **not** use the `NN_` prefix for description files (e.g., `Quiz_Description.qmd`, NOT `04_Quiz_Description.qmd`), or they might be synced as separate pages.
-*   **Supported Settings**:
-    *   `due_at` (optional, ISO 8601 String) - *Removing this clears the date in Canvas*
-    *   `unlock_at` (optional, ISO 8601 String) - *Removing this clears the date in Canvas*
-    *   `lock_at` (optional, ISO 8601 String) - *Removing this clears the date in Canvas*
-    *   `description_file` (optional, String) - *Relative path to a `.qmd` file containing the quiz description (supports images/markdown)*
-    *   `show_correct_answers` (optional, Boolean)
-    *   `shuffle_answers` (optional, Boolean)
-    *   `time_limit` (optional, Minutes)
-    *   `allowed_attempts` (optional, Integer, use -1 for unlimited)
-    *   `quiz_type` (optional: practice_quiz, assignment, graded_survey, survey)
+**Supported question types** (in `question_type`):
+`multiple_choice_question`, `true_false_question`, `short_answer_question`, `fill_in_multiple_blanks_question`, `multiple_answers_question`, `multiple_dropdowns_question`, `matching_question`, `numerical_question`, `calculated_question`, `essay_question`, `file_upload_question`, `text_only_question`
 
-    > [!WARNING]
-    > **Modifying Active Quizzes**
-    > To safely update questions, the sync tool uses an **"Unpublish → Modify → Republish"** workflow.
-    > *   **If no students have started**: This is seamless. The quiz briefly flips to "Draft" mode, updates, and re-publishes.
-    > *   **If students have submissions**: Canvas **blocks** unpublishing. The tool detects this, skips draft mode, and updates questions in-place. All changes are saved to the Canvas database, but you will need to click **"Save It Now"** in Canvas to regenerate the quiz snapshot. The tool prints a direct link to the quiz for convenience.
-    >     *   *This is a known Canvas API limitation — the REST API cannot trigger the internal snapshot regeneration for already-published quizzes.*
+> [!IMPORTANT] 
+> **Quiz description files**: You can link a rich `.qmd` description using `"description_file": "Quiz_Description.qmd"`. Do **not** use the `NN_` prefix for description files, or they will be synced as separate pages.
 
-### QMD Quizzes (`.qmd`)
+### Quizzes — QMD Format (`.qmd`)
 
-Quizzes can also be written as `.qmd` files, enabling **rich content** (formatted text, LaTeX, images) in both question text and answer text. The system detects a `.qmd` file as a quiz primarily by checking for the `type: quiz` key within the `canvas` YAML frontmatter. (If omitted, it will attempt a fallback scan for `:::: {.question` blocks).
+QMD is the **full-featured format** for quizzes. It supports everything JSON does, plus:
+*   **Rich content** — images, formatted text, and multi-paragraph answers
+*   **Two answer styles** — simple checklists or structured div blocks
+*   **Per-answer comments** — inline feedback for each answer choice
+*   **Numeric questions** — student types a number, graded with tolerance (New Quizzes engine)
+*   **Formula questions** — parameterized questions with randomized variables (New Quizzes engine)
+
+The system detects a `.qmd` file as a quiz by checking for the `type: quiz` (or `type: new_quiz`) key in the `canvas` YAML frontmatter. (If omitted, it will attempt a fallback scan for `:::: {.question` blocks).
 
 *   **Structure**: YAML frontmatter (quiz settings) + `:::: {.question}` fenced div blocks.
 *   **Rendering**: All markdown content is rendered to HTML via Quarto and images are uploaded to Canvas automatically.
 
-**Frontmatter** (identical settings as JSON quizzes):
+**Frontmatter:**
 ```yaml
 ---
 canvas:
-  type: quiz
+  type: quiz           # or "new_quiz" for New Quizzes engine
   title: "Quiz Title"
-  quiz_type: practice_quiz
   published: true
   shuffle_answers: true
   show_correct_answers: true
@@ -238,7 +227,7 @@ canvas:
 ---
 ```
 
-**Question Block Reference**:
+#### Question Block Reference
 
 | Element | Syntax | Default |
 |---|---|---|
@@ -310,46 +299,118 @@ canvas:
 > [!TIP]
 > **Indentation is optional.** Content inside `:::: question` and `::: answer` blocks can be indented (e.g., 2 spaces) for readability — the parser handles both indented and non-indented content.
 
-### New Quizzes (`.qmd` and `.json`)
+#### Numeric Questions (New Quizzes Engine)
 
-The system also supports the Canvas **New Quizzes** API (which acts as Assignments in Canvas).
-The question and answer formatting within a New Quiz is **identical** to Classic Quizzes (both Checklist and Rich div answers are supported for Choice, True/False, and Multi-Answer types). 
+Use `type="numeric_question"`. The student types a number and the answer is graded with tolerance. Define correct answers using `.answer` blocks with attributes:
 
-To define a New Quiz, update the frontmatter to use `type: new_quiz` (for `.qmd`), or set `quiz_engine: new` for `.json`.
+*   **Exact match**: `::: {.answer value="200"}`
+*   **Margin of error (Absolute)**: `::: {.answer value="200" margin="5"}` (accepts 195–205)
+*   **Margin of error (Percent)**: `::: {.answer value="200" margin="2" margin_type="percent"}` (accepts 196–204)
+*   **Range**: `::: {.answer start="190" end="210"}`
+*   **Precise response**: `::: {.answer value="200.00" precision="2" precision_type="decimals"}`
 
-**QMD Example:**
-```yaml
----
-canvas:
-  type: new_quiz
-  title: "New Quiz Title"
-  published: true
-  points: 10
-  shuffle_answers: true
-  allowed_attempts: 2
----
-# ... standard question blocks ...
+You can provide multiple valid answers by including multiple `::: {.answer}` blocks.
+
+#### Formula Questions — Parametric (New Quizzes Engine)
+
+Use `type="formula_question"`. This type generates unique variable values for each student attempt based on a math formula. It requires three block types inside the question:
+
+1.  **Variables in question text**: Use `[varname]` placeholders in the text.
+    > [!WARNING]
+    > Do not place variable placeholders inside LaTeX math blocks (e.g. `$[var] = 5$`) as Quarto's rendering engine may interfere with the brackets.
+2.  **Formula configuration**: `::: {.formula}` block with the math expression and grading tolerance.
+3.  **Variable definitions**: `::: {.variable name="varname"}` blocks with range and precision.
+
+**Formula configuration options:**
+
+| Key | Required | Default | Description |
+|---|---|---|---|
+| `formula` | yes | — | Math expression (e.g. `F * 1000 / A`). Supports `+`, `-`, `*`, `/`, `**`, parentheses, and functions like `sin`, `cos`, `sqrt`, `abs`, `pi`. |
+| `margin` | no | `0` | Tolerance applied when grading the student answer |
+| `margin_type` | no | `absolute` | `absolute` or `percent` |
+| `answer_count` | no | `10` | How many pre-computed solution sets to generate and upload |
+| `distribution` | no | `random` | `random` — uniform random sampling within each variable's range. `even` — linearly spaced values covering the full range (ensures full coverage). |
+
+**Example:**
+```markdown
+:::: {.question type="formula_question" name="Stress Calc" points_possible="10"}
+
+A beam has area A = [A] mm² and force F = [F] N. 
+Compute the stress.
+
+::: {.formula}
+formula: F / A
+margin: 2
+margin_type: percent
+answer_count: 5
+distribution: even
+:::
+
+::: {.variable name="F"}
+min: 10
+max: 100
+precision: 0
+:::
+
+::: {.variable name="A"}
+min: 50
+max: 500
+precision: 0
+:::
+
+::::
 ```
 
-**JSON Example:**
-```json
-{
-  "canvas": {
-    "quiz_engine": "new",
-    "title": "New Quiz Title",
-    "published": true
-  },
-  "questions": [ ... ]
-}
-```
+> [!NOTE]
+> The sync tool evaluates the formula locally via the `asteval` Python package before uploading pre-computed solutions to Canvas. Canvas does **not** calculate the formula on its own — it picks one of the uploaded datasets per student attempt.
 
-**Supported Settings for New Quizzes:**
-*   `points` (optional, float) - total points possible for the quiz.
-*   `due_at`, `unlock_at`, `lock_at` (optional, ISO 8601 String)
-*   `shuffle_answers`, `shuffle_questions` (optional, Boolean)
-*   `time_limit` (optional, seconds) - Note: New quizzes uses seconds whereas Classic uses minutes.
-*   `allowed_attempts` (optional, Integer)
-*   `omit_from_final_grade` (optional, Boolean) — do not count towards the final grade
+### Choosing Classic vs New Quiz Engine
+
+Both JSON and QMD quizzes can target either the **Classic** or **New** quiz engine in Canvas. The engine is selected via a single frontmatter key:
+
+| | Classic Quizzes | New Quizzes |
+|---|---|---|
+| **QMD** | `type: quiz` | `type: new_quiz` |
+| **JSON** | *(default, no extra key)* | `"quiz_engine": "new"` |
+
+**Key differences:**
+
+| | Classic | New |
+|---|---|---|
+| Canvas representation | Quiz object | Assignment (quiz-backed) |
+| Time limit unit | **Minutes** | **Seconds** |
+| Numeric & Formula questions | Not supported | ✅ Supported (QMD only) |
+| `quiz_type` setting | ✅ (practice, graded, survey) | Not applicable |
+| `omit_from_final_grade` | Not applicable | ✅ Supported |
+| Modifying active quizzes | Unpublish → Modify → Republish | Direct update |
+
+> [!WARNING]
+> **Modifying Active Classic Quizzes**
+> The sync tool uses an **"Unpublish → Modify → Republish"** workflow for Classic Quizzes.
+> *   **If no students have started**: Seamless — the quiz briefly flips to "Draft" mode, updates, and re-publishes.
+> *   **If students have submissions**: Canvas **blocks** unpublishing. The tool updates questions in-place, but you will need to click **"Save It Now"** in Canvas to regenerate the quiz snapshot. The tool prints a direct link for convenience.
+>     *   *This is a known Canvas API limitation.*
+
+### Quiz Settings Reference
+
+Settings shared by both formats and both engines (specified in `canvas` frontmatter or JSON `canvas` block):
+
+| Setting | Type | Notes |
+|---|---|---|
+| `title` | String | Quiz title |
+| `published` | Boolean | Default: `false` |
+| `due_at` | ISO 8601 String | Removing clears the date in Canvas |
+| `unlock_at` | ISO 8601 String | Removing clears the date in Canvas |
+| `lock_at` | ISO 8601 String | Removing clears the date in Canvas |
+| `shuffle_answers` | Boolean | Randomize answer order |
+| `allowed_attempts` | Integer | Use `-1` for unlimited |
+| `time_limit` | Integer | **Minutes** (Classic) or **Seconds** (New) |
+| `description_file` | String | Path to `.qmd` description (Classic only) |
+| `show_correct_answers` | Boolean | Classic only |
+| `quiz_type` | String | Classic only: `practice_quiz`, `assignment`, `graded_survey`, `survey` |
+| `points` | Float | New Quizzes only: total points possible |
+| `shuffle_questions` | Boolean | New Quizzes only |
+| `omit_from_final_grade` | Boolean | New Quizzes only |
 
 ### Solo Files (PDFs, ZIPs, etc.)
 *   **Format**: `NN_Name.ext` (where `.ext` is NOT `.qmd` or `.json`).
