@@ -30,6 +30,8 @@ class BaseHandler(ABC):
         item_type = item_dict.get('type')
         content_id = item_dict.get('content_id')
         page_url = item_dict.get('page_url')
+        external_url = item_dict.get('external_url')
+        new_tab = item_dict.get('new_tab', False)
         published = item_dict.get('published') # Optional, might be None
         
         # Validate indent
@@ -49,6 +51,8 @@ class BaseHandler(ABC):
             elif item_type == 'SubHeader' and item.title == title:
                 match = True
             elif item_type in ['Assignment', 'Quiz', 'File'] and item.content_id == content_id:
+                match = True
+            elif item_type == 'ExternalUrl' and getattr(item, 'external_url', None) == external_url:
                 match = True
             
             if match:
@@ -88,6 +92,10 @@ class BaseHandler(ABC):
                 payload['content_id'] = content_id
             if page_url:
                 payload['page_url'] = page_url
+            if external_url:
+                payload['external_url'] = external_url
+            if new_tab:
+                payload['new_tab'] = True
             # Note: Canvas API ignores 'published' during create, so we don't include it here
                 
             new_item = module.create_module_item(module_item=payload)

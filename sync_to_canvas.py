@@ -14,6 +14,7 @@ from handlers.quiz_handler import QuizHandler
 from handlers.new_quiz_handler import NewQuizHandler
 from handlers.calendar_handler import CalendarHandler
 from handlers.subheader_handler import SubHeaderHandler
+from handlers.external_link_handler import ExternalLinkHandler
 from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name
 
 # --- Configuration ---
@@ -92,6 +93,7 @@ def main():
         AssignmentHandler(),
         NewQuizHandler(),
         QuizHandler(),
+        ExternalLinkHandler(),
         SubHeaderHandler()
     ]
     
@@ -217,8 +219,8 @@ def main():
              # Delegation Logic
              handled = False
              for handler in handlers:
-                # Skip SubHeaders in root (doesn't make sense without a module)
-                if isinstance(handler, SubHeaderHandler):
+                # Skip SubHeaders and ExternalLinks in root (doesn't make sense without a module)
+                if isinstance(handler, (SubHeaderHandler, ExternalLinkHandler)):
                     continue
 
                 if handler.can_handle(item_path):

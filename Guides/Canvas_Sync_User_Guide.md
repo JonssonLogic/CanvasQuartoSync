@@ -13,6 +13,7 @@
   - [Quarto Pages (.qmd)](#quarto-pages-qmd)
   - [Quarto Assignments (.qmd)](#quarto-assignments-qmd)
   - [Text Headers (.qmd)](#text-headers-qmd)
+  - [External Links (.qmd)](#external-links-qmd)
   - [Quizzes (.json)](#quizzes-json)
   - [QMD Quizzes (.qmd)](#qmd-quizzes-qmd)
   - [New Quizzes (.qmd and .json)](#new-quizzes-qmd-and-json)
@@ -161,6 +162,23 @@ DailyWork/
       indent: 0            # (optional)
     ---
     ```
+
+### External Links (`.qmd`)
+*   Used to add external website links as module items.
+*   **Locality**: Place in a module folder. External links in the root are ignored.
+*   **Metadata**:
+    ```yaml
+    ---
+    title: "Canvas API Documentation"
+    canvas:
+      type: external_url
+      url: "https://canvas.instructure.com/doc/api/"
+      published: true      # (optional, Default: false)
+      indent: 0            # (optional, 0-5)
+      new_tab: true        # (optional, Default: false) — open link in a new browser tab
+    ---
+    ```
+*   **Note**: The body content of the QMD file is ignored — only the frontmatter is used.
 
 ### Quizzes — JSON Format (`.json`)
 

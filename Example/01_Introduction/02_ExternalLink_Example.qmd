@@ -1,0 +1,9 @@
+---
+title: "Canvas LMS REST API Documentation"
+canvas:
+  type: external_url
+  url: "https://canvas.instructure.com/doc/api/"
+  published: true
+  indent: 0
+  new_tab: true
+---

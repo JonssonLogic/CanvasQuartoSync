@@ -28,6 +28,7 @@ CanvasQuartoSync/
 │   ├── qmd_quiz_parser.py     # Parser for QMD quiz format (fenced-div syntax)
 │   ├── calendar_handler.py    # schedule.yaml → Canvas calendar events
 │   ├── subheader_handler.py   # .md/.qmd → Module SubHeader (visual separator)
+│   ├── external_link_handler.py # .qmd → Module External URL link
 │   └── content_utils.py       # Shared: image upload, cross-linking, sync map, pruning
 ├── Guides/
 │   ├── Canvas_Sync_User_Guide.md   # Full user-facing documentation
@@ -100,6 +101,7 @@ All handlers inherit `BaseHandler` (ABC):
 | `.qmd` | `page` | `PageHandler` | Wiki Page |
 | `.qmd` | `assignment` | `AssignmentHandler` | Assignment |
 | `.qmd` | `subheader` | `SubHeaderHandler` | Module Text Header |
+| `.qmd` | `external_url` | `ExternalLinkHandler` | Module External URL |
 | `.qmd` | `new_quiz` | `NewQuizHandler` | Quiz (New Quizzes) |
 | `.qmd` | *(contains `:::: {.question` blocks)* | `QuizHandler` | Quiz (Classic) |
 | `.json` | *(has `quiz_engine: new`)* | `NewQuizHandler` | Quiz (New Quizzes) |
