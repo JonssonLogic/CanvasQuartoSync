@@ -1,5 +1,6 @@
 # Environment & Secrets
 .env
+.testing
 # course_id.txt
 token.txt
 # schedule.yaml

@@ -50,8 +50,13 @@ class BaseHandler(ABC):
                 match = True
             elif item_type == 'SubHeader' and item.title == title:
                 match = True
-            elif item_type in ['Assignment', 'Quiz', 'File'] and item.content_id == content_id:
-                match = True
+            elif item_type in ['Assignment', 'Quiz', 'File']:
+                try:
+                    if int(item.content_id) == int(content_id):
+                        match = True
+                except (ValueError, TypeError):
+                    if str(item.content_id) == str(content_id):
+                        match = True
             elif item_type == 'ExternalUrl' and getattr(item, 'external_url', None) == external_url:
                 match = True
             

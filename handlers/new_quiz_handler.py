@@ -168,18 +168,44 @@ class NewQuizHandler(BaseHandler):
         chunks = []  # list of (key, markdown_text)
         
         for qi, q in enumerate(questions_data):
+            is_formula = q.get('question_type') == 'formula_question'
+            formula_vars = []
+            if is_formula:
+                variables_list = q.get('variables', [])
+                for v in variables_list:
+                    if 'name' in v and v['name']:
+                        formula_vars.append(re.escape(v['name']))
+            
+            var_pattern = None
+            if formula_vars:
+                # Match [var] where var is exactly one of the defined variable names
+                var_regex = r'\[(' + '|'.join(formula_vars) + r')\]'
+                var_pattern = re.compile(var_regex)
+
             if q.get('question_text'):
-                chunks.append((f"q{qi}_text", q['question_text']))
+                text = q['question_text']
+                if var_pattern:
+                    text = var_pattern.sub(r'QVAR_START_\1_QVAR_END', text)
+                chunks.append((f"q{qi}_text", text))
             
             for ai, ans in enumerate(q.get('answers', [])):
                 if ans.get('answer_html'):
-                    chunks.append((f"q{qi}_a{ai}", ans['answer_html']))
+                    text = ans['answer_html']
+                    if var_pattern:
+                        text = var_pattern.sub(r'QVAR_START_\1_QVAR_END', text)
+                    chunks.append((f"q{qi}_a{ai}", text))
                 elif ans.get('answer_text'):
-                    chunks.append((f"q{qi}_a{ai}", ans['answer_text']))
+                    text = ans['answer_text']
+                    if var_pattern:
+                        text = var_pattern.sub(r'QVAR_START_\1_QVAR_END', text)
+                    chunks.append((f"q{qi}_a{ai}", text))
             
             for comment_key in ['correct_comments', 'incorrect_comments']:
                 if q.get(comment_key):
-                    chunks.append((f"q{qi}_{comment_key}", q[comment_key]))
+                    text = q[comment_key]
+                    if var_pattern:
+                        text = var_pattern.sub(r'QVAR_START_\1_QVAR_END', text)
+                    chunks.append((f"q{qi}_{comment_key}", text))
         
         if not chunks:
             return questions_data
@@ -239,6 +265,9 @@ class NewQuizHandler(BaseHandler):
                         rendered_map[key] = match.group(1).strip()
                     else:
                         rendered_map[key] = processed_chunks[key]
+                        
+                    # Unescape formula variables and convert to New Quizzes syntax
+                    rendered_map[key] = re.sub(r'QVAR_START_([a-zA-Z0-9_-]+)_QVAR_END', r'`\1`', rendered_map[key])
             else:
                 print(f"    ! Warning: Quarto render failed, using processed markdown.")
                 rendered_map = processed_chunks
