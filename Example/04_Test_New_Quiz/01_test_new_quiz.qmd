@@ -1,0 +1,15 @@
+---
+title: "Test New Quiz"
+canvas:
+  type: new_quiz
+  published: true
+---
+
+:::: {.question}
+What is this an image of?
+
+![test_image](../Example/graphics/placeholder.png)
+
+- [x] A placeholder
+- [ ] A dog
+::::

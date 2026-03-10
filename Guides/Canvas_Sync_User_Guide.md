@@ -531,4 +531,9 @@ The first time a file is synced, the system records its unique **Canvas ID** and
 *   **Preserving Data**: Because it updates the existing object by ID, student submissions, grades, and quiz results are always preserved.
 
 > [!CAUTION]
-> **Do not delete `.canvas_sync_map.json`**. If this file is lost, the system will fall back to "Matching by Title". If you then rename a title, it will likely create a duplicate object in Canvas.
+> **Do not delete `.canvas_sync_map.json`**. If this file is lost, the system will fall back to "Matching by Title" for all content items. If you then rename a title, it will likely create a duplicate object in Canvas.
+
+### Troubleshooting Missing Assets or Duplicates
+If you manually delete an image or file on Canvas that was previously synced, the sync tool won't re-upload it automatically because the local file's `mtime` hasn't changed.
+*   **To force a re-upload of a specific asset**: Open the `.canvas_sync_map.json` file, find the block for that specific asset (e.g., `"images/my_chart.png"`), and delete it. Then make a tiny change to the `.qmd` file linking it (like adding a space) and run the sync. The tool will upload the asset fresh.
+*   **To force a full course re-sync**: Delete the `.canvas_sync_map.json` file entirely. The tool will safely adopt existing modules, pages, assignments, and quiz questions by matching their exact titles/names. It will not create duplicates as long as you haven't renamed items locally. It will also clean up any duplicate quiz questions that share the exact same name.

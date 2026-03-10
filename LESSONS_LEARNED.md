@@ -38,6 +38,7 @@ The New Quizzes engine uses a **completely separate API** from Classic Quizzes. 
 - **Quizzes are assignment-backed** — creating a New Quiz also creates an Assignment. Module items must use `type: 'Assignment'`, not `type: 'Quiz'`.
 - **Time limits are in seconds**, not minutes (unlike Classic Quizzes).
 - **The `properties` field** (even if empty `{}`) should be included in item payloads — the official API examples always include it.
+- **The Question Name `title` is inside `entry`** — the New Quizzes API returns questions wrapped in an `entry` object, so you must get the title via `item['entry']['title']` when matching existing items (e.g. `item_body` usually doesn't have it).
 - **Formulas are NOT evaluated by Canvas server-side** — when creating a Formula question, the API requires `generated_solutions` (an array of pre-computed outputs for randomized inputs). The sync tool must bundle a safe math lexer/parser (`asteval`) to randomly generate these inputs, calculate the result, and upload the fixed datasets. Canvas then blindly picks one of the pre-computed arrays for each student attempt.
 - **`scoring_data.value` must be a raw object/array for numeric and formula** — despite Canvas returning a 422 "must be string or boolean" when `scoring_algorithm` is wrong, the correct combination is `scoring_algorithm: "None"` with a raw object (formula) or array (numeric). Sending `json.dumps()` passes API validation but causes the Canvas quiz builder to fail rendering. When in doubt, fetch items from a manually-created quiz via `GET /items` to see the expected format.
 - **`scoring_algorithm` values for New Quizzes** — `"Equivalence"` for choice/true-false, `"AllOrNothing"` for multi-answer, `"None"` for essay/file-upload/numeric/formula. Using the wrong algorithm can cause 422 errors or rendering failures in the Canvas quiz builder.
@@ -53,6 +54,7 @@ We use the file's **last-modified time** (`os.path.getmtime()`) rather than cont
 
 ### Why Always Run `process_content()` Even When Skipping Render
 `process_content()` populates the global `ACTIVE_ASSET_IDS` set, which is used by `prune_orphaned_assets()` at the end of the sync. If we skipped `process_content()` for unchanged files, orphan cleanup would accidentally delete assets that are still in use.
+**Crucial for Quizzes:** Quizzes and Subheaders only run Quarto *if* `needs_update` is true. To track their assets we now run `process_content()` manually *before* the skip check and **deliberately discard** the generated HTML. This populates `ACTIVE_ASSET_IDS` without mutating internal dictionaries (which would trigger false updates).
 
 ### Sync Map (`.canvas_sync_map.json`) for ID Persistence
 We track `local_path → (canvas_id, mtime)` in a JSON file so that:
@@ -76,6 +78,9 @@ When the project lives inside a Dropbox/OneDrive folder, the sync service can lo
 
 ### Always Fetch Before Create-or-Update
 When implementing update logic for any Canvas object, **always try to fetch the existing object** before deciding to create a new one — even if the local file has changed. A common bug pattern: putting the "fetch existing" call inside the "skip if unchanged" branch means that when the file *does* change, the handler thinks no object exists and creates a duplicate. The fetch must happen unconditionally whenever a sync map ID is available.
+
+### Handling Duplicate Items on Canvas
+When matching objects like Quiz Questions that don't have UUIDs, map the existing items from Canvas into a dictionary where the `key` is the title/name and the `value` is a **list** of matching items. That way, if multiple identical duplicates already exist on Canvas (e.g. from an aborted sync), you can adopt the first one and comprehensively delete all the remaining extras during cleanup. Simply matching 1-to-1 via dictionary strings will silently ignore extras and leave overlapping duplicates intact.
 
 ---
 

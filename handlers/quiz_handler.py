@@ -102,8 +102,19 @@ class QuizHandler(BaseHandler):
         published = canvas_meta.get('published', False)
         indent = canvas_meta.get('indent', 0)
         
-        # 1b. Process description_file if provided - MOVED INSIDE needs_update
+        # 1b. Process Content (ALWAYS, to track ACTIVE_ASSET_IDS for pruning)
+        # We discard the returned HTML because we only want the side-effect of 
+        # registering active assets to prevent them from being orphaned if no update is needed.
         base_path = os.path.dirname(file_path)
+        _ = process_content(raw_content if is_qmd else json.dumps(data), base_path, course, content_root=content_root)
+
+        # Process description_file if provided to track its assets too
+        if 'description_file' in canvas_meta:
+             desc_file_path = os.path.join(base_path, canvas_meta['description_file'])
+             if os.path.exists(desc_file_path):
+                 with open(desc_file_path, 'r', encoding='utf-8') as df:
+                     desc_content = df.read()
+                 _ = process_content(desc_content, base_path, course, content_root=content_root)
 
 
         # 2. Find/Create Quiz
@@ -240,12 +251,19 @@ class QuizHandler(BaseHandler):
             # 3. Add/Update Questions
             print(f"    -> Syncing {len(questions_data)} questions...")
             existing_questions = list(quiz_obj.get_questions())
-            existing_q_map = {q.question_name: q for q in existing_questions}
+            
+            existing_q_map = {}
+            for q in existing_questions:
+                if q.question_name not in existing_q_map:
+                    existing_q_map[q.question_name] = []
+                existing_q_map[q.question_name].append(q)
             
             for q_data in questions_data:
                 q_name = q_data.get('question_name')
-                if q_name in existing_q_map:
-                    existing_q = existing_q_map[q_name]
+                
+                # Pop the first matching existing question to adopt
+                if q_name and q_name in existing_q_map and len(existing_q_map[q_name]) > 0:
+                    existing_q = existing_q_map[q_name].pop(0)
                     
                     # Safer Comparison logic
                     q_needs_update = False
@@ -265,6 +283,15 @@ class QuizHandler(BaseHandler):
                 else:
                     print(f"    + Adding new question: {q_name}")
                     quiz_obj.create_question(question=q_data)
+
+            # 3b. Cleanup remaining orphaned or duplicated items on Canvas
+            for q_name, items_list in existing_q_map.items():
+                for existing_q in items_list:
+                    print(f"    - Deleting orphaned/duplicate question from Canvas: {q_name}")
+                    try:
+                        existing_q.delete()
+                    except Exception as e:
+                        print(f"      ! Failed to delete question: {e}")
         else:
             # Smart Sync skipped update, but we already have quiz_obj
             pass

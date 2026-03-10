@@ -152,6 +152,7 @@ quarto             # External CLI — must be in PATH
 - JSON format: parsed directly in `QuizHandler.sync()`.
 - QMD format: parsed by `qmd_quiz_parser.py → parse_qmd_quiz()`, then rendered via `_render_qmd_questions()` batch Quarto call.
 - Both formats support the same Canvas quiz settings.
+- **Deduplication matching logic**: Canvas questions do not have a client-assigned ID. To match a local question with an existing Canvas question (and gracefully recover missing caches without duplicating), handlers pull all questions from Canvas, map them by `question_name` into arrays. As local questions are synced, they pop from the list. What's left over gets aggressively deleted from Canvas.
 
 ### Debugging sync issues
 - Check `.canvas_sync_map.json` in the content root for ID mappings.

@@ -74,6 +74,12 @@ class NewQuizHandler(BaseHandler):
         needs_update = True
         quiz_obj = None
 
+        # 1c. Process Content (ALWAYS, to track ACTIVE_ASSET_IDS for pruning)
+        # We discard the returned HTML because we only want the side-effect of 
+        # registering active assets. We don't want to mutate questions_data prematurely.
+        base_path = os.path.dirname(file_path)
+        _ = process_content(raw_content if is_qmd else json.dumps(data), base_path, course, content_root=content_root)
+
         # Check sync map for existing quiz
         if existing_id and isinstance(map_entry, dict):
             if map_entry.get('mtime') == current_mtime:
@@ -327,6 +333,17 @@ class NewQuizHandler(BaseHandler):
         # Load existing items from Canvas
         existing_items_resp = client.list_items(course_id, assignment_id)
         existing_items = existing_items_resp if isinstance(existing_items_resp, list) else []
+        
+        # Map existing items by their entry's title/question_name (if available)
+        # New Quizzes API returns items with an 'entry' dict that contains the 'title'
+        existing_q_map = {}
+        for item in existing_items:
+            entry = item.get('entry', {})
+            q_name = entry.get('title')
+            if q_name:
+                if q_name not in existing_q_map:
+                    existing_q_map[q_name] = []
+                existing_q_map[q_name].append(item)
 
         # Load tracked item IDs from sync map
         tracked_item_ids = {}
@@ -340,7 +357,21 @@ class NewQuizHandler(BaseHandler):
             
             item_data = self._transform_question(q_data, i + 1)
             
+            # 1. Try to match by tracked ID first (fastest/safest)
             item_id = tracked_item_ids.get(q_name)
+            
+            # 2. If no tracked ID, try to match by name (fallback for missing cache)
+            if not item_id and q_name in existing_q_map and len(existing_q_map[q_name]) > 0:
+                 # Take the first matching item to adopt
+                 adopted_item = existing_q_map[q_name].pop(0)
+                 item_id = adopted_item.get('id')
+                 print(f"    -> Adopted existing question matching name: {q_name}")
+            
+            # 3. If we still have an item_id but it's in the existing map under this name,
+            #    we should remove it from the map so it isn't deleted during cleanup.
+            if item_id and q_name in existing_q_map:
+                 # Filter out the item we're keeping
+                 existing_q_map[q_name] = [item for item in existing_q_map[q_name] if item.get('id') != item_id]
             
             if item_id:
                 # Update existing
@@ -357,6 +388,15 @@ class NewQuizHandler(BaseHandler):
                 print(f"    + Adding new question: {q_name}")
                 created_item = client.create_item(course_id, assignment_id, item_data)
                 new_tracked_item_ids[q_name] = str(created_item['id'])
+                
+        # 4. Cleanup remaining orphaned or duplicated items on Canvas
+        for q_name, items_list in existing_q_map.items():
+             for item in items_list:
+                  print(f"    - Deleting orphaned/duplicate question from Canvas: {q_name}")
+                  try:
+                      client.delete_item(course_id, assignment_id, item['id'])
+                  except Exception as e:
+                      print(f"      ! Failed to delete question: {e}")
                 
         # Save map
         if content_root:
