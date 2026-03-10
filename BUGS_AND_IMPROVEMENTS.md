@@ -61,3 +61,26 @@ _Implemented via local evaluation utilizing `asteval` to precalculate and upload
 - Requires defining variables (name, min, max, precision) and a formula string in the question metadata.
 - The API uses `generated_solutions` — pre-computed answer sets that must be calculated and included in the payload.
 - A new frontmatter/JSON syntax would be needed to define variables and formulas in a user-friendly way.
+- 
+---
+
+### 5. Canvas Asset Removal Tool
+Develop a dedicated utility or CLI flag to remove assets from Canvas that were previously synced.
+
+**Details**:
+- The tool should use the `.canvas_sync_map.json` file to identify items (Pages, Assignments, Quizzes, Files) that it "owns" in the Canvas course.
+- Useful for cleaning up a course after a major restructuring or when wanting to start fresh without manually deleting dozens of items in the Canvas UI.
+- Should include a `--dry-run` option to show what would be deleted.
+
+---
+
+### 6. One-line Install Command
+Create a simplified installation script for the entire system, similar to [python-dev-installer](https://github.com/cenmir/python-dev-installer).
+
+**Enhancement**:
+- A single terminal command (e.g., `curl ... | bash` or a PowerShell equivalent) that:
+    - Checks for Python and Quarto CLI.
+    - Creates a virtual environment.
+    - Installs all necessary pip dependencies.
+    - Sets up the basic directory structure if it doesn't exist.
+- Significantly lowers the barrier to entry for new users/contributors.

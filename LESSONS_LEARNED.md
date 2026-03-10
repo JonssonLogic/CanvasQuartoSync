@@ -88,6 +88,9 @@ Quarto wraps the rendered body in `<main id="quarto-document-content">`. We extr
 ### Batch Rendering for QMD Quizzes
 QMD quizzes can have many questions, each with markdown and LaTeX. Rendering them individually would invoke Quarto N times. Instead, `_render_qmd_questions()` batches all question/answer content into a **single** temp `.qmd` file using `<div id="qchunk-N">` markers, renders once, then splits the output back into individual pieces. This is a significant performance optimization.
 
+### Query String Mangling
+Quarto/Pandoc appends extensions (e.g., `.png`) to URLs missing them. For Canvas links with verifier tokens, this appends the extension to the end of the query string, breaking the token. The sync tool prevents this by inserting the extension directly before the `?` (e.g., `.../download.png?verifier=...`).
+
 ---
 
 ## QMD Quiz Format Notes
