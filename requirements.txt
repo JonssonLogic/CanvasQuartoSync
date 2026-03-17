@@ -1,0 +1,6 @@
+canvasapi
+requests
+python-frontmatter
+PyYAML
+asteval
+rich

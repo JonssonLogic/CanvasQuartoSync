@@ -74,13 +74,7 @@ Develop a dedicated utility or CLI flag to remove assets from Canvas that were p
 
 ---
 
-### 6. One-line Install Command
-Create a simplified installation script for the entire system, similar to [python-dev-installer](https://github.com/cenmir/python-dev-installer).
+### ~~6. One-line Install Command~~ (Implemented)
+A PowerShell one-liner installs the entire system interactively.
 
-**Enhancement**:
-- A single terminal command (e.g., `curl ... | bash` or a PowerShell equivalent) that:
-    - Checks for Python and Quarto CLI.
-    - Creates a virtual environment.
-    - Installs all necessary pip dependencies.
-    - Sets up the basic directory structure if it doesn't exist.
-- Significantly lowers the barrier to entry for new users/contributors.
+_Implemented as `install.ps1` — checks for Python/Quarto/Git, clones the repo, creates a venv at `~/venvs/canvas_quarto_env`, installs packages from `requirements.txt`, and walks the user through Canvas API credential setup. Run via `irm .../install.ps1 | iex`._

@@ -50,6 +50,18 @@ Allows you to manage your entire course as a local code repository (Git) while k
 
 ## 📦 Installation
 
+### Quick Install (Windows PowerShell)
+
+Run this single command in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/JonssonLogic/CanvasQuartoSync/main/install.ps1 | iex
+```
+
+This will interactively check prerequisites, clone the repo, create a virtual environment at `~/venvs/canvas_quarto_env`, install all dependencies, and help you configure your Canvas API credentials.
+
+### Manual Install
+
 1.  Clone the repository:
     ```bash
     git clone https://github.com/JonssonLogic/CanvasQuartoSync.git
@@ -58,7 +70,7 @@ Allows you to manage your entire course as a local code repository (Git) while k
 
 2.  Install dependencies:
     ```bash
-    pip install canvasapi python-frontmatter PyYAML asteval rich
+    pip install -r requirements.txt
     ```
 
 ## ⚙️ Configuration

@@ -41,6 +41,8 @@ CanvasQuartoSync/
 ├── README.md                  # GitHub readme
 ├── DISCLAIMER.md
 ├── LICENSE                    # MIT
+├── requirements.txt           # Python package dependencies
+├── install.ps1                # One-line installer script (PowerShell)
 └── run_sync_here.bat          # Portable launcher (copy to content folder, double-click)
 ```
 
@@ -121,11 +123,16 @@ Each handler checks the file's `mtime` against the value stored in `.canvas_sync
 
 ## Dependencies
 
-The project uses a **virtual environment** at `.venv/` that uses "uv". Always activate it before running:
+All Python dependencies are listed in `requirements.txt` at the project root. The project uses a **virtual environment** managed with "uv".
+
+**Quick setup** (Windows): `irm https://raw.githubusercontent.com/JonssonLogic/CanvasQuartoSync/main/install.ps1 | iex`
+
+**Manual setup**: activate the venv and install:
 
 ```powershell
 .venv\Scripts\activate      # Windows
 # source .venv/bin/activate  # macOS/Linux
+uv pip install -r requirements.txt
 ```
 
 ```
