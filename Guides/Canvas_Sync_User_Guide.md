@@ -11,6 +11,7 @@
   - [Content Files](#content-files)
 - [3. Content Types & Metadata](#3-content-types--metadata)
   - [Quarto Pages (.qmd)](#quarto-pages-qmd)
+  - [Study Guides (.qmd)](#study-guides-qmd)
   - [Quarto Assignments (.qmd)](#quarto-assignments-qmd)
   - [Text Headers (.qmd)](#text-headers-qmd)
   - [External Links (.qmd)](#external-links-qmd)
@@ -136,6 +137,90 @@ DailyWork/
     ---
     ```
 
+### Study Guides (`.qmd`)
+
+A study guide is rendered to **both** a Canvas page (HTML) and a downloadable PDF, synced from a single `.qmd` file.
+
+There are two modes: **preprocessed** (recommended) and **manual**.
+
+#### Preprocessed Mode (`preprocess: true`)
+
+Write a **minimal QMD with only plain markdown** — no LaTeX, no raw HTML, no `content-visible` blocks. The `qmd_preprocessor.py` automatically generates:
+
+*   **PDF front page** from `config.toml` (course name, code, credits, semester) with JU brand colors
+*   **Syllabus link** (HTML-only) derived from the course code
+*   **JU Canvas CSS** injection (brand colors for headings, links, tables)
+*   **Dual-format tables**: markdown tables for HTML, styled LaTeX longtables for PDF
+*   **Grading criteria**: a 5-column table (ILO/Fail/3/4/5) becomes collapsible `<details>` cards in HTML
+*   **Teaching staff**: a 4-column table (Name/Role/Image/Link) becomes photo cards in HTML, plain table in PDF
+*   **Research connection**: wrapped in a collapsible `<details>` for HTML
+
+**Metadata** (this is all you need in the frontmatter):
+    ```yaml
+    ---
+    title: "Course PM — Course Name (CODE)"
+    canvas:
+      type: study_guide
+      preprocess: true
+      published: true
+      pdf:
+        target_module: "Course Documents"
+        filename: "KursPM.pdf"
+        title: "Course PM (PDF)"
+        published: true
+    ---
+    ```
+
+**Required `config.toml` fields:**
+    ```toml
+    course_name = "Mechatronics"
+    course_code = "TMRK16"
+    credits = "7.5 ECTS"
+    semester = "Spring 2026"
+    language = "english"       # or "swedish"
+    ```
+
+**Required `_quarto.yml`** in the project root — provides LaTeX packages and JU color definitions for PDF rendering. See [Example/_quarto.yml](../Example/_quarto.yml).
+
+**Special sections** (detected by `# Heading` name):
+
+| Section heading | Transformation |
+|:----------------|:---------------|
+| `# Grading Criteria` | Table → collapsible cards (HTML) + longtable (PDF) |
+| `# Teaching Staff` | Table → photo cards (HTML) + simple table (PDF) |
+| `# Research Connection` | Content → collapsible `<details>` (HTML) |
+| Any section with a table | Table → markdown (HTML) + longtable (PDF) |
+
+**Teaching Staff table format:**
+    ```markdown
+    | Name | Role | Image | Link |
+    |:-----|:-----|:------|:-----|
+    | Jane Doe | Course responsible | jane.png | https://example.com/jane |
+    ```
+
+**Standalone testing** (without Canvas sync):
+    ```bash
+    python handlers/qmd_preprocessor.py input.qmd --config config.toml -o output.qmd
+    quarto render output.qmd --to html
+    quarto render output.qmd --to pdf
+    ```
+
+**JU Brand Colors** — from the [official graphic manual (2023)](https://ju.se/download/18.3bf3a08918eeceec0f24e843/1714479504941/Grafisk%20manual%202023_EN_web.pdf):
+
+| Colour       | HEX       | RGB            | Usage             |
+|:-------------|:----------|:---------------|:------------------|
+| **Purple**   | `#961B81` | 150, 27, 129   | Identity colour — links, accents, card borders |
+| **Dark Blue**| `#003865` | 0, 56, 101     | Headings (H1/H2), table headers, summaries |
+| **Turquoise**| `#55AAA7` | 85, 170, 167   | Complementary accent |
+| **Yellow**   | `#FFB500` | 255, 181, 0    | Complementary accent |
+| **Grey**     | `#797979` | 121, 121, 121  | Complementary accent |
+
+#### Manual Mode (without preprocessor)
+
+If `preprocess` is not set to `true`, you manage dual-format content yourself using `::: {.content-visible when-format="..."}` blocks, raw HTML, and LaTeX. The handler renders the QMD as-is.
+
+*   See the [Example study guide](../Example/01_Introduction/09_Study_Guide.qmd) for a working preprocessed example.
+
 ### Quarto Assignments (`.qmd`)
 *   **Metadata**:
     ```yaml
@@ -188,76 +273,6 @@ DailyWork/
     ---
     ```
 *   **Note**: The body content of the QMD file is ignored — only the frontmatter is used.
-
-### Study Guide — Dual Output (`.qmd`)
-*   A single QMD file that produces **two Canvas artifacts**: an **HTML Canvas Page** (student-facing study guide) and a **PDF** (standardized regulatory document uploaded to a separate module).
-*   **Locality**: Place in a module folder like any other content file.
-*   **Prerequisites**: Requires a LaTeX distribution for PDF rendering. Install with `quarto install tinytex`.
-*   **Conditional Content**: Use Quarto's built-in conditional blocks to control what appears in each output:
-    *   `::: {.content-visible when-format="html"}` — only in the Canvas Page
-    *   `::: {.content-visible when-format="pdf"}` — only in the PDF
-    *   Content outside these blocks appears in **both** outputs
-*   **Metadata**:
-    ```yaml
-    ---
-    title: "Course Study Guide"
-    format:
-      html:
-        page-layout: article
-      pdf:
-        documentclass: article
-        geometry: "margin=1in"
-    canvas:
-      type: study_guide
-      published: true           # (optional, Default: false) — Canvas Page published state
-      indent: 0                 # (optional, 0-5)
-      pdf:
-        target_module: "Regulatory Documents"   # REQUIRED — module name for the PDF
-        filename: "KursPM.pdf"                  # (optional — default: page title + ".pdf") — filename on Canvas
-        title: "Study Guide (Regulatory)"       # (optional — default: filename) — display title in module
-        published: true                         # (optional, Default: false) — PDF module item published state
-    ---
-    ```
-*   **Behavior**:
-    1.  The QMD is rendered **twice** — once to HTML (Canvas Page) and once to PDF.
-    2.  The HTML page is synced to Canvas and added to the module where the file lives.
-    3.  The PDF is uploaded to the `synced-files` folder and added as a File item in the module specified by `canvas.pdf.target_module`. If the module doesn't exist, it is created automatically.
-    4.  If PDF rendering fails (e.g., LaTeX not installed), the HTML page is still synced.
-*   **Example**:
-    ```markdown
-    ---
-    title: "Welcome to the Course"
-    format:
-      html:
-        page-layout: article
-      pdf:
-        documentclass: article
-    canvas:
-      type: study_guide
-      published: true
-      pdf:
-        target_module: "Course Documents"
-        filename: "KursPM.pdf"
-        title: "Study Guide (Official)"
-        published: true
-    ---
-
-    ## Welcome
-    This section appears in **both** the Canvas page and the PDF.
-
-    ::: {.content-visible when-format="html"}
-    ## Interactive Resources
-    Check out the [assignment](../02_Module/01_Assignment.qmd) to get started!
-    :::
-
-    ::: {.content-visible when-format="pdf"}
-    ## Regulatory Information
-    This standardized section only appears in the PDF document.
-
-    Course code: ABC-123
-    Credits: 7.5 ECTS
-    :::
-    ```
 
 ### Quizzes — JSON Format (`.json`)
 
