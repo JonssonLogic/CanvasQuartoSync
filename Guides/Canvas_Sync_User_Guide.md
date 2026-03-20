@@ -189,6 +189,76 @@ DailyWork/
     ```
 *   **Note**: The body content of the QMD file is ignored — only the frontmatter is used.
 
+### Study Guide — Dual Output (`.qmd`)
+*   A single QMD file that produces **two Canvas artifacts**: an **HTML Canvas Page** (student-facing study guide) and a **PDF** (standardized regulatory document uploaded to a separate module).
+*   **Locality**: Place in a module folder like any other content file.
+*   **Prerequisites**: Requires a LaTeX distribution for PDF rendering. Install with `quarto install tinytex`.
+*   **Conditional Content**: Use Quarto's built-in conditional blocks to control what appears in each output:
+    *   `::: {.content-visible when-format="html"}` — only in the Canvas Page
+    *   `::: {.content-visible when-format="pdf"}` — only in the PDF
+    *   Content outside these blocks appears in **both** outputs
+*   **Metadata**:
+    ```yaml
+    ---
+    title: "Course Study Guide"
+    format:
+      html:
+        page-layout: article
+      pdf:
+        documentclass: article
+        geometry: "margin=1in"
+    canvas:
+      type: study_guide
+      published: true           # (optional, Default: false) — Canvas Page published state
+      indent: 0                 # (optional, 0-5)
+      pdf:
+        target_module: "Regulatory Documents"   # REQUIRED — module name for the PDF
+        filename: "KursPM.pdf"                  # (optional — default: page title + ".pdf") — filename on Canvas
+        title: "Study Guide (Regulatory)"       # (optional — default: filename) — display title in module
+        published: true                         # (optional, Default: false) — PDF module item published state
+    ---
+    ```
+*   **Behavior**:
+    1.  The QMD is rendered **twice** — once to HTML (Canvas Page) and once to PDF.
+    2.  The HTML page is synced to Canvas and added to the module where the file lives.
+    3.  The PDF is uploaded to the `synced-files` folder and added as a File item in the module specified by `canvas.pdf.target_module`. If the module doesn't exist, it is created automatically.
+    4.  If PDF rendering fails (e.g., LaTeX not installed), the HTML page is still synced.
+*   **Example**:
+    ```markdown
+    ---
+    title: "Welcome to the Course"
+    format:
+      html:
+        page-layout: article
+      pdf:
+        documentclass: article
+    canvas:
+      type: study_guide
+      published: true
+      pdf:
+        target_module: "Course Documents"
+        filename: "KursPM.pdf"
+        title: "Study Guide (Official)"
+        published: true
+    ---
+
+    ## Welcome
+    This section appears in **both** the Canvas page and the PDF.
+
+    ::: {.content-visible when-format="html"}
+    ## Interactive Resources
+    Check out the [assignment](../02_Module/01_Assignment.qmd) to get started!
+    :::
+
+    ::: {.content-visible when-format="pdf"}
+    ## Regulatory Information
+    This standardized section only appears in the PDF document.
+
+    Course code: ABC-123
+    Credits: 7.5 ECTS
+    :::
+    ```
+
 ### Quizzes — JSON Format (`.json`)
 
 JSON is the **concise format** for quizzes. It supports basic question types, LaTeX math, and works with both Classic and New quiz engines. Use this format when you don't need images in answers or advanced question types like formula/numeric.

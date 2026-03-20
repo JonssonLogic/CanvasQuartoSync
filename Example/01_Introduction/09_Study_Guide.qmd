@@ -1,0 +1,77 @@
+---
+title: "Course Study Guide"
+format:
+  html:
+    page-layout: article
+  pdf:
+    documentclass: article
+    geometry: "margin=2.5cm"
+canvas:
+  type: study_guide
+  published: true
+  pdf:
+    target_module: "Course Documents"
+    filename: "KursPM.pdf"
+    title: "Study Guide (Official)"
+    published: true
+---
+
+## Welcome
+
+This is the official study guide for the course. This section appears in
+**both** the Canvas page and the regulatory PDF.
+
+### Learning Outcomes
+
+By the end of this course, students will be able to:
+
+1. Write Python scripts for data processing
+2. Use the Canvas API for automation
+3. Apply best practices for code quality
+
+::: {.content-visible when-format="html"}
+
+## Getting Started
+
+Head over to the [first assignment](../02_Python Basics/02_Assignment.qmd) to begin.
+
+### Useful Links
+
+- [Python Documentation](https://docs.python.org)
+- [Canvas API Reference](https://canvas.instructure.com/doc/api/)
+
+> **Tip:** Use the module navigation on the left to browse all course material.
+
+:::
+
+::: {.content-visible when-format="pdf"}
+
+## Regulatory Information
+
+This section is only included in the PDF version of the study guide.
+
+| Field              | Value                          |
+|--------------------|--------------------------------|
+| Course code        | DT-101                         |
+| Credits            | 7.5 ECTS                       |
+| Level              | First cycle                    |
+| Main field         | Computer Science               |
+| Grading scale      | U / G / VG                     |
+| Department         | Department of Computer Science |
+| Examiner           | Dr. A. Example                 |
+
+### Prerequisites
+
+Completed introductory programming course (minimum 6 ECTS) or equivalent.
+
+### Examination
+
+- **Written exam** (4.5 ECTS) — individual, on-campus
+- **Project assignment** (3.0 ECTS) — group work, oral presentation
+
+### Course Literature
+
+- Lutz, M. (2013). *Learning Python*. 5th ed. O'Reilly Media.
+- Additional materials provided via Canvas.
+
+:::

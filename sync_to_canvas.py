@@ -6,6 +6,7 @@ from canvasapi import Canvas
 
 from handlers.log import logger, setup_logging
 from handlers.base_handler import BaseHandler
+from handlers.study_guide_handler import StudyGuideHandler
 from handlers.page_handler import PageHandler
 from handlers.assignment_handler import AssignmentHandler
 from handlers.quiz_handler import QuizHandler
@@ -95,6 +96,7 @@ def main():
         return
 
     handlers = [
+        StudyGuideHandler(),
         PageHandler(),
         AssignmentHandler(),
         NewQuizHandler(),

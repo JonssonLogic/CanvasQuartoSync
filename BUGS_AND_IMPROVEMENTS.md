@@ -78,3 +78,20 @@ Develop a dedicated utility or CLI flag to remove assets from Canvas that were p
 A PowerShell one-liner installs the entire system interactively.
 
 _Implemented as `install.ps1` — checks for Python/Quarto/Git, clones the repo, creates a venv at `~/venvs/canvas_quarto_env`, installs packages from `requirements.txt`, and walks the user through Canvas API credential setup. Run via `irm .../install.ps1 | iex`._
+
+---
+
+### 7. Study Guide (Dual HTML + PDF Output)
+A single `.qmd` file that produces **two Canvas artifacts** from one source:
+
+1. **Canvas Page (HTML)** — the student-facing welcome/study guide, added to the module where the file lives.
+2. **PDF** — a standardized regulatory document, uploaded to a separately specified module.
+
+**Motivation**: Regulatory requirements mandate a formatted PDF study guide in every course. Rather than maintaining two separate files, a single QMD file uses Quarto's conditional content blocks (`.content-visible when-format="html"` / `when-format="pdf"`) to include shared and format-exclusive sections.
+
+**Design**:
+- New `canvas.type: study_guide` triggers a dedicated `StudyGuideHandler`.
+- Frontmatter includes a `canvas.pdf.target_module` field (required) specifying which module receives the PDF.
+- The handler renders the QMD twice (`--to html` and `--to pdf`), syncs the HTML as a Canvas Page, and uploads the PDF as a file item in the target module.
+- Requires a LaTeX distribution (e.g., `quarto install tinytex`) for PDF rendering.
+- If PDF rendering fails, the HTML page is still synced (partial success).

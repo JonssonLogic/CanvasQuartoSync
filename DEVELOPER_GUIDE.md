@@ -20,6 +20,7 @@ CanvasQuartoSync/
 ├── handlers/                  # All content-type handlers + shared utilities
 │   ├── __init__.py
 │   ├── base_handler.py        # Abstract base (can_handle, sync, add_to_module)
+│   ├── study_guide_handler.py  # .qmd → Canvas Page + PDF (dual output)
 │   ├── page_handler.py        # .qmd → Canvas Page
 │   ├── assignment_handler.py  # .qmd → Canvas Assignment
 │   ├── quiz_handler.py        # .json / .qmd → Canvas Quiz (Classic Quizzes API)
@@ -102,6 +103,7 @@ All handlers inherit `BaseHandler` (ABC):
 
 | Extension | Frontmatter `canvas.type` | Handler | Canvas Object |
 |---|---|---|---|
+| `.qmd` | `study_guide` | `StudyGuideHandler` | Wiki Page + PDF File (dual output) |
 | `.qmd` | `page` | `PageHandler` | Wiki Page |
 | `.qmd` | `assignment` | `AssignmentHandler` | Assignment |
 | `.qmd` | `subheader` | `SubHeaderHandler` | Module Text Header |

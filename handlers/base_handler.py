@@ -121,6 +121,46 @@ class BaseHandler(ABC):
         if files_dir:
             safe_delete_dir(files_dir)
 
+    def render_quarto_pdf(self, processed_content, base_path, filename):
+        """
+        Renders a processed QMD document to PDF via Quarto.
+        Returns the path to the rendered PDF file, or None on failure.
+        The caller is responsible for deleting the PDF after use.
+        """
+        temp_qmd = os.path.join(base_path, f"_temp_pdf_{filename}")
+        temp_stem = os.path.splitext(f"_temp_pdf_{filename}")[0]
+        temp_files_dir = os.path.join(base_path, f"{temp_stem}_files")
+        temp_pdf = os.path.join(base_path, f"{temp_stem}.pdf")
+
+        try:
+            with open(temp_qmd, 'w', encoding='utf-8') as f:
+                f.write(processed_content)
+
+            cmd = ["quarto", "render", temp_qmd, "--to", "pdf"]
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            if not os.path.exists(temp_pdf):
+                logger.error("    Expected PDF output from Quarto render but file not found")
+                self._cleanup(temp_qmd, None, temp_files_dir)
+                return None
+
+            # Clean up temp QMD and auxiliary files, but keep the PDF
+            self._cleanup(temp_qmd, None, temp_files_dir)
+            return temp_pdf
+
+        except subprocess.CalledProcessError as e:
+            stderr_text = e.stderr.decode('utf-8', errors='replace') if e.stderr else ''
+            if 'tinytex' in stderr_text.lower() or 'latex' in stderr_text.lower() or 'pdflatex' in stderr_text.lower():
+                logger.error("    PDF render failed: LaTeX not found. Install with: quarto install tinytex")
+            else:
+                logger.error("    PDF render failed: %s", stderr_text or e)
+            self._cleanup(temp_qmd, None, temp_files_dir)
+            return None
+        except Exception as e:
+            logger.error("    PDF render failed: %s", e)
+            self._cleanup(temp_qmd, None, temp_files_dir)
+            return None
+
     def render_quarto_document(self, processed_content, base_path, filename):
         """
         Renders a processed QMD document to HTML via Quarto.
