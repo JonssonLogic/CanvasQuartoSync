@@ -234,8 +234,8 @@ def resolve_cross_link(course, current_file_path, link_target, base_path):
         if not target_obj:
             logger.info("    [green]Creating stub new quiz:[/green] %s", target_title)
             from handlers.new_quiz_api import NewQuizAPIClient
-            api_url = os.environ.get("CANVAS_API_URL")
-            api_token = os.environ.get("CANVAS_API_TOKEN")
+            api_url = course._requester.original_url
+            api_token = course._requester._access_token
             client = NewQuizAPIClient(api_url, api_token)
 
             quiz_payload = {

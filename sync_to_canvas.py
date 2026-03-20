@@ -15,10 +15,8 @@ from handlers.calendar_handler import CalendarHandler
 from handlers.subheader_handler import SubHeaderHandler
 from handlers.external_link_handler import ExternalLinkHandler
 from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name
+from handlers.config import load_config, get_api_credentials, get_course_id
 
-# --- Configuration ---
-API_URL = os.environ.get("CANVAS_API_URL")
-API_TOKEN = os.environ.get("CANVAS_API_TOKEN")
 
 def is_valid_name(name):
     """
@@ -26,30 +24,6 @@ def is_valid_name(name):
     Example: '01_Intro' -> True, 'Intro' -> False, '1_Intro' -> False
     """
     return bool(re.match(r'^\d{2}_', name))
-
-
-def get_course_id(content_root, arg_course_id):
-    """
-    Determines the Course ID.
-    Priority:
-    1. CLI Argument (--course-id)
-    2. File 'course_id.txt' in content_root
-    """
-    if arg_course_id:
-        return arg_course_id
-
-    file_path = os.path.join(content_root, "course_id.txt")
-    if os.path.exists(file_path):
-        try:
-            with open(file_path, 'r') as f:
-                cid = f.read().strip()
-                if cid:
-                    logger.info("Found Course ID in file: %s", cid)
-                    return cid
-        except Exception as e:
-            logger.error("Failed to read course_id.txt: %s", e)
-
-    return None
 
 def main():
     parser = argparse.ArgumentParser(description="Sync local content to Canvas.")
@@ -76,14 +50,15 @@ def main():
     logger.info("Target content directory: [dim]%s[/dim]", content_root)
 
     # Resolve Context
+    API_URL, API_TOKEN = get_api_credentials(content_root)
     course_id = get_course_id(content_root, args.course_id)
 
     if not API_URL or not API_TOKEN:
-         logger.error("[red]CANVAS_API_URL and CANVAS_API_TOKEN environment variables must be set.[/red]")
+         logger.error("[red]Canvas credentials not found.[/red] Set CANVAS_API_URL / CANVAS_API_TOKEN env vars, or provide canvas_api_url / canvas_token_path in config.toml.")
          return
 
     if not course_id:
-        logger.error("[red]Course ID not specified.[/red] Provide it via --course-id or place a 'course_id.txt' file in the content directory.")
+        logger.error("[red]Course ID not specified.[/red] Provide it via --course-id, config.toml, or a 'course_id.txt' file in the content directory.")
         return
 
     logger.info("[cyan]Connecting to Canvas...[/cyan]")
