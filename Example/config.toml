@@ -1,0 +1,8 @@
+course_id = 12345
+course_name = "Mechatronics"
+course_code = "TMRK16"
+credits = "7.5 ECTS"
+semester = "Spring 2026"
+canvas_api_url = "https://your-institution.instructure.com/api/v1"
+canvas_token_path = "path/to/token/file"
+language = "english"

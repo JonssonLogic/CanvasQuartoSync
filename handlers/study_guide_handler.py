@@ -71,6 +71,14 @@ class StudyGuideHandler(BaseHandler):
         with open(file_path, 'r', encoding='utf-8') as f:
             raw_content = f.read()
 
+        # 3a. Preprocess study guide (expand minimal QMD into dual-format styled QMD)
+        if canvas_meta.get('preprocess'):
+            from handlers.qmd_preprocessor import preprocess_study_guide
+            from handlers.config import load_config
+            config = load_config(content_root) if content_root else {}
+            raw_content = preprocess_study_guide(raw_content, config)
+            logger.debug("    Preprocessed study guide with dual-format styling")
+
         base_path = os.path.dirname(file_path)
         processed_content = process_content(raw_content, base_path, course, content_root=content_root)
 

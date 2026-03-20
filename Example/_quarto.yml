@@ -1,0 +1,44 @@
+# JU Course Template — shared format config for all course QMD files
+# LaTeX packages, JU brand colors, and PDF styling live here.
+# HTML/Canvas styling is injected by the qmd_preprocessor automatically.
+# Individual QMD files only need content + canvas frontmatter.
+
+lang: en
+
+format:
+  html:
+    page-layout: article
+    toc: false
+    number-sections: false
+
+  pdf:
+    documentclass: article
+    papersize: a4
+    geometry:
+      - margin=2.5cm
+    toc: false
+    number-sections: true
+    colorlinks: true
+    linkcolor: "ju-purple"
+    urlcolor: "ju-purple"
+    include-in-header:
+      text: |
+        \usepackage{hyperref}
+        \usepackage{booktabs}
+        \usepackage{longtable}
+        \usepackage{array}
+        \usepackage{graphicx}
+        \usepackage{fancyhdr}
+        \usepackage{xcolor}
+        \usepackage{colortbl}
+        \definecolor{ju-purple}{RGB}{150,27,129}
+        \definecolor{ju-darkblue}{RGB}{0,56,101}
+        \definecolor{ju-turquoise}{RGB}{85,170,167}
+        \definecolor{ju-yellow}{RGB}{255,181,0}
+        \definecolor{ju-grey}{RGB}{121,121,121}
+        \definecolor{lightgray}{gray}{0.9}
+        \renewcommand{\familydefault}{\sfdefault}
+        \renewcommand{\maketitle}{}
+        \usepackage{titlesec}
+        \titleformat{\section}{\Large\bfseries\color{ju-darkblue}}{\thesection}{1em}{}
+        \titleformat{\subsection}{\large\bfseries\color{ju-darkblue}}{\thesubsection}{1em}{}

@@ -1,77 +1,166 @@
 ---
-title: "Course Study Guide"
-format:
-  html:
-    page-layout: article
-  pdf:
-    documentclass: article
-    geometry: "margin=2.5cm"
+title: "Course PM — Mechatronics (TMRK16)"
 canvas:
   type: study_guide
+  preprocess: true
   published: true
   pdf:
     target_module: "Course Documents"
-    filename: "KursPM.pdf"
-    title: "Study Guide (Official)"
+    filename: "KursPM-Mechatronics.pdf"
+    title: "Course PM (PDF)"
     published: true
 ---
 
-## Welcome
+# Introduction
 
-This is the official study guide for the course. This section appears in
-**both** the Canvas page and the regulatory PDF.
+![](graphics/elephant.jpg)
 
-### Learning Outcomes
+Welcome to Mechatronics (TMRK16), a hands-on 7.5 ECTS course where you work in groups of three to design and build a remote-controlled car.
 
-By the end of this course, students will be able to:
+No prior knowledge of electronics is required. You will learn **Arduino-style C/C++** for programming the ESP32 microcontroller. See the [RC Car Project](#sec-project) description for full details on what you will build.
 
-1. Write Python scripts for data processing
-2. Use the Canvas API for automation
-3. Apply best practices for code quality
+# Schedule
 
-::: {.content-visible when-format="html"}
+| Week | Labs | Project / Other |
+|:-----|:-----|:----------------|
+| 1 | Course intro. Lab 0 (PlatformIO). Labs 1-3 (LED, Ohm's law, ESP32) | Group formation, component box checkout, group contract |
+| 2 | Labs 4-5 (PWM, potentiometer/ADC) | Lecture: batteries, power, voltage regulation |
+| 3 | Labs 6-7 (MOSFET, level shifter) | Lecture: semiconductors, transistor as switch |
+| 4 | Labs 8-9 (H-bridge: switches, then MOSFETs) | Lecture: motor control. CAD work begins |
+| 5 | Labs 10-12 (BTS7960, servo, battery monitor) | 3D printing chassis & gears. Soldering |
+| 6 | Labs 13-15 (XIAO remote, ESP-NOW, web server). Lab 16 (AS5600 encoder) | System integration |
+| 7 | Lab completions | **Project presentation & examination** |
 
-## Getting Started
+# Examination
 
-Head over to the [first assignment](../02_Python Basics/02_Assignment.qmd) to begin.
+All learning outcomes are examined through the **project** and the **labs**. The project grade determines the course grade.
 
-### Useful Links
+| Component | Credits | Individual/Group | Grade |
+|:----------|:--------|:-----------------|:------|
+| Project^1^ | 4.5 ECTS | Group | 5/4/3/F |
+| Laboratory work^2^ | 3 ECTS | Group | P/F |
 
-- [Python Documentation](https://docs.python.org)
-- [Canvas API Reference](https://canvas.instructure.com/doc/api/)
+^1^ Determines the course grade, which is issued only when all components are approved.\
+^2^ Labs are carried out in groups.
 
-> **Tip:** Use the module navigation on the left to browse all course material.
+## Laboratory Work (3 ECTS, Pass/Fail)
 
-:::
+17 labs (Lab 0-16), carried out in groups:
 
-::: {.content-visible when-format="pdf"}
+- **Labs 0-9** (fundamentals): Submit a short lab report written in Quarto, rendered to PDF.
+- **Labs 10-16** (project-related): Demonstrate working hardware at your bench, or upload a photo/video.
 
-## Regulatory Information
+All labs must be passed.
 
-This section is only included in the PDF version of the study guide.
+## Project (4.5 ECTS, graded 5/4/3/Fail)
 
-| Field              | Value                          |
-|--------------------|--------------------------------|
-| Course code        | DT-101                         |
-| Credits            | 7.5 ECTS                       |
-| Level              | First cycle                    |
-| Main field         | Computer Science               |
-| Grading scale      | U / G / VG                     |
-| Department         | Department of Computer Science |
-| Examiner           | Dr. A. Example                 |
+The project is examined through:
 
-### Prerequisites
+1. **Demonstration.** Show the car running, explain the design, electronics, and code.
+2. **Oral questions.** The examiner asks questions and **randomly selects** who answers. The group's grade is based on the selected individuals' performance.
 
-Completed introductory programming course (minimum 6 ECTS) or equivalent.
+Every member must be able to present and defend *all* parts of the solution.
 
-### Examination
+## Re-examination
 
-- **Written exam** (4.5 ECTS) — individual, on-campus
-- **Project assignment** (3.0 ECTS) — group work, oral presentation
+Re-examination follows the schedule at <https://ju.se/student/studier/terminstider/terminstider-jth.html> (study period 4). Covers lab completions and a new project demonstration.
 
-### Course Literature
+# Grading Criteria
 
-- Lutz, M. (2013). *Learning Python*. 5th ed. O'Reilly Media.
-- Additional materials provided via Canvas.
+The examiner **randomly selects** who answers each question. The criteria below map directly to the course's intended learning outcomes.
 
-:::
+| ILO | Fail | 3 | 4 | 5 |
+|:----|:-----|:--|:--|:--|
+| Knowledge of voltage regulation, batteries, Ohm's law, Kirchhoff's laws | Cannot explain basic concepts such as voltage, current, and resistance in the system. | Can explain the electrical concepts and calculations in the system. | Can relate concepts to each other and explain why specific component values were chosen. | Can analyze power budgets, losses, and thermal management in depth. |
+| Knowledge of sensors and actuators | Cannot describe how the sensors and actuators in the car work. | Can describe function and purpose of each sensor and actuator. | Can compare alternatives and justify choices. | Can critically evaluate performance, limitations, and propose improvements. |
+| Knowledge of communication protocols | Cannot explain how communication between components works. | Can explain the protocols used and their roles. | Can compare protocols and justify why each was chosen. | Can discuss latency, bandwidth, reliability, and error handling. |
+| Skill in microcontroller programming | The car does not function, or the code cannot be explained. | The car works and the code's structure and logic can be explained. | Code is well-structured; design choices can be explained. | Code handles edge cases, timeouts, and failsafes; can reason about improvements. |
+| Skill in using multimeter and oscilloscope | Cannot demonstrate or explain how instruments were used. | Can use multimeter and oscilloscope for basic measurements. | Can interpret results and use them to validate design decisions. | Can independently troubleshoot complex problems with instruments. |
+| Skill in circuit construction and soldering | Wiring is unreliable or missing. Cannot solder or explain connections. | All connections work. Can solder components and add connectors. Voltage divider circuit is functional. | Wiring is tidy with proper connectors, strain relief, and clear signal routing. Soldering joints are clean. | Wiring is production-quality. Can discuss connector choices, wire gauging, and circuit protection. |
+| Ability to select sensors and actuators | Cannot motivate the choice of components. | Can explain why each component was selected. | Can compare alternatives and discuss trade-offs. | Can optimize selections considering cost, performance, and availability. |
+| Ability to implement control | Motor simply reverses when throttle goes negative. No braking logic. | Throttle logic distinguishes forward, coast, and brake. Negative input while moving forward brakes instead of reversing. Reverse only engages from standstill. | Braking uses the BTS7960 brake mode (low-side short). Battery cutoff and signal-loss failsafe implemented. | Speed feedback from AS5600 used for telemetry or closed-loop control. Bonus: ABS (release brake on wheel lock-up). |
+
+# Equipment and Responsibility
+
+Each group receives a component box at the start of the course (see separate receipt list). The box contains:
+
+- 775 DC motor, servo motor (DS3218), BTS7960 motor driver
+- ESP32 DevKit (car), XIAO ESP32 (remote controller)
+- Joystick modules, 3S LiPo battery (car), 1S LiPo battery (remote)
+- 12V power supply, breadboard with power rails, buck converter, springs
+
+A shared supply of electrical components (resistors, capacitors, wires, etc.) is available in the lab.
+
+**All equipment must be returned** in undamaged condition by end of course (June 2026), or by December 2026 by agreement. **Gross negligence may result in replacement costs.**
+
+## LiPo Battery Safety
+
+- **Do not use the battery before the instructor teaches you how to handle it**
+- The batteries are stored in the battery closet when not in use
+- Do not drop, puncture, put in fire, leave in the sun, step on, throw, chew, or breathe in the batteries
+- Do not leave plugged into a device when not in use. It will discharge
+- Do not discharge below 3.3V per cell (9.9V total for 3S)
+- Inspect before use. Do not use swollen or damaged batteries
+
+# RC Car Project {#sec-project}
+
+The car shall:
+
+- Be propelled by a 775 DC motor via a BTS7960 motor driver
+- Be steered by a DS3218 servo motor (20 kg-cm torque)
+- Be powered by a 3S LiPo battery (12V) with voltage monitoring and automatic low-voltage cutoff
+- Use 3D-printed gears (module 2-3), chassis, and wheels (TPU tires for traction)
+- Reach at least 10 km/h
+- Be approximately 30-40 cm long (multi-part chassis joined with M3 fasteners)
+
+## Two Control Methods
+
+**1. Phone control via WiFi.** The ESP32 creates a WiFi access point. Connect with your phone, open a web page with virtual joysticks, and drive via WebSockets. The interface also shows live telemetry: battery voltage and ground speed (AS5600 magnetic encoder).
+
+**2. Physical handheld remote.** A dedicated controller built with a XIAO ESP32, one or two joystick modules, and a 1S LiPo battery (the XIAO has built-in charging). Communication with the car uses ESP-NOW, a fast low-latency protocol that needs no WiFi network.
+
+Both methods coexist: the car listens for ESP-NOW and WebSocket messages simultaneously.
+
+# Academic Integrity
+
+Using unauthorized aids during examination is cheating. This includes phones, notes, or unauthorized materials. Attempting to cheat counts as a violation even if the aids were not used.
+
+Copying text without citation is plagiarism.
+
+**Irresponsible use of AI**, such as submitting AI-generated results without understanding, is also considered cheating.
+
+## Artificial Intelligence
+
+AI tools (ChatGPT, Claude, Copilot) are **encouraged** as learning aids. They are useful for debugging, explaining concepts, and generating code starting points.
+
+You are always responsible for understanding everything you submit and present. At the oral exam, your grade depends on your individual understanding, not what AI generated.
+
+# Course Literature
+
+## Reference (not required to purchase)
+
+Title: Mechatronics\
+Author: William Bolton\
+ISBN: 9789353065881
+
+Title: Practical Electronics for Inventors\
+Author: Paul Scherz, Simon Monk\
+ISBN: 9781259587542
+
+# Course Evaluation
+
+A course evaluation will be conducted at the end of the course. Intermediate evaluations may be run. Improvements may be made during the course if they do not conflict with the course plan.
+
+*This course is offered for the first time in Spring 2026. No previous evaluation exists.*
+
+# Teaching Staff
+
+| Name | Role | Image | Link |
+|:-----|:-----|:------|:-----|
+| Mirza Cenanovic | Course responsible, Lecturer | mirza.png | https://ju.se/personinfo.html?sign=cenmir |
+| Johan Jansson | Lecturer, Examiner | johan.png | https://ju.se/personinfo.html?sign=janjoh |
+| Fredrik Erling | Senior Lecturer | fredrik.png | https://ju.se/personinfo.html?sign=ERLFRE |
+
+# Research Connection
+
+The research connection is described in the education plan for the respective programme: <https://ju.se/student/studier/utbildningsplaner-med-kursplaner.html>.
