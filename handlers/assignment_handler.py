@@ -7,6 +7,7 @@ from datetime import datetime
 from canvasapi import Canvas
 from handlers.base_handler import BaseHandler
 from handlers.content_utils import process_content, safe_delete_file, safe_delete_dir, get_mapped_id, save_mapped_id, parse_module_name
+from handlers.drift_detector import check_drift, store_canvas_hash
 from handlers.log import logger
 
 class AssignmentHandler(BaseHandler):
@@ -88,6 +89,13 @@ class AssignmentHandler(BaseHandler):
             }
 
             if assign_obj:
+                # Drift detection: warn if Canvas content was modified outside sync
+                if content_root:
+                    canvas_desc = getattr(assign_obj, 'description', '') or ''
+                    drift = check_drift(content_root, file_path, canvas_desc)
+                    if drift['drifted']:
+                        logger.warning("    [yellow]DRIFT DETECTED:[/yellow] '%s' was modified on Canvas since last sync. Overwriting with local version.", title)
+
                 logger.info("    [yellow]Updating assignment:[/yellow] %s", title)
                 logger.debug("    Matched by cached ID: %s", assign_obj.id)
                 assign_obj.edit(assignment=assignment_args)
@@ -109,9 +117,10 @@ class AssignmentHandler(BaseHandler):
                     logger.info("    [green]Creating assignment:[/green] %s", title)
                     assign_obj = course.create_assignment(assignment=assignment_args)
 
-            # 4c. Update Sync Map
+            # 4c. Update Sync Map and store content hash for drift detection
             if content_root:
                 save_mapped_id(content_root, file_path, assign_obj.id, mtime=current_mtime)
+                store_canvas_hash(content_root, file_path, html_body)
         else:
             # Render skipped, assign_obj already set
             pass

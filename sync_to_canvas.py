@@ -15,7 +15,9 @@ from handlers.calendar_handler import CalendarHandler
 from handlers.subheader_handler import SubHeaderHandler
 from handlers.external_link_handler import ExternalLinkHandler
 from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name
+from handlers import __version__
 from handlers.config import load_config, get_api_credentials, get_course_id
+from handlers.drift_detector import check_all_drift
 
 
 def is_valid_name(name):
@@ -27,10 +29,13 @@ def is_valid_name(name):
 
 def main():
     parser = argparse.ArgumentParser(description="Sync local content to Canvas.")
+    parser.add_argument("--version", action="version", version=f"CanvasQuartoSync {__version__}")
     parser.add_argument("content_path", nargs="?", default=".", help="Path to the content directory (default: current dir).")
     parser.add_argument("--sync-calendar", action="store_true", help="Enable calendar synchronization (Opt-in).")
     parser.add_argument("--course-id", help="Canvas Course ID (Override).")
     parser.add_argument("--force", "-f", action="store_true", help="Force re-render all files (ignore cached mtimes).")
+    parser.add_argument("--check-drift", action="store_true", help="Check if Canvas content was modified outside sync (no sync performed).")
+    parser.add_argument("--show-diff", action="store_true", help="Show full diff when using --check-drift.")
 
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument("--verbose", "-v", action="store_true", help="Show detailed debug output.")
@@ -76,6 +81,29 @@ def main():
         logger.info("[green]Connected to course:[/green] [bold]%s[/bold] (ID: %s)", course.name, course.id)
     except Exception as e:
         logger.error("[red]Connection failed:[/red] %s", e)
+        return
+
+    # Drift check mode: only check for Canvas-side modifications, then exit
+    if args.check_drift:
+        logger.info("[bold cyan]Checking for Canvas-side modifications...[/bold cyan]")
+        drifted = check_all_drift(course, content_root)
+        if drifted:
+            logger.warning("[yellow]%d item(s) have been modified on Canvas since last sync:[/yellow]", len(drifted))
+            for item in drifted:
+                logger.warning("  [yellow]DRIFTED[/yellow] [%s] %s (%s)", item['type'], item['title'], item['file'])
+                if args.show_diff and item.get('diff'):
+                    for line in item['diff'].split('\n'):
+                        if line.startswith('+') and not line.startswith('+++'):
+                            logger.warning("    [green]%s[/green]", line)
+                        elif line.startswith('-') and not line.startswith('---'):
+                            logger.warning("    [red]%s[/red]", line)
+                        elif line.startswith('@@'):
+                            logger.warning("    [cyan]%s[/cyan]", line)
+                        else:
+                            logger.warning("    %s", line)
+            logger.warning("[yellow]Use import_from_canvas.py to pull changes, or --force to overwrite.[/yellow]")
+        else:
+            logger.info("[green]No drift detected. Canvas content matches last sync.[/green]")
         return
 
     handlers = [

@@ -7,6 +7,7 @@ from canvasapi import Canvas
 from canvasapi.exceptions import BadRequest
 from handlers.base_handler import BaseHandler
 from handlers.content_utils import process_content, safe_delete_file, safe_delete_dir, get_mapped_id, save_mapped_id, parse_module_name
+from handlers.drift_detector import check_drift, store_canvas_hash
 from handlers.log import logger
 
 class PageHandler(BaseHandler):
@@ -74,6 +75,13 @@ class PageHandler(BaseHandler):
             }
 
             if page_obj: # Found in Canvas but needs update
+                # Drift detection: warn if Canvas content was modified outside sync
+                if content_root:
+                    canvas_body = getattr(page_obj, 'body', '') or ''
+                    drift = check_drift(content_root, file_path, canvas_body)
+                    if drift['drifted']:
+                        logger.warning("    [yellow]DRIFT DETECTED:[/yellow] '%s' was modified on Canvas since last sync. Overwriting with local version.", title)
+
                 logger.info("    [yellow]Updating page:[/yellow] %s", title)
                 logger.debug("    Matched by cached ID: %s", page_obj.page_id)
                 try:
@@ -111,9 +119,10 @@ class PageHandler(BaseHandler):
                     logger.info("    [green]Creating page:[/green] %s", title)
                     page_obj = course.create_page(**page_args)
 
-            # 4c. Update Sync Map
+            # 4c. Update Sync Map and store content hash for drift detection
             if content_root:
                 save_mapped_id(content_root, file_path, page_obj.page_id, mtime=current_mtime)
+                store_canvas_hash(content_root, file_path, html_body)
         else:
             # If we didn't need render, page_obj is already set from cache
             pass

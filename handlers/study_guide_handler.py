@@ -8,6 +8,7 @@ from handlers.content_utils import (
     load_sync_map, save_sync_map, parse_module_name, safe_delete_file,
     FOLDER_FILES, ACTIVE_ASSET_IDS
 )
+from handlers.drift_detector import check_drift, store_canvas_hash
 from handlers.log import logger
 
 
@@ -120,6 +121,13 @@ class StudyGuideHandler(BaseHandler):
             }
 
             if page_obj:
+                # Drift detection
+                if content_root:
+                    canvas_body = getattr(page_obj, 'body', '') or ''
+                    drift = check_drift(content_root, file_path, canvas_body)
+                    if drift['drifted']:
+                        logger.warning("    [yellow]DRIFT DETECTED:[/yellow] '%s' was modified on Canvas since last sync. Overwriting with local version.", title)
+
                 logger.info("    [yellow]Updating page:[/yellow] %s", title)
                 logger.debug("    Matched by cached ID: %s", page_obj.page_id)
                 try:
@@ -170,9 +178,10 @@ class StudyGuideHandler(BaseHandler):
                     if os.path.exists(pdf_path):
                         safe_delete_file(pdf_path)
 
-            # 8. Update Sync Map
+            # 8. Update Sync Map and store content hash for drift detection
             if content_root:
                 save_mapped_id(content_root, file_path, page_obj.page_id, mtime=current_mtime)
+                store_canvas_hash(content_root, file_path, html_body)
                 if pdf_file_id:
                     sync_map = load_sync_map(content_root)
                     rel_path = os.path.relpath(file_path, content_root).replace('\\', '/')

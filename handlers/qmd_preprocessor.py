@@ -120,10 +120,14 @@ LABELS = {
 }
 
 # Sections with special processing (matched case-insensitively)
-SPECIAL_SECTIONS = {
-    'grading criteria',
-    'teaching staff',
-    'research connection',
+# Maps all recognized names (EN + SV) to a canonical key.
+SECTION_ALIASES = {
+    'grading criteria': 'grading_criteria',
+    'betygskriterier': 'grading_criteria',
+    'teaching staff': 'teaching_staff',
+    'lärare': 'teaching_staff',
+    'research connection': 'research_connection',
+    'forskningsanknytning': 'research_connection',
 }
 
 # ---------------------------------------------------------------------------
@@ -182,13 +186,15 @@ def preprocess_study_guide(qmd_content: str, config: dict, config_dir: str = '.'
         # Strip Quarto attributes like {#sec-project} for matching
         heading_clean = re.sub(r'\s*\{[^}]*\}', '', heading_lower)
 
-        if heading_clean == 'grading criteria':
+        section_key = SECTION_ALIASES.get(heading_clean)
+
+        if section_key == 'grading_criteria':
             parts.append(f"# {heading}\n")
             parts.append(_process_grading_criteria(content))
-        elif heading_clean == 'teaching staff':
+        elif section_key == 'teaching_staff':
             parts.append(f"# {heading}\n")
             parts.append(_process_teaching_staff(content))
-        elif heading_clean == 'research connection':
+        elif section_key == 'research_connection':
             parts.append(f"# {heading}\n")
             parts.append(_process_research_connection(content))
         else:
