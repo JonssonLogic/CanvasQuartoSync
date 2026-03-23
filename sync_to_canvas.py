@@ -36,6 +36,7 @@ def main():
     parser.add_argument("--force", "-f", action="store_true", help="Force re-render all files (ignore cached mtimes).")
     parser.add_argument("--check-drift", action="store_true", help="Check if Canvas content was modified outside sync (no sync performed).")
     parser.add_argument("--show-diff", action="store_true", help="Show full diff when using --check-drift.")
+    parser.add_argument("--only", help="Sync only a specific file (relative path from content dir, e.g. '01_Intro/02_Welcome.qmd').")
 
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument("--verbose", "-v", action="store_true", help="Show detailed debug output.")
@@ -130,6 +131,24 @@ def main():
     else:
         logger.info("[dim]Skipping calendar sync (use --sync-calendar to enable)[/dim]")
 
+    # --only filter: resolve to absolute path for matching
+    only_filter = None
+    if args.only:
+        # Try as relative to content_root first, then as relative to CWD / absolute
+        candidate = os.path.abspath(os.path.join(content_root, args.only))
+        if not os.path.exists(candidate):
+            candidate = os.path.abspath(args.only)
+        if not os.path.exists(candidate):
+            logger.error("[red]File not found:[/red] %s", args.only)
+            return
+        # Verify the file is inside the content root
+        if not candidate.startswith(content_root):
+            logger.error("[red]File is not inside content directory:[/red] %s", candidate)
+            return
+        only_filter = candidate
+        rel_display = os.path.relpath(only_filter, content_root)
+        logger.info("[cyan]Syncing only:[/cyan] %s", rel_display)
+
     logger.info("[bold cyan]Starting content sync...[/bold cyan]")
 
     # 1. Walk the directory
@@ -145,6 +164,10 @@ def main():
         # Case A: Module Directory
         if os.path.isdir(item_path):
             if not is_valid_name(item):
+                continue
+
+            # --only: skip modules that don't contain the target file
+            if only_filter and not only_filter.startswith(item_path):
                 continue
 
             # This is a Module directory
@@ -183,6 +206,10 @@ def main():
                     if not is_valid_name(filename):
                         continue
 
+                    # --only: skip files that don't match
+                    if only_filter and os.path.abspath(file_path) != only_filter:
+                        continue
+
                     # Delegation Logic
                     handled = False
                     for handler in handlers:
@@ -216,8 +243,8 @@ def main():
                                 synced_module_items.append(mod_item)
                             item_count += 1
 
-                # Reorder Module Items
-                if synced_module_items:
+                # Reorder Module Items (skip when --only, since we didn't sync all items)
+                if synced_module_items and not only_filter:
                     logger.debug("  Verifying module item order (%d items)...", len(synced_module_items))
                     for i, mod_item in enumerate(synced_module_items):
                         expected_position = i + 1
@@ -235,6 +262,10 @@ def main():
         # Case B: Root File (No Module)
         elif os.path.isfile(item_path):
              if not is_valid_name(item):
+                 continue
+
+             # --only: skip root files that don't match
+             if only_filter and os.path.abspath(item_path) != only_filter:
                  continue
 
              # Delegation Logic
@@ -255,8 +286,9 @@ def main():
                     handled = True
                     break
 
-    # 3. Cleanup Orphans
-    prune_orphaned_assets(course)
+    # 3. Cleanup Orphans (skip when --only to avoid deleting assets from un-synced files)
+    if not only_filter:
+        prune_orphaned_assets(course)
 
     logger.info("[bold green]Sync complete.[/bold green] Processed %d modules, synced %d items.", module_count, item_count)
 
