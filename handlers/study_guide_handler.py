@@ -64,6 +64,7 @@ class StudyGuideHandler(BaseHandler):
         title = post.metadata.get('title', parse_module_name(os.path.splitext(filename)[0]))
         canvas_meta = post.metadata.get('canvas', {})
         published = canvas_meta.get('published', False)
+        front_page = canvas_meta.get('front_page', False)
         indent = canvas_meta.get('indent', 0)
 
         pdf_config = canvas_meta.get('pdf', {})
@@ -200,7 +201,16 @@ class StudyGuideHandler(BaseHandler):
                         'published': pdf_published
                     })
 
-        # 10. Add HTML page to current module
+        # 10. Set as front page
+        if front_page and page_obj:
+            try:
+                page_obj.edit(wiki_page={'front_page': True})
+                course.update(course={'default_view': 'wiki'})
+                logger.info("    [green]Set as course front page[/green]")
+            except Exception as e:
+                logger.error("    [red]Failed to set front page:[/red] %s", e)
+
+        # 11. Add HTML page to current module
         if module and page_obj:
             return self.add_to_module(module, {
                 'type': 'Page',
