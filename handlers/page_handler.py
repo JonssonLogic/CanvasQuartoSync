@@ -50,6 +50,7 @@ class PageHandler(BaseHandler):
         title = post.metadata.get('title', parse_module_name(os.path.splitext(filename)[0]))
         canvas_meta = post.metadata.get('canvas', {})
         published = canvas_meta.get('published', False)
+        front_page = canvas_meta.get('front_page', False)
         indent = canvas_meta.get('indent', 0)
 
         # 1c. Process Content (ALWAYS, to track ACTIVE_ASSET_IDS for pruning)
@@ -61,7 +62,7 @@ class PageHandler(BaseHandler):
 
         if needs_render:
             # 2. Render HTML
-            html_body = self.render_quarto_document(processed_content, base_path, filename)
+            html_body = self.render_quarto_document(processed_content, base_path, filename, content_root=content_root)
             if html_body is None:
                 return
 
@@ -127,7 +128,16 @@ class PageHandler(BaseHandler):
             # If we didn't need render, page_obj is already set from cache
             pass
 
-        # 5. Add to Module
+        # 5. Set as front page
+        if front_page and page_obj:
+            try:
+                page_obj.edit(wiki_page={'front_page': True})
+                course.update(course={'default_view': 'wiki'})
+                logger.info("    [green]Set as course front page[/green]")
+            except Exception as e:
+                logger.error("    [red]Failed to set front page:[/red] %s", e)
+
+        # 6. Add to Module
         if module:
             return self.add_to_module(module, {
                 'type': 'Page',

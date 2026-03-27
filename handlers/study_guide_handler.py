@@ -64,6 +64,7 @@ class StudyGuideHandler(BaseHandler):
         title = post.metadata.get('title', parse_module_name(os.path.splitext(filename)[0]))
         canvas_meta = post.metadata.get('canvas', {})
         published = canvas_meta.get('published', False)
+        front_page = canvas_meta.get('front_page', False)
         indent = canvas_meta.get('indent', 0)
 
         pdf_config = canvas_meta.get('pdf', {})
@@ -98,7 +99,7 @@ class StudyGuideHandler(BaseHandler):
 
         if needs_render:
             # 4. Render HTML
-            html_body = self.render_quarto_document(processed_content, base_path, filename)
+            html_body = self.render_quarto_document(processed_content, base_path, filename, content_root=content_root)
             if html_body is None:
                 return
 
@@ -107,7 +108,7 @@ class StudyGuideHandler(BaseHandler):
             pdf_file_id = None
             pdf_file_url = None
 
-            pdf_path = self.render_quarto_pdf(processed_content, base_path, filename)
+            pdf_path = self.render_quarto_pdf(raw_content, base_path, filename)
             if pdf_path is None:
                 logger.warning("    [yellow]PDF render failed — syncing HTML page only.[/yellow]")
 
@@ -200,7 +201,16 @@ class StudyGuideHandler(BaseHandler):
                         'published': pdf_published
                     })
 
-        # 10. Add HTML page to current module
+        # 10. Set as front page
+        if front_page and page_obj:
+            try:
+                page_obj.edit(wiki_page={'front_page': True})
+                course.update(course={'default_view': 'wiki'})
+                logger.info("    [green]Set as course front page[/green]")
+            except Exception as e:
+                logger.error("    [red]Failed to set front page:[/red] %s", e)
+
+        # 11. Add HTML page to current module
         if module and page_obj:
             return self.add_to_module(module, {
                 'type': 'Page',

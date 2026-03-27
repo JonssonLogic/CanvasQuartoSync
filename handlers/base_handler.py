@@ -3,7 +3,54 @@ import os
 import subprocess
 import re
 from handlers.content_utils import safe_delete_file, safe_delete_dir
+from handlers.config import load_config
 from handlers.log import logger
+
+# Default callout styles (used when no branding.css defines them)
+_DEFAULT_CALLOUT_STYLES = {
+    'callout-tip':       {'border': '#198754', 'bg': '#d1e7dd', 'icon': '\U0001f4a1'},
+    'callout-important': {'border': '#dc3545', 'bg': '#f8d7da', 'icon': '\u2757'},
+    'callout-warning':   {'border': '#ffc107', 'bg': '#fff3cd', 'icon': '\u26a0\ufe0f'},
+    'callout-note':      {'border': '#0d6efd', 'bg': '#cfe2ff', 'icon': '\U0001f4dd'},
+    'callout-caution':   {'border': '#fd7e14', 'bg': '#ffe5d0', 'icon': '\U0001f536'},
+}
+
+_callout_cache = {}
+
+def _load_callout_styles(content_root):
+    """Parse callout styles from branding.css, with defaults as fallback."""
+    if content_root in _callout_cache:
+        return _callout_cache[content_root]
+
+    styles = dict(_DEFAULT_CALLOUT_STYLES)
+
+    cfg = load_config(content_root)
+    css_path = cfg.get('branding', {}).get('css', '')
+    if css_path:
+        if not os.path.isabs(css_path):
+            css_path = os.path.join(content_root, css_path)
+        if os.path.exists(css_path):
+            with open(css_path, 'r', encoding='utf-8') as f:
+                css = f.read()
+            for cls in list(styles.keys()):
+                m = re.search(
+                    r'\.' + cls + r'\s*\{([^}]+)\}', css
+                )
+                if m:
+                    block = m.group(1)
+                    border = re.search(r'border-color:\s*(#[0-9a-fA-F]{3,8})', block)
+                    bg = re.search(r'background-color:\s*(#[0-9a-fA-F]{3,8})', block)
+                    icon = re.search(r'--callout-icon:\s*"([^"]+)"', block)
+                    if border:
+                        styles[cls]['border'] = border.group(1)
+                    if bg:
+                        styles[cls]['bg'] = bg.group(1)
+                    if icon:
+                        # Decode Unicode escapes like \U0001f4a1 or \2757
+                        styles[cls]['icon'] = icon.group(1).encode().decode('unicode_escape')
+
+    _callout_cache[content_root] = styles
+    return styles
 
 class BaseHandler(ABC):
     """
@@ -161,7 +208,7 @@ class BaseHandler(ABC):
             self._cleanup(temp_qmd, None, temp_files_dir)
             return None
 
-    def render_quarto_document(self, processed_content, base_path, filename):
+    def render_quarto_document(self, processed_content, base_path, filename, content_root=None):
         """
         Renders a processed QMD document to HTML via Quarto.
         Extracts the <main> content block and cleans up temp files.
@@ -198,6 +245,11 @@ class BaseHandler(ABC):
                 html_body = full_html
                 html_body = re.sub(r'<header[^>]*id="title-block-header"[^>]*>.*?</header>', '', html_body, flags=re.DOTALL)
 
+            # Inline styles for Canvas compatibility
+            callout_styles = _load_callout_styles(content_root) if content_root else _DEFAULT_CALLOUT_STYLES
+            html_body = self._inline_callout_styles(html_body, callout_styles)
+            html_body = self._inline_syntax_highlighting(html_body)
+
             # Cleanup
             self._cleanup(temp_qmd, temp_html, temp_files_dir)
             return html_body
@@ -206,3 +258,98 @@ class BaseHandler(ABC):
             logger.error("    Quarto render failed: %s", e)
             self._cleanup(temp_qmd, None, temp_files_dir)
             return None
+
+    @staticmethod
+    def _inline_callout_styles(html, callout_styles):
+        """Replace Quarto callout divs with inline-styled HTML for Canvas."""
+        for cls, style in callout_styles.items():
+            pattern = (
+                r'<div class="callout callout-style-default ' + cls + r' callout-titled">\s*'
+                r'<div class="callout-header d-flex align-content-center">\s*'
+                r'<div class="callout-icon-container">\s*<i class="callout-icon"></i>\s*</div>\s*'
+                r'<div class="callout-title-container flex-fill">\s*(.*?)\s*</div>\s*'
+                r'</div>\s*'
+                r'<div class="callout-body-container callout-body">\s*(.*?)\s*</div>\s*'
+                r'</div>'
+            )
+
+            def make_replacement(match, s=style):
+                title = match.group(1)
+                body = match.group(2)
+                return (
+                    f'<div style="border-left: 4px solid {s["border"]}; '
+                    f'background-color: {s["bg"]}; '
+                    f'padding: 12px 16px; margin: 16px 0; border-radius: 4px;">'
+                    f'<p style="margin: 0 0 8px 0; font-weight: bold;">'
+                    f'{s["icon"]} {title}</p>'
+                    f'{body}'
+                    f'</div>'
+                )
+
+            html = re.sub(pattern, make_replacement, html, flags=re.DOTALL)
+
+        return html
+
+    @staticmethod
+    def _inline_syntax_highlighting(html):
+        """Inline Quarto syntax highlighting colors onto code spans for Canvas."""
+        # Quarto default token colors (from quarto-syntax-highlighting.css)
+        token_styles = {
+            'ot': 'color:#003B4F',               # Other
+            'at': 'color:#657422',               # Attribute
+            'ss': 'color:#20794D',               # Special String
+            'an': 'color:#5E5E5E',               # Annotation
+            'fu': 'color:#4758AB',               # Function
+            'st': 'color:#20794D',               # String
+            'cf': 'color:#003B4F;font-weight:bold',  # Control Flow
+            'op': 'color:#5E5E5E',               # Operator
+            'er': 'color:#AD0000',               # Error
+            'bn': 'color:#AD0000',               # Base N
+            'al': 'color:#AD0000',               # Alert
+            'va': 'color:#111111',               # Variable
+            'pp': 'color:#AD0000',               # Preprocessor
+            'in': 'color:#5E5E5E',               # Information
+            'vs': 'color:#20794D',               # Verbatim String
+            'wa': 'color:#5E5E5E;font-style:italic',  # Warning
+            'do': 'color:#5E5E5E;font-style:italic',  # Documentation
+            'im': 'color:#00769E',               # Import
+            'ch': 'color:#20794D',               # Char
+            'dt': 'color:#AD0000',               # Data Type
+            'fl': 'color:#AD0000',               # Float
+            'co': 'color:#5E5E5E',               # Comment
+            'cv': 'color:#5E5E5E;font-style:italic',  # Comment Var
+            'cn': 'color:#8f5902',               # Constant
+            'sc': 'color:#5E5E5E',               # Special Char
+            'dv': 'color:#AD0000',               # Decimal Value
+            'kw': 'color:#003B4F;font-weight:bold',  # Keyword
+        }
+
+        # Inline style onto each <span class="xx">
+        for token, style in token_styles.items():
+            html = html.replace(
+                f'<span class="{token}">',
+                f'<span style="{style}">'
+            )
+
+        # Style the code block container: light grey background, padding, rounded
+        html = re.sub(
+            r'<div class="sourceCode"[^>]*>\s*<pre class="sourceCode[^"]*">',
+            '<div><pre style="background-color:#f7f7f7; padding:12px 16px; '
+            'border-radius:4px; overflow-x:auto; font-size:0.9em; '
+            'color:#003B4F;">',
+            html
+        )
+
+        # Remove the copy button Quarto adds
+        html = re.sub(
+            r'<button[^>]*class="code-copy-button"[^>]*>.*?</button>',
+            '', html, flags=re.DOTALL
+        )
+
+        # Clean up line-number anchor links inside code spans
+        html = re.sub(
+            r'<a href="#cb\d+-\d+"[^>]*></a>',
+            '', html
+        )
+
+        return html

@@ -156,6 +156,9 @@ def resolve_cross_link(course, current_file_path, link_target, base_path):
         if ext == '.qmd':
             post = frontmatter.load(abs_target_path)
             canvas_meta = post.metadata.get('canvas', {})
+            if not canvas_meta:
+                # No canvas metadata — this is a downloadable file, not a Canvas content item
+                return None
             # Title can be under canvas or at root
             target_title = canvas_meta.get('title') or post.metadata.get('title') or parse_module_name(os.path.splitext(filename)[0])
             target_type = canvas_meta.get('type', 'page') # Default to page if unspecified
@@ -347,15 +350,17 @@ def process_content(content, base_path, course, content_root=None):
 
         if ext in content_extensions:
             new_url = resolve_cross_link(course, os.path.join(base_path, "current_context"), rel_path, base_path)
-            return f"[{link_text}]({new_url})"
-        else:
-            # Asset Upload (PDF, ZIP, DOCX, PY, IPYNB, etc)
-            new_url, file_id = upload_file(course, abs_path, FOLDER_FILES, content_root=content_root)
-            if file_id:
-                api_url = course._requester.original_url
-                preview_url = f"{api_url}/courses/{course.id}/files/{file_id}"
-                return f"[{link_text}]({preview_url})"
-            return f"[{link_text}]({new_url})"
+            if new_url is not None:
+                return f"[{link_text}]({new_url})"
+            # resolve_cross_link returned None — no canvas metadata, fall through to file upload
+
+        # Asset Upload (PDF, ZIP, DOCX, PY, IPYNB, QMD templates, etc)
+        new_url, file_id = upload_file(course, abs_path, FOLDER_FILES, content_root=content_root)
+        if file_id:
+            api_url = course._requester.original_url
+            preview_url = f"{api_url}/courses/{course.id}/files/{file_id}"
+            return f"[{link_text}]({preview_url})"
+        return f"[{link_text}]({new_url})"
 
     pattern_links = r'(?<!\!)\[(.*?)\]\((.*?)\)'
     content = re.sub(pattern_links, link_replacer, content)

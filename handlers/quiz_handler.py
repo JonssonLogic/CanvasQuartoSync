@@ -475,7 +475,7 @@ class QuizHandler(BaseHandler):
 
         processed_content = process_content(raw_content, base_path, course, content_root=content_root)
 
-        html_body = self.render_quarto_document(processed_content, base_path, f"desc_{filename}")
+        html_body = self.render_quarto_document(processed_content, base_path, f"desc_{filename}", content_root=content_root)
         if html_body is not None:
              return html_body.strip()
         return None
