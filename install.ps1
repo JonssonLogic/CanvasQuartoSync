@@ -189,28 +189,45 @@ if (Test-Path $batFile) {
 # ============================================================================
 Write-Step "Installing VS Code extension..."
 
+# On Windows, "code" is the exe but "code.cmd" supports CLI flags like --install-extension
 $codeCmd = $null
-try { & code --version 2>&1 | Out-Null; if ($LASTEXITCODE -eq 0) { $codeCmd = "code" } } catch {}
+$codeCandidates = @("code.cmd", "code")
+foreach ($c in $codeCandidates) {
+    try {
+        & $c --version 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) { $codeCmd = $c; break }
+    } catch {}
+}
 
 if ($codeCmd) {
     $vsixPath = Join-Path $env:TEMP "canvasquartosync.vsix"
     try {
+        Write-Host "   Downloading extension from GitHub..." -ForegroundColor White
         $release = Invoke-RestMethod -Uri "https://api.github.com/repos/cenmir/CanvasQuartoSync/releases/latest" -Headers @{ Accept = "application/vnd.github.v3+json" }
         $asset = $release.assets | Where-Object { $_.name -like "*.vsix" } | Select-Object -First 1
         if ($asset) {
             Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $vsixPath -UseBasicParsing
-            & code --install-extension $vsixPath --force 2>&1 | Out-Null
+            Write-Host "   Installing extension..." -ForegroundColor White
+            $installOutput = & $codeCmd --install-extension $vsixPath --force 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Ok "VS Code extension installed! Restart VS Code to activate."
+            } else {
+                Write-Warn "Install returned exit code $LASTEXITCODE"
+                Write-Host "   $installOutput" -ForegroundColor Yellow
+                Write-Host "   Try manually: $codeCmd --install-extension $vsixPath" -ForegroundColor Yellow
+            }
             Remove-Item $vsixPath -ErrorAction SilentlyContinue
-            Write-Ok "VS Code extension installed!"
         } else {
             Write-Warn "No .vsix in latest release. Download from https://github.com/cenmir/CanvasQuartoSync/releases"
         }
     } catch {
-        Write-Warn "Could not download extension. Download from https://github.com/cenmir/CanvasQuartoSync/releases"
+        Write-Warn "Could not download extension: $_"
+        Write-Host "   Download manually from: https://github.com/cenmir/CanvasQuartoSync/releases" -ForegroundColor Yellow
     }
 } else {
-    Write-Warn "VS Code not found. Install from https://code.visualstudio.com"
-    Write-Host "   Then run: code --install-extension <path-to-vsix>" -ForegroundColor Yellow
+    Write-Warn "VS Code not found in PATH."
+    Write-Host "   Install VS Code from https://code.visualstudio.com" -ForegroundColor Yellow
+    Write-Host "   Then run: code.cmd --install-extension <path-to-vsix>" -ForegroundColor Yellow
 }
 
 # ============================================================================
@@ -222,7 +239,7 @@ Write-Host "   Installation Complete!" -ForegroundColor Green
 Write-Host "=============================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "   Next steps:" -ForegroundColor Cyan
-Write-Host "     1. Open VS Code" -ForegroundColor White
+Write-Host "     1. Restart VS Code (close all windows and reopen)" -ForegroundColor White
 Write-Host "     2. Click the graduation cap icon in the sidebar" -ForegroundColor White
 Write-Host "     3. Click 'New Project' to set up your course" -ForegroundColor White
 Write-Host ""
