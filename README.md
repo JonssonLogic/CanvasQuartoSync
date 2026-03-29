@@ -2,7 +2,7 @@
 
 Write your course in Quarto. Preview it live. Sync to Canvas in one click.
 
-Manage your entire course as a local Git repository — pages, assignments, quizzes, calendar — while keeping Canvas perfectly in sync for students.
+Manage your entire course as a local Git repository and keep Canvas in sync for students.
 
 ## Install
 
@@ -18,7 +18,7 @@ That's it. The installer sets up Python, Git, the Python packages, and the VS Co
 
 1. Open **VS Code**
 2. Click the **graduation cap** icon in the sidebar
-3. Click **New Project** — enter your course name, Canvas course ID, and API URL
+3. Click **New Project**: enter your course name, Canvas course ID, and API URL
 4. Write content in `.qmd` files
 5. Click **Sync to Canvas** in the status bar
 
@@ -26,13 +26,13 @@ That's it. The installer sets up Python, Git, the Python packages, and the VS Co
 
 You need a Canvas API token to sync. Two options:
 
-**Option A — Token file** (recommended): Save your token to a text file (e.g. `C:\Users\you\privateCanvasToken`), then set the path in `config.toml`:
+**Option A: Token file** (recommended): Save your token to a text file (e.g. `C:\Users\you\privateCanvasToken`), then set the path in `config.toml`:
 
 ```toml
 canvas_token_path = "C:/Users/you/privateCanvasToken"
 ```
 
-**Option B — Environment variable**: Set `CANVAS_API_TOKEN` in PowerShell:
+**Option B: Environment variable**: Set `CANVAS_API_TOKEN` in PowerShell:
 
 ```powershell
 setx CANVAS_API_TOKEN "your_token_here"
@@ -122,14 +122,14 @@ canvas:
 
 The extension adds a full GUI on top of the Python sync tool:
 
-- **Sidebar panel** — New Project, Sync, Import, Diff, Preview
-- **Live QMD preview** — Canvas-matching styling with math, code highlighting, Mermaid diagrams, callouts
-- **Sync menu** — Sync All or Sync Current File, with Force/Calendar/Drift toggles
-- **Right-click sync** — Sync a single file from editor or file explorer
-- **Inline comments** — Select text in preview to add review comments
-- **Import from Canvas** — Pull existing Canvas content into local `.qmd` files
-- **Diff with Canvas** — Check if someone edited content directly on Canvas
-- **New Project wizard** — Full-page form to scaffold a new course
+- **Sidebar panel**: New Project, Sync, Import, Diff, Preview
+- **Live QMD preview**: Canvas-matching styling with math, code highlighting, Mermaid diagrams, callouts
+- **Sync menu**: Sync All or Sync Current File, with Force/Calendar/Drift toggles
+- **Right-click sync**: Sync a single file from editor or file explorer
+- **Inline comments**: Select text in preview to add review comments
+- **Import from Canvas**: Pull existing Canvas content into local `.qmd` files
+- **Diff with Canvas**: Check if someone edited content directly on Canvas
+- **New Project wizard**: Full-page form to scaffold a new course
 
 ## CLI Usage
 
@@ -150,9 +150,9 @@ The [Mechatronics course](https://github.com/cenmir/Mechatronics) is a real-worl
 
 ## Documentation
 
-- [User Guide](Guides/Canvas_Sync_User_Guide.md) — Full documentation on all features
-- [Canvas Token Setup](Guides/Canvas_token_setup.md) — How to generate an API token
-- [Extension Dev Guide](extension/devInstructions.md) — Building and debugging the extension
+- [User Guide](Guides/Canvas_Sync_User_Guide.md): Full documentation on all features
+- [Canvas Token Setup](Guides/Canvas_token_setup.md): How to generate an API token
+- [Extension Dev Guide](extension/devInstructions.md): Building and debugging the extension
 
 ## License
 

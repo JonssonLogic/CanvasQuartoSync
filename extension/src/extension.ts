@@ -4,6 +4,7 @@ import { openPreview } from './commands/openPreview';
 import { initCourse } from './commands/initCourse';
 import { importFromCanvas } from './commands/importFromCanvas';
 import { diffWithCanvas } from './commands/diffWithCanvas';
+import { purgeCourse } from './commands/purgeCourse';
 import { createStatusBar, updateVisibility, dispose as disposeStatusBar } from './providers/statusBar';
 import { createToggleButtons, registerToggleCommands } from './providers/syncOptions';
 import { registerSidebarViews } from './providers/sidebarTreeView';
@@ -47,6 +48,9 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand('cqs.diffWithCanvas', () =>
       diffWithCanvas(context.extensionPath)
+    ),
+    vscode.commands.registerCommand('cqs.purgeCourse', () =>
+      purgeCourse(context.extensionPath)
     )
   );
 

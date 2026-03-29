@@ -36,6 +36,23 @@ CanvasQuartoSync/
 │   ├── Canvas_Sync_User_Guide.md   # Full user-facing documentation
 │   └── Canvas_token_setup.md       # How to get a Canvas API token
 ├── Example/                   # Reference content directory (module folders, .qmd files)
+├── extension/                 # VS Code extension (TypeScript + React)
+│   ├── src/                   #   Extension host (Node.js, VS Code API)
+│   │   ├── extension.ts       #     Entry point — registers commands, sidebar, status bar
+│   │   ├── commands/          #     syncToCanvas, importFromCanvas, diffWithCanvas, purgeCourse, etc.
+│   │   ├── providers/         #     Sidebar tree view, preview panel, new project form, status bar
+│   │   ├── python/            #     Venv resolution + Python script runner
+│   │   └── config/            #     config.toml loader
+│   ├── webview/               #   React app (runs in sandboxed webview)
+│   │   ├── components/        #     MarkdownRenderer, CodeBlock, MermaidBlock, TabsetBlock, etc.
+│   │   ├── preprocessing/     #     qmdPreprocess, remarkCallouts, bibParser, commentParser
+│   │   ├── hooks/             #     useFileContent, useComments
+│   │   └── styles/            #     Canvas-matching CSS
+│   ├── package.json           #   Extension manifest (commands, menus, settings, walkthrough)
+│   ├── esbuild.mjs            #   Bundles src/ → dist/extension.js
+│   ├── vite.config.ts         #   Bundles webview/ → dist/webview/
+│   ├── devInstructions.md     #   Extension build/debug/test guide
+│   └── TODO.md                #   Known issues (math highlighting, scroll sync)
 ├── DEVELOPER_GUIDE.md         # This file — project overview & architecture
 ├── BUGS_AND_IMPROVEMENTS.md   # Tracked bugs & improvement ideas
 ├── LESSONS_LEARNED.md         # Canvas API gotchas, design decisions, pitfalls
@@ -43,7 +60,7 @@ CanvasQuartoSync/
 ├── DISCLAIMER.md
 ├── LICENSE                    # MIT
 ├── requirements.txt           # Python package dependencies
-├── install.ps1                # One-line installer script (PowerShell)
+├── install.ps1                # One-line installer (Python + Git + packages + VS Code extension)
 └── run_sync_here.bat          # Portable launcher (copy to content folder, double-click)
 ```
 
@@ -127,7 +144,7 @@ Each handler checks the file's `mtime` against the value stored in `.canvas_sync
 
 All Python dependencies are listed in `requirements.txt` at the project root. The project uses a **virtual environment** managed with "uv".
 
-**Quick setup** (Windows): `irm https://raw.githubusercontent.com/JonssonLogic/CanvasQuartoSync/main/install.ps1 | iex`
+**Quick setup** (Windows): `irm https://raw.githubusercontent.com/cenmir/CanvasQuartoSync/main/install.ps1 | iex`
 
 **Manual setup**: activate the venv and install:
 
@@ -181,3 +198,42 @@ quarto             # External CLI — must be in PATH
 - **Read `Guides/Canvas_Sync_User_Guide.md`** for the full user-facing feature documentation.
 - All dates in Canvas API use ISO 8601 format. Empty string `''` clears a date field; `None` is ignored.
 - The Canvas API ignores `published` during module item creation — a separate `.edit()` call is required.
+
+---
+
+## VS Code Extension
+
+The `extension/` directory contains a VS Code extension that wraps the Python tools with a GUI. See `extension/devInstructions.md` for build and debug instructions.
+
+### How it works
+
+The extension has two parts:
+
+- **Extension host** (`src/`): Node.js code that uses the VS Code API. Spawns the Python scripts, manages the sidebar, status bar toggles, and webview panels.
+- **Webview** (`webview/`): A React app running in a sandboxed iframe inside VS Code. Handles the QMD preview rendering (remark/rehype pipeline, KaTeX, Mermaid, syntax highlighting) and inline commenting.
+
+### Extension commands
+
+| Command | What it does |
+|---|---|
+| Sync to Canvas | Opens a menu with Sync All / Sync Current File + toggle flags |
+| Sync This File | Syncs a single .qmd file (right-click or editor title icon) |
+| Import from Canvas | Runs `import_from_canvas.py` with scope picker |
+| Diff with Canvas | Runs `sync_to_canvas.py --check-drift --show-diff` |
+| Purge Canvas Course | Runs `purge_course.py` with confirmation (must type course name) |
+| New Project | Opens a full-page form to scaffold a new course |
+| Open Preview | Opens a side-by-side QMD preview matching Canvas styling |
+
+### Preview rendering pipeline
+
+The preview ports MDViewer's rendering pipeline (from `github.com/JonssonLogic/MDViewer`):
+
+1. `qmdPreprocess.ts` strips YAML, converts fenced divs, tabsets, shortcodes, cross-refs
+2. `remarkCallouts.ts` transforms `:::note` directives into callout divs
+3. `react-markdown` with remark-gfm, remark-math, remark-directive, rehype-katex, rehype-highlight, rehype-slug, rehype-raw
+4. Custom components: CodeBlock (language badge + copy), MermaidBlock (diagram rendering), TabsetBlock (interactive tabs)
+5. CSS matches Canvas branding colors from `base_handler.py`
+
+### Commenting system
+
+Comments are stored as an HTML comment block at the end of the `.qmd` file. The format is defined in `commentParser.ts`. Comments are invisible to Canvas sync because HTML comments are stripped during rendering. The extension highlights commented text in the preview via DOM manipulation after React renders.

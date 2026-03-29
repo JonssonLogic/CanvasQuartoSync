@@ -92,6 +92,12 @@
         "command": "cqs.diffWithCanvas",
         "title": "Diff with Canvas",
         "category": "Canvas Quarto Sync"
+      },
+      {
+        "command": "cqs.purgeCourse",
+        "title": "Purge Canvas Course",
+        "category": "Canvas Quarto Sync",
+        "icon": "$(trash)"
       }
     ],
     "menus": {

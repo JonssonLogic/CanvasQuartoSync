@@ -95,6 +95,11 @@ export function registerSidebarViews(
       icon: 'open-preview',
       command: 'cqs.openPreview',
     },
+    {
+      label: 'Purge Canvas Course',
+      icon: 'trash',
+      command: 'cqs.purgeCourse',
+    },
   ]);
 
   context.subscriptions.push(
