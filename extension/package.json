@@ -3,7 +3,7 @@
   "displayName": "Canvas Quarto Sync",
   "description": "Write courses in Quarto, preview live, sync to Canvas in one click.",
   "version": "0.1.0",
-  "publisher": "JonssonLogic",
+  "publisher": "Kalle & Mirza",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
@@ -17,10 +17,54 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "cqs-sidebar",
+          "title": "Canvas Quarto Sync",
+          "icon": "$(mortar-board)"
+        }
+      ]
+    },
+    "views": {
+      "cqs-sidebar": [
+        {
+          "id": "cqs.projectActions",
+          "name": "Project"
+        },
+        {
+          "id": "cqs.syncActions",
+          "name": "Sync"
+        },
+        {
+          "id": "cqs.toolActions",
+          "name": "Tools"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "cqs.projectActions",
+        "contents": "No course project detected.\n[New Project](command:cqs.newProject)\n[Open Folder](command:vscode.openFolder)",
+        "when": "!cqs.hasCourseProject"
+      }
+    ],
     "commands": [
+      {
+        "command": "cqs.newProject",
+        "title": "New Project",
+        "category": "Canvas Quarto Sync",
+        "icon": "$(add)"
+      },
       {
         "command": "cqs.syncToCanvas",
         "title": "Sync to Canvas",
+        "category": "Canvas Quarto Sync",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "cqs.syncFile",
+        "title": "Sync This File to Canvas",
         "category": "Canvas Quarto Sync",
         "icon": "$(cloud-upload)"
       },
@@ -50,8 +94,32 @@
       "editor/title": [
         {
           "when": "resourceExtname == .qmd",
+          "command": "cqs.syncFile",
+          "group": "navigation"
+        },
+        {
+          "when": "resourceExtname == .qmd",
           "command": "cqs.openPreview",
           "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "when": "resourceExtname == .qmd",
+          "command": "cqs.syncFile",
+          "group": "cqs@1"
+        },
+        {
+          "when": "resourceExtname == .qmd",
+          "command": "cqs.syncToCanvas",
+          "group": "cqs@2"
+        }
+      ],
+      "explorer/context": [
+        {
+          "when": "resourceExtname == .qmd",
+          "command": "cqs.syncFile",
+          "group": "cqs@1"
         }
       ]
     },

@@ -7,7 +7,7 @@
       "request": "launch",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "d:\\Dropbox\\Work\\Kurser\\Mekatronik\\2026\\Mechatronics"
+        "d:\\Dropbox\\Python\\CanvasQuartoSyncDev\\TestCourse"
       ],
       "outFiles": ["${workspaceFolder}/dist/**/*.js"],
       "preLaunchTask": "build"

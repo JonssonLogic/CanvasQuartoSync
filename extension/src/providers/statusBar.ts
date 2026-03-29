@@ -1,4 +1,9 @@
 import * as vscode from 'vscode';
+import {
+  showToggleButtons,
+  hideToggleButtons,
+  disposeToggleButtons,
+} from './syncOptions';
 
 let statusBarItem: vscode.StatusBarItem | undefined;
 
@@ -22,14 +27,21 @@ export function updateVisibility(): void {
   const workspaceFolders = vscode.workspace.workspaceFolders;
   if (!workspaceFolders) {
     statusBarItem.hide();
+    hideToggleButtons();
     return;
   }
 
   // Show only if config.toml exists in the workspace
   const configUri = vscode.Uri.joinPath(workspaceFolders[0].uri, 'config.toml');
   vscode.workspace.fs.stat(configUri).then(
-    () => statusBarItem!.show(),
-    () => statusBarItem!.hide()
+    () => {
+      statusBarItem!.show();
+      showToggleButtons();
+    },
+    () => {
+      statusBarItem!.hide();
+      hideToggleButtons();
+    }
   );
 }
 
@@ -46,4 +58,5 @@ export function setSyncing(syncing: boolean): void {
 
 export function dispose(): void {
   statusBarItem?.dispose();
+  disposeToggleButtons();
 }
