@@ -34,7 +34,7 @@ function Ask-YesNo {
 # ============================================================================
 Write-Host ""
 Write-Host "=============================================" -ForegroundColor Magenta
-Write-Host "   Canvas Quarto Sync — Installer" -ForegroundColor Magenta
+Write-Host "   Canvas Quarto Sync - Installer" -ForegroundColor Magenta
 Write-Host "=============================================" -ForegroundColor Magenta
 Write-Host ""
 Write-Host "This script will set up everything you need to run Canvas Quarto Sync:" -ForegroundColor White
@@ -324,7 +324,7 @@ if (Test-Path $batFile) {
     Write-Host "   PROJECT_DIR : $CLONE_DIR" -ForegroundColor White
     Write-Host "   Python      : $VENV_DIR\Scripts\python.exe" -ForegroundColor White
 } else {
-    Write-Warn "run_sync_here.bat not found in cloned repo — skipping patch."
+    Write-Warn "run_sync_here.bat not found in cloned repo - skipping patch."
 }
 
 # ============================================================================
@@ -363,7 +363,7 @@ Write-Host "   1. Log in to Canvas in your browser" -ForegroundColor White
 Write-Host "   2. Go to Account -> Settings" -ForegroundColor White
 Write-Host "   3. Under 'Approved integrations', click '+ New access token'" -ForegroundColor White
 Write-Host "   4. Enter a purpose (e.g. 'CanvasQuartoSync') and click 'Generate token'" -ForegroundColor White
-Write-Host "   5. IMPORTANT: Copy the token string now — you won't be able to see it again!" -ForegroundColor Yellow
+Write-Host "   5. IMPORTANT: Copy the token string now - you won't be able to see it again!" -ForegroundColor Yellow
 Write-Host ""
 
 $canvasToken = Read-Host "   Paste your Canvas API token (or press Enter to skip)"
