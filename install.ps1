@@ -29,6 +29,19 @@ Write-Host "=============================================" -ForegroundColor Mage
 Write-Host "   Canvas Quarto Sync — Installer" -ForegroundColor Magenta
 Write-Host "=============================================" -ForegroundColor Magenta
 Write-Host ""
+Write-Host "  This will install:" -ForegroundColor White
+Write-Host "    - Python (if not found)" -ForegroundColor White
+Write-Host "    - Git (if not found)" -ForegroundColor White
+Write-Host "    - CanvasQuartoSync (cloned to ~/venvs/canvas_quarto_env/)" -ForegroundColor White
+Write-Host "    - Python packages (virtual environment)" -ForegroundColor White
+Write-Host "    - VS Code extension (if VS Code is installed)" -ForegroundColor White
+Write-Host ""
+$answer = Read-Host "  Continue? [Y/n]"
+if ($answer -match "^[Nn]") {
+    Write-Host "  Aborted." -ForegroundColor Yellow
+    exit 0
+}
+Write-Host ""
 
 # ============================================================================
 #  Step 1 — Python
