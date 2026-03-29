@@ -2,21 +2,23 @@
 
 Write your course in Quarto. Preview it live. Sync to Canvas in one click.
 
-## Install
+## Install (one command)
 
-1. Download `canvasquartosync-X.X.X.vsix` from the [latest release](https://github.com/cenmir/CanvasQuartoSync/releases)
-2. In VS Code: **Ctrl+Shift+P** → `Extensions: Install from VSIX...` → select the file
-3. Reload VS Code
+Open PowerShell and paste:
 
-**Prerequisites:** [Python 3.8+](https://www.python.org/downloads/) with CanvasQuartoSync installed (run `install.ps1` from the repo root).
+```powershell
+irm https://raw.githubusercontent.com/cenmir/CanvasQuartoSync/main/install.ps1 | iex
+```
+
+This installs **everything** — Python (if missing), Quarto, Git, CanvasQuartoSync, and the VS Code extension. It also walks you through setting up your Canvas API credentials.
 
 ## Quick Start
 
-1. Click the **graduation cap** icon in the sidebar → **New Project**
-2. Fill in your course name, Canvas course ID, API URL, and token file
-3. Click **Create Project** — this generates `config.toml`, a study guide template, and folder structure
+1. Open VS Code
+2. Click the **graduation cap** icon in the sidebar
+3. Click **New Project** — fill in your course name, Canvas course ID, and API token
 4. Write content in `.qmd` files
-5. Click **preview icon** in the editor title bar to see a live preview
+5. Click the **preview icon** in the editor to see a live preview
 6. Click **Sync to Canvas** in the status bar to push to Canvas
 
 ## Features
@@ -25,10 +27,11 @@ Write your course in Quarto. Preview it live. Sync to Canvas in one click.
 - **Sync menu** — Sync All or Sync Current File, with toggle flags (Force, Calendar, Drift)
 - **Right-click sync** — Sync a single `.qmd` from editor or file explorer
 - **Live QMD preview** — Canvas-matching styling, KaTeX math, code highlighting, Mermaid diagrams, callouts, tabsets
-- **Inline comments** — Select text in the preview, add comments stored as HTML comments in the `.qmd` file (invisible to Canvas)
+- **Inline comments** — Select text in the preview to add comments (stored in the .qmd file, invisible to Canvas)
 - **Import from Canvas** — Pull content from Canvas into local `.qmd` files
 - **Diff with Canvas** — Check if content was modified directly on Canvas
-- **Color-coded terminal output** — Live sync progress with colored log levels
+- **New Project wizard** — Full-page form to scaffold a new course
+- **Color-coded terminal output** — Live sync progress
 
 ## Config Reference
 
@@ -45,10 +48,10 @@ canvas_token_path = "C:/Users/you/privateCanvasToken"
 language = "english"
 ```
 
-## Development
-
-See [devInstructions.md](devInstructions.md) for build setup, debugging, and project structure.
-
 ## Example Project
 
 The [Mechatronics course](https://github.com/cenmir/Mechatronics) is the canonical example.
+
+## Development
+
+See [devInstructions.md](devInstructions.md) for build setup, debugging, and project structure.

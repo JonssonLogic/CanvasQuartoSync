@@ -387,6 +387,60 @@ if ($skipCredentials) {
 }
 
 # ============================================================================
+#  Step 9 — Install VS Code Extension
+# ============================================================================
+Write-Step "Installing VS Code extension..."
+
+$codeCmd = $null
+try {
+    & code --version 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) { $codeCmd = "code" }
+} catch {}
+
+if ($codeCmd) {
+    Write-Ok "Found VS Code."
+
+    # Download the latest .vsix from GitHub Releases
+    $vsixUrl = "https://api.github.com/repos/cenmir/CanvasQuartoSync/releases/latest"
+    $vsixPath = Join-Path $env:TEMP "canvasquartosync.vsix"
+
+    try {
+        Write-Host "   Downloading latest extension..." -ForegroundColor White
+        $release = Invoke-RestMethod -Uri $vsixUrl -Headers @{ Accept = "application/vnd.github.v3+json" }
+        $asset = $release.assets | Where-Object { $_.name -like "*.vsix" } | Select-Object -First 1
+
+        if ($asset) {
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $vsixPath -UseBasicParsing
+            Write-Ok "Downloaded: $($asset.name)"
+
+            Write-Host "   Installing extension..." -ForegroundColor White
+            & code --install-extension $vsixPath --force 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Ok "VS Code extension installed!"
+            } else {
+                Write-Warn "Extension install command returned an error."
+                Write-Host "   You can install manually: code --install-extension $vsixPath" -ForegroundColor Yellow
+            }
+
+            # Clean up
+            Remove-Item $vsixPath -ErrorAction SilentlyContinue
+        } else {
+            Write-Warn "No .vsix file found in the latest release."
+            Write-Host "   Download manually from: https://github.com/cenmir/CanvasQuartoSync/releases" -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Warn "Could not download extension: $_"
+        Write-Host "   Download manually from: https://github.com/cenmir/CanvasQuartoSync/releases" -ForegroundColor Yellow
+    }
+} else {
+    Write-Warn "VS Code not found in PATH."
+    Write-Host "   Install VS Code from https://code.visualstudio.com" -ForegroundColor Yellow
+    Write-Host "   Then install the extension: download .vsix from" -ForegroundColor Yellow
+    Write-Host "   https://github.com/cenmir/CanvasQuartoSync/releases" -ForegroundColor Yellow
+    Write-Host "   and run: code --install-extension canvasquartosync-*.vsix" -ForegroundColor Yellow
+}
+
+# ============================================================================
 #  Summary
 # ============================================================================
 Write-Host ""
@@ -397,12 +451,10 @@ Write-Host ""
 Write-Host "   Project location : $CLONE_DIR" -ForegroundColor White
 Write-Host "   Virtual env      : $VENV_DIR" -ForegroundColor White
 Write-Host ""
-Write-Host "   To activate the environment:" -ForegroundColor Cyan
-Write-Host "     & $venvActivate" -ForegroundColor Gray
-Write-Host ""
-Write-Host "   To sync your course:" -ForegroundColor Cyan
-Write-Host "     cd $CLONE_DIR" -ForegroundColor Gray
-Write-Host "     python sync_to_canvas.py <your_content_folder>" -ForegroundColor Gray
+Write-Host "   Next steps:" -ForegroundColor Cyan
+Write-Host "     1. Open VS Code" -ForegroundColor White
+Write-Host "     2. Click the graduation cap icon in the sidebar" -ForegroundColor White
+Write-Host "     3. Click 'New Project' to create your first course" -ForegroundColor White
 Write-Host ""
 Write-Host "   For full documentation, see:" -ForegroundColor Cyan
 Write-Host "     $CLONE_DIR\Guides\Canvas_Sync_User_Guide.md" -ForegroundColor Gray
