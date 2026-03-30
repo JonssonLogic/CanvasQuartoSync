@@ -1,5 +1,5 @@
 # ============================================================================
-#  Canvas Quarto Sync — One-Line Installer (Windows PowerShell)
+#  Canvas Quarto Sync - One-Line Installer (Windows PowerShell)
 #
 #  Usage:
 #    irm https://raw.githubusercontent.com/cenmir/CanvasQuartoSync/main/install.ps1 | iex
@@ -9,9 +9,9 @@
 
 # --- Configuration ---
 $REPO_URL   = "https://github.com/cenmir/CanvasQuartoSync.git"
-$VENV_ROOT  = Join-Path $env:USERPROFILE "venvs"
+$VENV_ROOT  = Join-Path $env:USERPROFILE ".venvs"
 $VENV_DIR   = Join-Path $VENV_ROOT "canvas_quarto_env"
-$CLONE_DIR  = Join-Path $VENV_DIR "CanvasQuartoSync"
+$CLONE_DIR  = Join-Path $env:USERPROFILE "CanvasQuartoSync"
 
 # --- Enforce TLS 1.2 ---
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -73,19 +73,19 @@ function Show-InstallMenu {
 # ============================================================================
 Write-Host ""
 Write-Host "=============================================" -ForegroundColor Magenta
-Write-Host "   Canvas Quarto Sync — Installer" -ForegroundColor Magenta
+Write-Host "   Canvas Quarto Sync - Installer"            -ForegroundColor Magenta
 Write-Host "=============================================" -ForegroundColor Magenta
 Write-Host ""
-Write-Host "  Select components to install:" -ForegroundColor White
+Write-Host "  Select components to install:"               -ForegroundColor White
 Write-Host ""
 
 $menuItems = @(
-    "Python (via uv)"
-    "Git"
-    "Quarto (check only)"
-    "Python virtual environment + packages"
-    "Clone/update CanvasQuartoSync repository"
-    "VS Code extension"
+    'uv and Python'
+    'Git'
+    'Quarto (check only)'
+    'Clone/update CanvasQuartoSync repository'
+    'Python virtual environment + packages'
+    'VS Code extension'
 )
 
 $choices = Show-InstallMenu $menuItems
@@ -93,8 +93,8 @@ $choices = Show-InstallMenu $menuItems
 $doPython  = $choices[0]
 $doGit     = $choices[1]
 $doQuarto  = $choices[2]
-$doVenv    = $choices[3]
-$doClone   = $choices[4]
+$doClone   = $choices[3]
+$doVenv    = $choices[4]
 $doVSCode  = $choices[5]
 
 # Check if anything was selected
@@ -106,42 +106,65 @@ if (-not $anySelected) {
 }
 
 # ============================================================================
-#  Step 1 — Python
+#  Step 1 - uv and Python
 # ============================================================================
-$pythonCmd = $null
-foreach ($cmd in @("python", "python3")) {
-    try {
-        $ver = & $cmd --version 2>&1
-        if ($ver -match "Python \d") { $pythonCmd = $cmd; break }
-    } catch {}
-}
-
 if ($doPython) {
-    Write-Step "Setting up Python..."
-    if ($pythonCmd) {
-        Write-Ok "Found: $( & $pythonCmd --version 2>&1 )"
+    Write-Step "Setting up uv and Python..."
+
+    # Check if uv is available
+    $uvLocalBinPath = Join-Path $env:USERPROFILE ".local\bin"
+    $uvExePath = Join-Path $uvLocalBinPath "uv.exe"
+    $uvAvailable = $false
+
+    if (Test-Path $uvExePath) {
+        if (-not ($env:Path -like "*$([System.Text.RegularExpressions.Regex]::Escape($uvLocalBinPath))*")) {
+            $env:Path += ";$uvLocalBinPath"
+        }
+        $uvAvailable = $true
+        Write-Ok "uv already installed."
     } else {
-        Write-Host "   Installing Python via uv..." -ForegroundColor White
-        try {
-            Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
-            $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "User") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "Machine")
-            & uv python install 3.13
-            $pythonCmd = "python"
-            Write-Ok "Python 3.13 installed via uv."
-        } catch {
-            Write-Err "Failed to install Python. Install manually from https://www.python.org/downloads/"
+        $uvCmd = Get-Command uv -ErrorAction SilentlyContinue
+        if ($uvCmd) {
+            $uvAvailable = $true
+            Write-Ok "uv already installed."
+        } else {
+            Write-Host "   Installing uv..." -ForegroundColor White
+            try {
+                Invoke-Expression "powershell -ExecutionPolicy ByPass -c 'irm https://astral.sh/uv/install.ps1 | iex'"
+                if (Test-Path $uvLocalBinPath) {
+                    $env:Path += ";$uvLocalBinPath"
+                }
+                $uvAvailable = $true
+                Write-Ok "uv installed."
+            } catch {
+                Write-Err "Failed to install uv: $_"
+                exit 1
+            }
+        }
+    }
+
+    # Install Python via uv
+    if ($uvAvailable) {
+        Write-Host "   Installing Python 3.13 via uv..." -ForegroundColor White
+        uv python install 3.13
+        if ($LASTEXITCODE -eq 0) {
+            # Use uv python find to get the actual path (avoids Windows Store stub)
+            $pythonPath = (uv python find 3.13 2>$null)
+            if ($pythonPath -and (Test-Path $pythonPath)) {
+                $pythonVersion = & $pythonPath --version
+                Write-Ok "Python installed: $pythonVersion"
+            } else {
+                Write-Ok "Python 3.13 installed via uv."
+            }
+        } else {
+            Write-Err "Failed to install Python via uv."
             exit 1
         }
     }
-} else {
-    # Still need to find Python for venv step
-    if (-not $pythonCmd) {
-        Write-Warn "Python not found and install was skipped."
-    }
 }
 
 # ============================================================================
-#  Step 2 — Quarto
+#  Step 2 - Quarto
 # ============================================================================
 if ($doQuarto) {
     Write-Step "Checking for Quarto CLI..."
@@ -156,7 +179,7 @@ if ($doQuarto) {
 }
 
 # ============================================================================
-#  Step 3 — Git
+#  Step 3 - Git
 # ============================================================================
 $gitFound = $false
 try { $ver = & git --version 2>&1; if ($LASTEXITCODE -eq 0) { $gitFound = $true } } catch {}
@@ -180,12 +203,10 @@ if ($doGit) {
 }
 
 # ============================================================================
-#  Step 4 — Clone Repository
+#  Step 4 - Clone Repository
 # ============================================================================
 if ($doClone) {
     Write-Step "Setting up CanvasQuartoSync..."
-    if (-not (Test-Path $VENV_ROOT)) { New-Item -ItemType Directory -Path $VENV_ROOT -Force | Out-Null }
-    if (-not (Test-Path $VENV_DIR))  { New-Item -ItemType Directory -Path $VENV_DIR -Force | Out-Null }
 
     if (Test-Path (Join-Path $CLONE_DIR ".git")) {
         Write-Ok "Already installed at $CLONE_DIR"
@@ -196,7 +217,7 @@ if ($doClone) {
     } else {
         & git clone $REPO_URL $CLONE_DIR 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) { Write-Err "Failed to clone repository."; exit 1 }
-        Write-Ok "Repository cloned."
+        Write-Ok "Repository cloned to $CLONE_DIR"
     }
 
     # Patch run_sync_here.bat
@@ -210,51 +231,45 @@ if ($doClone) {
 }
 
 # ============================================================================
-#  Step 5 — Virtual Environment + Packages
+#  Step 5 - Virtual Environment + Packages
 # ============================================================================
 if ($doVenv) {
     Write-Step "Setting up Python environment..."
 
-    if (-not $pythonCmd) {
-        Write-Err "Python is required for this step. Select Python in the menu or install it manually."
+    # Check uv is available (required for venv creation)
+    $uvAvailable = $false
+    try { uv --version 2>&1 | Out-Null; if ($LASTEXITCODE -eq 0) { $uvAvailable = $true } } catch {}
+
+    if (-not $uvAvailable) {
+        Write-Err "uv is required for this step. Select 'uv and Python' in the menu or install uv manually."
         exit 1
     }
 
     $venvActivate = Join-Path $VENV_DIR "Scripts\Activate.ps1"
     $requirementsFile = Join-Path $CLONE_DIR "requirements.txt"
 
-    if (-not (Test-Path $VENV_DIR)) { New-Item -ItemType Directory -Path $VENV_DIR -Force | Out-Null }
-
     if (-not (Test-Path $venvActivate)) {
-        $uvAvailable = $false
-        try { & uv --version 2>&1 | Out-Null; if ($LASTEXITCODE -eq 0) { $uvAvailable = $true } } catch {}
-
-        if ($uvAvailable) {
-            & uv venv --python 3.13 $VENV_DIR 2>&1 | Out-Null
-            if ($LASTEXITCODE -ne 0) { & $pythonCmd -m venv $VENV_DIR }
-        } else {
-            & $pythonCmd -m venv $VENV_DIR
+        Write-Host "   Creating virtual environment..." -ForegroundColor White
+        uv venv --clear --python 3.13 $VENV_DIR
+        if ($LASTEXITCODE -ne 0) {
+            Write-Err "Failed to create virtual environment."
+            exit 1
         }
-        if (-not (Test-Path $venvActivate)) { Write-Err "Failed to create virtual environment."; exit 1 }
-        Write-Ok "Virtual environment created."
+        Write-Ok "Virtual environment created at $VENV_DIR"
     } else {
-        Write-Ok "Virtual environment exists."
+        Write-Ok "Virtual environment exists at $VENV_DIR"
     }
 
+    # Activate venv
     try { & $venvActivate } catch {
         $env:Path = (Join-Path $VENV_DIR "Scripts") + ";" + $env:Path
         $env:VIRTUAL_ENV = $VENV_DIR
     }
 
+    # Install packages
     if (Test-Path $requirementsFile) {
-        $uvAvailable = $false
-        try { & uv --version 2>&1 | Out-Null; if ($LASTEXITCODE -eq 0) { $uvAvailable = $true } } catch {}
-
-        if ($uvAvailable) {
-            & uv pip install -r $requirementsFile 2>&1 | Out-Null
-        } else {
-            & pip install -r $requirementsFile 2>&1 | Out-Null
-        }
+        Write-Host "   Installing packages..." -ForegroundColor White
+        uv pip install -r $requirementsFile
         if ($LASTEXITCODE -ne 0) { Write-Err "Package installation failed."; exit 1 }
         Write-Ok "Python packages installed."
     } else {
@@ -263,7 +278,7 @@ if ($doVenv) {
 }
 
 # ============================================================================
-#  Step 6 — VS Code Extension
+#  Step 6 - VS Code Extension
 # ============================================================================
 if ($doVSCode) {
     Write-Step "Installing VS Code extension..."
@@ -308,11 +323,11 @@ if ($doVSCode) {
 # ============================================================================
 Write-Host ""
 Write-Host "=============================================" -ForegroundColor Green
-Write-Host "   Installation Complete!" -ForegroundColor Green
+Write-Host "   Installation Complete!"                     -ForegroundColor Green
 Write-Host "=============================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "   Next steps:" -ForegroundColor Cyan
+Write-Host "   Next steps:"                                -ForegroundColor Cyan
 Write-Host "     1. Restart VS Code (close all windows and reopen)" -ForegroundColor White
-Write-Host "     2. Click the graduation cap icon in the sidebar" -ForegroundColor White
-Write-Host "     3. Click 'New Project' to set up your course" -ForegroundColor White
+Write-Host "     2. Click the graduation cap icon in the sidebar"   -ForegroundColor White
+Write-Host "     3. Click 'New Project' to set up your course"      -ForegroundColor White
 Write-Host ""
