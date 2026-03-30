@@ -61,9 +61,25 @@ function getPythonInVenv(venvDir: string): string {
 
 /**
  * Resolves the path to the CanvasQuartoSync repo root.
- * The extension lives at CanvasQuartoSync/extension/, so the repo root
- * is one directory up from the extension path.
+ *
+ * Resolution order:
+ * 1. ~/CanvasQuartoSync/ (default install location)
+ * 2. Parent of extensionPath (dev: extension lives at repo/extension/)
+ * 3. Legacy ~/venvs/canvas_quarto_env/CanvasQuartoSync/
  */
 export function resolveCqsRoot(extensionPath: string): string {
-  return path.dirname(extensionPath);
+  const candidates = [
+    path.join(os.homedir(), 'CanvasQuartoSync'),
+    path.dirname(extensionPath),
+    path.join(os.homedir(), 'venvs', 'canvas_quarto_env', 'CanvasQuartoSync'),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(path.join(candidate, 'sync_to_canvas.py'))) {
+      return candidate;
+    }
+  }
+
+  // Fallback to default location even if not yet cloned
+  return candidates[0];
 }

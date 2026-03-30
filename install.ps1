@@ -73,7 +73,7 @@ function Show-InstallMenu {
 # ============================================================================
 Write-Host ""
 Write-Host "=============================================" -ForegroundColor Magenta
-Write-Host "   Canvas Quarto Sync - Installer"            -ForegroundColor Magenta
+Write-Host "   Canvas Quarto Sync - Installer v0.2.1"      -ForegroundColor Magenta
 Write-Host "=============================================" -ForegroundColor Magenta
 Write-Host ""
 Write-Host "  Select components to install:"               -ForegroundColor White
