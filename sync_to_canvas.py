@@ -414,6 +414,44 @@ def _import_single_item(course, content_root: str, item_json: str) -> dict:
     return {'success': True, 'file': rel}
 
 
+def _set_published(course, pub_json: str) -> dict:
+    """Set published state for a module or module item."""
+    try:
+        data = json.loads(pub_json)
+    except json.JSONDecodeError as e:
+        return {'success': False, 'error': f'Invalid JSON: {e}'}
+
+    target = data.get('target', '')
+    published = data.get('published', False)
+
+    try:
+        if target == 'module':
+            module_id = data.get('module_id')
+            if not module_id:
+                return {'success': False, 'error': 'Missing module_id'}
+            module = course.get_module(module_id)
+            module.edit(module={'published': published})
+            state = 'published' if published else 'unpublished'
+            return {'success': True, 'message': f'Module {state}'}
+
+        elif target == 'item':
+            module_id = data.get('module_id')
+            item_id = data.get('item_id')
+            if not module_id or not item_id:
+                return {'success': False, 'error': 'Missing module_id or item_id'}
+            module = course.get_module(module_id)
+            item = module.get_module_item(item_id)
+            item.edit(module_item={'published': published})
+            state = 'published' if published else 'unpublished'
+            return {'success': True, 'message': f'Item {state}'}
+
+        else:
+            return {'success': False, 'error': f'Unknown target: {target}'}
+
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
 def is_valid_name(name):
     """
     Checks if the name starts with two or more digits followed by an underscore.
@@ -434,6 +472,7 @@ def main():
     parser.add_argument("--only", help="Sync only a specific file (relative path from content dir, e.g. '01_Intro/02_Welcome.qmd').")
     parser.add_argument("--module-structure", action="store_true", help="Output Canvas module structure as JSON (for VS Code extension).")
     parser.add_argument("--import-item", help="Import a single Canvas item as JSON: {\"module_dir\":...,\"item_type\":...,\"content_id\":...,\"page_url\":...,\"title\":...,\"published\":...,\"indent\":...,\"external_url\":...}")
+    parser.add_argument("--set-published", help="Set published state as JSON: {\"target\":\"module\"|\"item\",\"module_id\":N,\"item_id\":N,\"published\":bool}")
 
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument("--verbose", "-v", action="store_true", help="Show detailed debug output.")
@@ -506,6 +545,12 @@ def main():
     if args.import_item:
         result = _import_single_item(course, content_root, args.import_item)
         print(f'IMPORT_RESULT_JSON:{json.dumps(result, ensure_ascii=False)}')
+        return
+
+    # Publish/unpublish mode
+    if args.set_published:
+        result = _set_published(course, args.set_published)
+        print(f'PUBLISH_RESULT_JSON:{json.dumps(result, ensure_ascii=False)}')
         return
 
     # Drift check mode: only check for Canvas-side modifications, then exit

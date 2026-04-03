@@ -141,6 +141,8 @@ export async function openModuleStructurePanel(extensionPath: string): Promise<v
       if (msg.url) {
         vscode.env.openExternal(vscode.Uri.parse(msg.url));
       }
+    } else if (msg.type === 'setPublished') {
+      await handleSetPublished(extensionPath, msg.data);
     } else if (msg.type === 'createItem') {
       await handleCreateItem(extensionPath, msg.moduleDir, msg.itemType);
     }
@@ -165,6 +167,42 @@ async function refreshPanel(extensionPath: string): Promise<void> {
   } else if (result.data) {
     currentPanel.webview.html = wrapHtml(renderBody(result.data));
   }
+}
+
+async function handleSetPublished(extensionPath: string, data: Record<string, unknown>): Promise<void> {
+  const ws = getWorkspaceRoot();
+  if (!ws) return;
+  const pythonPath = resolvePython();
+  if (!pythonPath) return;
+
+  const cqsRoot = resolveCqsRoot(extensionPath);
+  const scriptPath = path.join(cqsRoot, 'sync_to_canvas.py');
+  const pubJson = JSON.stringify(data);
+  const args = [scriptPath, ws, '--set-published', pubJson];
+
+  setSyncing(true);
+  const result = await new Promise<string>((resolve) => {
+    let stdout = '';
+    const proc = spawn(pythonPath, args, { cwd: ws, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+    proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
+    proc.on('close', () => { setSyncing(false); resolve(stdout); });
+    proc.on('error', () => { setSyncing(false); resolve(''); });
+  });
+
+  const jsonLine = result.split('\n').find(l => l.trim().startsWith('PUBLISH_RESULT_JSON:'));
+  if (jsonLine) {
+    try {
+      const res = JSON.parse(jsonLine.trim().replace('PUBLISH_RESULT_JSON:', ''));
+      if (res.success) {
+        vscode.window.showInformationMessage(res.message);
+      } else {
+        vscode.window.showErrorMessage('Publish failed: ' + res.error);
+      }
+    } catch {
+      vscode.window.showErrorMessage('Failed to parse publish result.');
+    }
+  }
+  await refreshPanel(extensionPath);
 }
 
 async function handleSync(extensionPath: string, ws: string, localPath: string, force: boolean): Promise<void> {
@@ -382,7 +420,7 @@ async function fetchStructure(
       }
       const line = stdout.split('\n').find(l => l.trim().startsWith('MODULE_STRUCTURE_JSON:'));
       if (!line) {
-        resolve({ type: 'error', message: 'No JSON in output. stderr: ' + stderr.slice(0, 300) });
+        resolve({ type: 'error', message: (stderr || stdout).slice(0, 500) || 'No output from Python script.' });
         return;
       }
       try {
@@ -492,7 +530,8 @@ function renderBody(data: StructureData): string {
     h += '<div class="module-header">';
     h += '<span class="toggle" id="toggle-' + mi + '" onclick="toggleModule(' + mi + ')">&#9660;</span> ';
     h += '<span onclick="toggleModule(' + mi + ')" style="flex:1;cursor:pointer">' + esc(mod.name) + '</span>';
-    h += ' <span class="pub-badge ' + pubCls + '">' + pubLbl + '</span>';
+    const togglePubMod = !mod.published;
+    h += ' <span class="pub-badge ' + pubCls + ' pub-toggle" onclick="event.stopPropagation();doSetPublished({target:\'module\',module_id:' + mod.id + ',published:' + togglePubMod + '})" title="Click to ' + (togglePubMod ? 'publish' : 'unpublish') + '">' + pubLbl + '</span>';
 
     // "Import Module" button if there are canvas-only items (exclude local-only)
     const canvasOnlyInMod = modCanvasItems.filter(i => !i.local_path);
@@ -608,6 +647,16 @@ function renderBody(data: StructureData): string {
 
       // Action buttons
       h += '<span class="actions">';
+      // Publish/unpublish toggle for Canvas items (not local-only)
+      if (!isLocalOnly && item.module_item_id) {
+        const togglePub = !item.published;
+        const pubIcon = item.published ? '&#x1F441;' : '&#x1F441;&#xFE0F;&#x200D;&#x1F5E8;';
+        const pubTitle = item.published ? 'Unpublish' : 'Publish';
+        const pubBtnCls = item.published ? 'pub-on' : 'pub-off';
+        h += '<button class="action-btn pub-btn ' + pubBtnCls + '" onclick="event.stopPropagation();doSetPublished({target:\'item\',module_id:'
+          + mod.id + ',item_id:' + item.module_item_id + ',published:' + togglePub + '})" title="' + pubTitle + '">'
+          + (item.published ? '&#x1F7E2;' : '&#x26AA;') + '</button>';
+      }
       if (isLocalOnly || hasLocal) {
         // Has local file: Sync button
         h += '<button class="action-btn sync-btn" onclick="event.stopPropagation();doSync(\''
@@ -748,6 +797,9 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);backgr
 .new-menu-item{padding:6px 14px;font-size:12px;cursor:pointer;white-space:nowrap}
 .new-menu-item:hover{background:var(--vscode-list-hoverBackground)}
 .orphan-module{border-color:rgba(13,110,253,0.3)}
+.pub-toggle{cursor:pointer}.pub-toggle:hover{opacity:0.7}
+.pub-btn{font-size:12px;padding:1px 4px;min-width:24px;border:none}
+.pub-btn.pub-on{color:#198754}.pub-btn.pub-off{color:#6c757d}
 .batch-bar{position:fixed;bottom:0;left:0;right:0;background:var(--vscode-sideBar-background);border-top:2px solid var(--vscode-focusBorder);padding:10px 24px;display:flex;align-items:center;gap:12px;z-index:100;font-size:13px}
 .batch-bar.hidden{display:none}
 #batch-count{font-weight:600;min-width:90px}
@@ -762,6 +814,7 @@ function openFile(p){vscode.postMessage({type:"openFile",path:p})}
 function refresh(){vscode.postMessage({type:"refresh"})}
 function openUrl(u){vscode.postMessage({type:"openUrl",url:u})}
 function doSync(p){vscode.postMessage({type:"sync",localPath:p})}
+function doSetPublished(d){vscode.postMessage({type:"setPublished",data:d})}
 function doImport(jsonStr){try{var d=JSON.parse(jsonStr);vscode.postMessage({type:"import",itemData:d})}catch(e){console.error(e)}}
 function toggleNewMenu(mi){
   var menu=document.getElementById("new-menu-"+mi);
