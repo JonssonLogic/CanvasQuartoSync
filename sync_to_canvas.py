@@ -120,18 +120,16 @@ def _fetch_module_structure(course, content_root: str) -> dict:
         local_name_index[norm_mod] = name_map
         local_title_index[norm_mod] = title_map
 
-    # Batch-fetch updated_at for pages and assignments (2 API calls, not N)
+    # Batch-fetch updated_at for pages only (1 API call).
+    # Assignment updated_at is NOT reliable — Canvas bumps it for student
+    # submissions, grading, due date changes, etc. No content-specific
+    # timestamp exists in the Canvas API for assignments.
     page_updated = {}
     for p in course.get_pages():
         page_updated[getattr(p, 'url', '')] = getattr(p, 'updated_at', '')
-        # Also key by page_url slug
         slug = getattr(p, 'url', '').rsplit('/', 1)[-1] if getattr(p, 'url', '') else ''
         if slug:
             page_updated[slug] = getattr(p, 'updated_at', '')
-
-    assignment_updated = {}
-    for a in course.get_assignments():
-        assignment_updated[a.id] = getattr(a, 'updated_at', '')
 
     modules = []
     for module in course.get_modules():
@@ -151,15 +149,11 @@ def _fetch_module_structure(course, content_root: str) -> dict:
             indent = getattr(item, 'indent', 0)
             external_url = getattr(item, 'external_url', None)
 
-            # Look up updated_at from batch-fetched data
+            # Look up updated_at — only for Pages (reliable)
             updated_at = ''
             if item_type == 'Page':
                 page_slug = getattr(item, 'page_url', '')
                 updated_at = page_updated.get(page_slug, '')
-            elif item_type == 'Assignment':
-                content_id_val = getattr(item, 'content_id', None)
-                if content_id_val:
-                    updated_at = assignment_updated.get(content_id_val, '')
 
             # Strategy 1: match via sync map (canvas ID)
             local_path = None

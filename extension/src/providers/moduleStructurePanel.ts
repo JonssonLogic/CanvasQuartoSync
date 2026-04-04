@@ -579,7 +579,7 @@ function renderBody(data: StructureData): string {
         const canvasChanged = canvasTime > syncTime + 60000;
         const localChanged = localTime > syncTime + 60000;
         if (canvasChanged && localChanged) {
-          dotCls = 'canvas-newer'; // both changed — flag for attention
+          dotCls = 'canvas-newer';
         } else if (canvasChanged) {
           dotCls = 'canvas-newer';
         } else if (localChanged) {
@@ -588,7 +588,6 @@ function renderBody(data: StructureData): string {
           dotCls = 'local';
         }
       } else if (item.updated_at && item.local_mtime) {
-        // No last_synced_at — fallback to direct comparison (legacy)
         const ct = new Date(item.updated_at).getTime();
         const lt = new Date(item.local_mtime).getTime();
         if (Math.abs(ct - lt) < 120000) {

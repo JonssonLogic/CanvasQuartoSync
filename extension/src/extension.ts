@@ -13,7 +13,8 @@ import { openModuleStructurePanel } from './providers/moduleStructurePanel';
 import { showWelcomeIfNeeded } from './providers/welcomePanel';
 
 export function activate(context: vscode.ExtensionContext) {
-  console.log('CanvasQuartoSync extension activated');
+  const version = context.extension.packageJSON?.version ?? 'unknown';
+  console.log(`CanvasQuartoSync v${version} activated`);
 
   // Sidebar tree views (Project / Sync / Tools)
   registerSidebarViews(context);
