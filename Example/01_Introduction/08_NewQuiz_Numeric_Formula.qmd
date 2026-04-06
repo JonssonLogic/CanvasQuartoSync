@@ -4,7 +4,7 @@ canvas:
   title: "New Quiz - Numeric and Formula Examples"
   published: true
   points: 15
-  allowed_attempts: 1
+  allowed_attempts: -1
 ---
 
 :::: {.question type="numeric_question" name="Simple Numeric" points_possible="5.0"}

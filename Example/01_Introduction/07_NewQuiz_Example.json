@@ -5,7 +5,10 @@
         "published": true,
         "points": 5,
         "shuffle_answers": true,
-        "allowed_attempts": 1
+        "allowed_attempts": 3,
+        "score_to_keep": "highest",
+        "one_question_at_a_time": true,
+        "cant_go_back": true
     },
     "questions": [
         {

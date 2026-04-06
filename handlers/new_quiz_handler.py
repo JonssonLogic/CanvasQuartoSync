@@ -95,40 +95,7 @@ class NewQuizHandler(BaseHandler):
                 needs_update = True
 
         # Build quiz payload
-        quiz_payload = {
-            'title': title,
-            'published': published,
-        }
-
-        if 'points' in canvas_meta:
-            quiz_payload['points_possible'] = canvas_meta['points']
-        if 'due_at' in canvas_meta:
-            quiz_payload['due_at'] = canvas_meta['due_at'] or ''
-        if 'unlock_at' in canvas_meta:
-            quiz_payload['unlock_at'] = canvas_meta['unlock_at'] or ''
-        if 'lock_at' in canvas_meta:
-            quiz_payload['lock_at'] = canvas_meta['lock_at'] or ''
-        if 'instructions' in canvas_meta:
-            quiz_payload['instructions'] = canvas_meta['instructions']
-        if 'omit_from_final_grade' in canvas_meta:
-            quiz_payload['omit_from_final_grade'] = canvas_meta['omit_from_final_grade']
-
-        # Quiz Settings
-        if 'shuffle_answers' in canvas_meta:
-            quiz_payload['shuffle_answers'] = canvas_meta['shuffle_answers']
-        if 'shuffle_questions' in canvas_meta:
-            quiz_payload['shuffle_questions'] = canvas_meta['shuffle_questions']
-        if 'time_limit' in canvas_meta:
-            quiz_payload['session_time_limit_in_seconds'] = canvas_meta['time_limit']
-
-        # Handle multiple attempts mapping
-        if 'allowed_attempts' in canvas_meta:
-            attempts = canvas_meta['allowed_attempts']
-            quiz_payload['multiple_attempts_enabled'] = attempts != 1
-            if attempts != 1:
-                quiz_payload['attempt_limit'] = attempts > 0
-                if attempts > 0:
-                    quiz_payload['allowed_attempts'] = attempts
+        quiz_payload = self._build_quiz_payload(title, published, canvas_meta)
 
         if needs_update:
             # Render question content through Quarto (LaTeX, markdown, images)
@@ -174,6 +141,87 @@ class NewQuizHandler(BaseHandler):
                 'title': title,
                 'published': published
             }, indent=indent)
+
+    def _build_quiz_payload(self, title, published, canvas_meta):
+        """Build the quiz-level settings payload for the New Quizzes API.
+
+        The New Quizzes API nests display/behavior settings inside a
+        ``quiz_settings`` object, with multiple-attempt fields nested one
+        level deeper in ``quiz_settings.multiple_attempts``.  Top-level
+        fields are limited to title, published, points, dates, and
+        instructions.
+        """
+        quiz_payload = {
+            'title': title,
+            'published': published,
+        }
+
+        # --- Top-level fields ---
+        if 'points' in canvas_meta:
+            quiz_payload['points_possible'] = canvas_meta['points']
+        if 'due_at' in canvas_meta:
+            quiz_payload['due_at'] = canvas_meta['due_at'] or ''
+        if 'unlock_at' in canvas_meta:
+            quiz_payload['unlock_at'] = canvas_meta['unlock_at'] or ''
+        if 'lock_at' in canvas_meta:
+            quiz_payload['lock_at'] = canvas_meta['lock_at'] or ''
+        if 'instructions' in canvas_meta:
+            quiz_payload['instructions'] = canvas_meta['instructions']
+        if 'omit_from_final_grade' in canvas_meta:
+            quiz_payload['omit_from_final_grade'] = canvas_meta['omit_from_final_grade']
+
+        # --- quiz_settings (nested) ---
+        quiz_settings = {}
+
+        if 'shuffle_answers' in canvas_meta:
+            quiz_settings['shuffle_answers'] = canvas_meta['shuffle_answers']
+        if 'shuffle_questions' in canvas_meta:
+            quiz_settings['shuffle_questions'] = canvas_meta['shuffle_questions']
+
+        # Time limit — value is in seconds for New Quizzes
+        if 'time_limit' in canvas_meta:
+            quiz_settings['has_time_limit'] = True
+            quiz_settings['session_time_limit_in_seconds'] = canvas_meta['time_limit']
+
+        # One-at-a-time and backtracking (Classic parity: same YAML keys)
+        if 'one_question_at_a_time' in canvas_meta:
+            quiz_settings['one_at_a_time_type'] = 'question' if canvas_meta['one_question_at_a_time'] else 'none'
+        if 'cant_go_back' in canvas_meta:
+            quiz_settings['allow_backtracking'] = not canvas_meta['cant_go_back']
+
+        # Access code (Classic parity: same YAML key)
+        if 'access_code' in canvas_meta:
+            quiz_settings['require_student_access_code'] = True
+            quiz_settings['student_access_code'] = canvas_meta['access_code']
+
+        # Calculator type
+        if 'calculator_type' in canvas_meta:
+            quiz_settings['calculator_type'] = canvas_meta['calculator_type']
+
+        # --- quiz_settings.multiple_attempts (nested) ---
+        multiple_attempts = {}
+
+        if 'allowed_attempts' in canvas_meta:
+            attempts = canvas_meta['allowed_attempts']
+            multiple_attempts['multiple_attempts_enabled'] = attempts != 1
+            if attempts > 1:
+                multiple_attempts['max_attempts'] = attempts
+            # Canvas requires score_to_keep when multiple attempts are enabled.
+            # Valid values (matching what Canvas GET returns): highest, latest,
+            # average, first.
+            if attempts != 1:
+                multiple_attempts['score_to_keep'] = canvas_meta.get(
+                    'score_to_keep', 'highest')
+
+        if 'cooling_period_seconds' in canvas_meta:
+            multiple_attempts['cooling_period_seconds'] = canvas_meta['cooling_period_seconds']
+
+        if multiple_attempts:
+            quiz_settings['multiple_attempts'] = multiple_attempts
+        if quiz_settings:
+            quiz_payload['quiz_settings'] = quiz_settings
+
+        return quiz_payload
 
     def _render_qmd_questions(self, questions_data, base_path, course, content_root):
         """

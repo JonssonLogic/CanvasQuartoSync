@@ -4,8 +4,10 @@ canvas:
   title: "New Quiz Example"
   published: true
   shuffle_answers: true
+  shuffle_questions: true
   points: 10
-  allowed_attempts: 2
+  allowed_attempts: -1        # unlimited attempts
+  score_to_keep: highest
 ---
 
 :::: {.question name="Multiple Choice" points_possible="2.0"}

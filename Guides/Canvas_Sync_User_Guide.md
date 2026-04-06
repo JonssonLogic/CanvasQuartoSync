@@ -326,16 +326,32 @@ The system detects a `.qmd` file as a quiz by checking for the `type: quiz` (or 
 *   **Structure**: YAML frontmatter (quiz settings) + `:::: {.question}` fenced div blocks.
 *   **Rendering**: All markdown content is rendered to HTML via Quarto and images are uploaded to Canvas automatically.
 
-**Frontmatter:**
+**Frontmatter (Classic Quiz):**
 ```yaml
 ---
 canvas:
-  type: quiz           # or "new_quiz" for New Quizzes engine
+  type: quiz
   title: "Quiz Title"
   published: true
   shuffle_answers: true
   show_correct_answers: true
   allowed_attempts: -1
+---
+```
+
+**Frontmatter (New Quiz):**
+```yaml
+---
+canvas:
+  type: new_quiz
+  title: "Quiz Title"
+  published: true
+  shuffle_answers: true
+  shuffle_questions: true
+  points: 10
+  allowed_attempts: -1        # unlimited attempts
+  score_to_keep: highest
+  time_limit: 1800            # 1800 seconds = 30 minutes
 ---
 ```
 
@@ -494,6 +510,10 @@ Both JSON and QMD quizzes can target either the **Classic** or **New** quiz engi
 | Numeric & Formula questions | Not supported | ✅ Supported (QMD only) |
 | `quiz_type` setting | ✅ (practice, graded, survey) | Not applicable |
 | `omit_from_final_grade` | Not applicable | ✅ Supported |
+| `score_to_keep` | Not applicable | ✅ `highest`, `latest`, `average`, `first` |
+| `shuffle_questions` | Not applicable | ✅ Supported |
+| `calculator_type` | Not applicable | ✅ `none`, `basic`, `scientific` |
+| `cooling_period_seconds` | Not applicable | ✅ Wait time between attempts |
 | Modifying active quizzes | Unpublish → Modify → Republish | Direct update |
 
 > [!WARNING]
@@ -515,14 +535,24 @@ Settings shared by both formats and both engines (specified in `canvas` frontmat
 | `unlock_at` | ISO 8601 String | Removing clears the date in Canvas |
 | `lock_at` | ISO 8601 String | Removing clears the date in Canvas |
 | `shuffle_answers` | Boolean | Randomize answer order |
-| `allowed_attempts` | Integer | Use `-1` for unlimited |
+| `allowed_attempts` | Integer | `1` = single attempt, `-1` = unlimited, `N` = N attempts |
 | `time_limit` | Integer | **Minutes** (Classic) or **Seconds** (New) |
+| `one_question_at_a_time` | Boolean | Show one question at a time |
+| `cant_go_back` | Boolean | Prevent going back (requires `one_question_at_a_time`) |
+| `access_code` | String | Student must enter code to take quiz |
 | `description_file` | String | Path to `.qmd` description (Classic only) |
 | `show_correct_answers` | Boolean | Classic only |
 | `quiz_type` | String | Classic only: `practice_quiz`, `assignment`, `graded_survey`, `survey` |
 | `points` | Float | New Quizzes only: total points possible |
 | `shuffle_questions` | Boolean | New Quizzes only |
 | `omit_from_final_grade` | Boolean | New Quizzes only |
+| `score_to_keep` | String | New Quizzes only: `highest`, `latest`, `average`, `first` (default: `highest`) |
+| `cooling_period_seconds` | Integer | New Quizzes only: wait time (seconds) between attempts |
+| `calculator_type` | String | New Quizzes only: `none`, `basic`, `scientific` |
+
+> [!NOTE]
+> **Classic vs New Quizzes — settings are handled differently by Canvas.**
+> Classic Quizzes accept settings as flat fields on the quiz object. New Quizzes require settings nested inside a `quiz_settings` object (the sync tool handles this automatically). You use the **same YAML keys** for both engines — the tool translates to the correct API format internally.
 
 ### Solo Files (PDFs, ZIPs, etc.)
 *   **Format**: `NN_Name.ext` (where `.ext` is NOT `.qmd` or `.json`).
