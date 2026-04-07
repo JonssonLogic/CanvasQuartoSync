@@ -24,6 +24,11 @@ def _ma(payload):
     return _qs(payload).get('multiple_attempts', {})
 
 
+def _rv(payload):
+    """Shortcut: return the result_view_settings dict (or empty)."""
+    return _qs(payload).get('result_view_settings', {})
+
+
 # ---------------------------------------------------------------------------
 # Multiple attempts
 # ---------------------------------------------------------------------------
@@ -208,3 +213,94 @@ class TestPayloadStructure:
         assert payload['points_possible'] == 10
         assert payload['due_at'] == '2025-06-01T00:00:00Z'
         assert 'quiz_settings' not in payload
+
+
+# ---------------------------------------------------------------------------
+# Result view settings
+# ---------------------------------------------------------------------------
+
+class TestResultViewSettings:
+
+    def test_no_result_view_key(self):
+        """No result_view in meta → no result_view_settings in payload."""
+        payload = handler._build_quiz_payload("Q", False, {})
+        assert 'result_view_settings' not in _qs(payload)
+
+    def test_restricted_only(self):
+        payload = handler._build_quiz_payload("Q", False, {
+            'result_view': {'restricted': True}})
+        assert _rv(payload) == {'result_view_restricted': True}
+
+    def test_all_boolean_fields(self):
+        meta = {'result_view': {
+            'restricted': True,
+            'show_questions': True,
+            'show_student_responses': True,
+            'show_correctness': False,
+            'show_correct_answers': False,
+            'show_feedback': True,
+            'show_points_awarded': True,
+            'show_points_possible': False,
+        }}
+        rv = _rv(handler._build_quiz_payload("Q", False, meta))
+        assert rv['result_view_restricted'] is True
+        assert rv['display_items'] is True
+        assert rv['display_item_response'] is True
+        assert rv['display_item_response_correctness'] is False
+        assert rv['display_item_correct_answer'] is False
+        assert rv['display_item_feedback'] is True
+        assert rv['display_points_awarded'] is True
+        assert rv['display_points_possible'] is False
+
+    def test_frequency_enum(self):
+        payload = handler._build_quiz_payload("Q", False, {
+            'result_view': {'show_responses_frequency': 'after_last_attempt'}})
+        assert _rv(payload)['display_item_response_qualifier'] == 'after_last_attempt'
+
+    def test_date_fields(self):
+        meta = {'result_view': {
+            'show_responses_at': '2025-06-01T00:00:00Z',
+            'hide_responses_at': '2025-06-15T23:59:00Z',
+            'show_correctness_at': '2025-06-01T00:00:00Z',
+            'hide_correctness_at': '2025-06-15T23:59:00Z',
+        }}
+        rv = _rv(handler._build_quiz_payload("Q", False, meta))
+        assert rv['show_item_responses_at'] == '2025-06-01T00:00:00Z'
+        assert rv['hide_item_responses_at'] == '2025-06-15T23:59:00Z'
+        assert rv['show_item_correctness_at'] == '2025-06-01T00:00:00Z'
+        assert rv['hide_item_correctness_at'] == '2025-06-15T23:59:00Z'
+
+    def test_partial_settings_only_specified_keys(self):
+        """Only keys present in YAML appear in the API payload."""
+        payload = handler._build_quiz_payload("Q", False, {
+            'result_view': {'restricted': True, 'show_feedback': True}})
+        rv = _rv(payload)
+        assert len(rv) == 2
+        assert rv['result_view_restricted'] is True
+        assert rv['display_item_feedback'] is True
+
+    def test_nested_under_quiz_settings(self):
+        """result_view_settings lives under quiz_settings, not top-level."""
+        payload = handler._build_quiz_payload("Q", False, {
+            'result_view': {'restricted': True}})
+        assert 'result_view_settings' not in payload
+        assert 'result_view_settings' in payload['quiz_settings']
+
+    def test_coexists_with_other_settings(self):
+        """result_view_settings + other quiz_settings coexist."""
+        payload = handler._build_quiz_payload("Q", False, {
+            'shuffle_answers': True,
+            'result_view': {'restricted': True},
+        })
+        assert _qs(payload)['shuffle_answers'] is True
+        assert _rv(payload)['result_view_restricted'] is True
+
+    def test_empty_result_view_dict(self):
+        """result_view: {} → no result_view_settings key."""
+        payload = handler._build_quiz_payload("Q", False, {'result_view': {}})
+        assert 'result_view_settings' not in _qs(payload)
+
+    def test_non_dict_result_view_ignored(self):
+        """result_view: true (invalid) → gracefully ignored, no crash."""
+        payload = handler._build_quiz_payload("Q", False, {'result_view': True})
+        assert 'result_view_settings' not in _qs(payload)

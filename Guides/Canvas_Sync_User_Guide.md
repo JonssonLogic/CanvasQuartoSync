@@ -549,10 +549,49 @@ Settings shared by both formats and both engines (specified in `canvas` frontmat
 | `score_to_keep` | String | New Quizzes only: `highest`, `latest`, `average`, `first` (default: `highest`) |
 | `cooling_period_seconds` | Integer | New Quizzes only: wait time (seconds) between attempts |
 | `calculator_type` | String | New Quizzes only: `none`, `basic`, `scientific` |
+| `result_view` | Object | New Quizzes only: result/grade visibility settings (see below) |
 
 > [!NOTE]
 > **Classic vs New Quizzes — settings are handled differently by Canvas.**
 > Classic Quizzes accept settings as flat fields on the quiz object. New Quizzes require settings nested inside a `quiz_settings` object (the sync tool handles this automatically). You use the **same YAML keys** for both engines — the tool translates to the correct API format internally.
+
+#### Result View Settings (New Quizzes)
+
+Control what students see after submitting a New Quiz. These settings are nested under `result_view:` in the `canvas` frontmatter block.
+
+| Setting | Type | Notes |
+|---|---|---|
+| `restricted` | Boolean | Master switch: hide results from students |
+| `show_questions` | Boolean | Show question text in results |
+| `show_student_responses` | Boolean | Show the student's answers |
+| `show_responses_frequency` | String | `always`, `once_per_attempt`, `after_last_attempt`, `once_after_last_attempt` |
+| `show_responses_at` | ISO 8601 | Date to start showing responses |
+| `hide_responses_at` | ISO 8601 | Date to stop showing responses |
+| `show_correctness` | Boolean | Indicate correct/incorrect |
+| `show_correctness_at` | ISO 8601 | Date to start showing correctness |
+| `hide_correctness_at` | ISO 8601 | Date to stop showing correctness |
+| `show_correct_answers` | Boolean | Show the correct answer |
+| `show_feedback` | Boolean | Show per-question feedback |
+| `show_points_awarded` | Boolean | Show points earned |
+| `show_points_possible` | Boolean | Show total points possible |
+
+> [!NOTE]
+> **Dependency chain**: `restricted: true` is the master switch. When `false`, Canvas shows all result details regardless of other settings. Sub-settings like `show_responses_frequency` only take effect when their parent (`show_student_responses`) is enabled. The sync tool sends exactly what you specify — Canvas handles enforcement.
+
+**Example:**
+```yaml
+canvas:
+  type: new_quiz
+  published: true
+  result_view:
+    restricted: true
+    show_questions: true
+    show_student_responses: true
+    show_responses_frequency: after_last_attempt
+    show_correctness: false
+    show_correct_answers: false
+    show_points_awarded: true
+```
 
 ### Solo Files (PDFs, ZIPs, etc.)
 *   **Format**: `NN_Name.ext` (where `.ext` is NOT `.qmd` or `.json`).

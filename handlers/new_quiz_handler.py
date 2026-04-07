@@ -218,6 +218,32 @@ class NewQuizHandler(BaseHandler):
 
         if multiple_attempts:
             quiz_settings['multiple_attempts'] = multiple_attempts
+
+        # --- quiz_settings.result_view_settings (nested) ---
+        result_view_meta = canvas_meta.get('result_view', {})
+        if isinstance(result_view_meta, dict) and result_view_meta:
+            _RV_MAP = {
+                'restricted':               'result_view_restricted',
+                'show_questions':           'display_items',
+                'show_student_responses':   'display_item_response',
+                'show_responses_frequency': 'display_item_response_qualifier',
+                'show_responses_at':        'show_item_responses_at',
+                'hide_responses_at':        'hide_item_responses_at',
+                'show_correctness':         'display_item_response_correctness',
+                'show_correctness_at':      'show_item_correctness_at',
+                'hide_correctness_at':      'hide_item_correctness_at',
+                'show_correct_answers':     'display_item_correct_answer',
+                'show_feedback':            'display_item_feedback',
+                'show_points_awarded':      'display_points_awarded',
+                'show_points_possible':     'display_points_possible',
+            }
+            result_view = {}
+            for yaml_key, api_key in _RV_MAP.items():
+                if yaml_key in result_view_meta:
+                    result_view[api_key] = result_view_meta[yaml_key]
+            if result_view:
+                quiz_settings['result_view_settings'] = result_view
+
         if quiz_settings:
             quiz_payload['quiz_settings'] = quiz_settings
 
