@@ -4,12 +4,6 @@
 
 Kalle is implementing a working version of this in his quarto viewer.
 
-## Module Structure enhancements
-
-- **Publish/unpublish toggle**: Add a publish/unpublish button per module and per item in the Module Structure panel. Modules: toggle the entire module's published state on Canvas. Items: toggle individual item visibility. Should reflect the current state (published/draft badge) and update Canvas via API, then refresh the panel.
-- **Accept Canvas changes**: When Canvas is newer, add an "Accept Canvas" action to pull the Canvas version and overwrite the local file.
-- **Quiz import**: The `--import-item` flow doesn't yet handle Quiz items (classic or new). Needs question fetching and QMD generation.
-- **Module creation**: Local-only modules (orphan section) can't be synced yet because there's no corresponding Canvas module. Add a "Create Module on Canvas" action.
 
 ## Multi-teacher collaboration via GitHub
 
