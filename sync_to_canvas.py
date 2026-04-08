@@ -120,6 +120,11 @@ def _fetch_module_structure(course, content_root: str) -> dict:
         local_name_index[norm_mod] = name_map
         local_title_index[norm_mod] = title_map
 
+    # Map normalized module name -> local dir name (for empty modules)
+    norm_to_local_dir = {}
+    for entry in local_files_by_module:
+        norm_to_local_dir[_normalize_name(entry)] = entry
+
     # Batch-fetch updated_at for pages only (1 API call).
     # Assignment updated_at is NOT reliable — Canvas bumps it for student
     # submissions, grading, due date changes, etc. No content-specific
@@ -253,6 +258,7 @@ def _fetch_module_structure(course, content_root: str) -> dict:
             'id': module.id,
             'published': getattr(module, 'published', False),
             'items': mod_items,
+            'local_dir': norm_to_local_dir.get(norm_mod, ''),
         })
 
     # Inject unmatched local files into their matching Canvas modules
@@ -446,6 +452,77 @@ def _set_published(course, pub_json: str) -> dict:
         return {'success': False, 'error': str(e)}
 
 
+def _create_module(course, content_root: str, payload_json: str) -> dict:
+    """Create a new Canvas module and matching local directory."""
+    try:
+        data = json.loads(payload_json)
+    except json.JSONDecodeError as e:
+        return {'success': False, 'error': f'Invalid JSON: {e}'}
+
+    name = (data.get('name') or '').strip()
+    published = bool(data.get('published', False))
+    if not name:
+        return {'success': False, 'error': 'Missing module name'}
+
+    norm_new = _normalize_name(name)
+
+    # Refuse if a Canvas module with the same (normalized) name already exists
+    try:
+        for m in course.get_modules():
+            if _normalize_name(getattr(m, 'name', '')) == norm_new:
+                return {'success': False, 'error': f'Canvas already has a module named "{m.name}"'}
+    except Exception as e:
+        return {'success': False, 'error': f'Could not list Canvas modules: {e}'}
+
+    # Refuse if a local folder normalizes to the same name
+    try:
+        for d in os.listdir(content_root):
+            if os.path.isdir(os.path.join(content_root, d)) and is_valid_name(d):
+                if _normalize_name(d) == norm_new:
+                    return {'success': False, 'error': f'Local folder "{d}" already matches that name'}
+    except Exception:
+        pass
+
+    try:
+        # Create the Canvas module
+        module_obj = course.create_module(module={'name': name, 'published': published})
+    except Exception as e:
+        return {'success': False, 'error': f'Canvas create failed: {e}'}
+
+    # Determine next local prefix by scanning content_root for NN_* dirs
+    next_idx = 1
+    try:
+        existing = [d for d in os.listdir(content_root)
+                    if os.path.isdir(os.path.join(content_root, d)) and re.match(r'^\d{2,}_', d)]
+        max_idx = 0
+        for d in existing:
+            m = re.match(r'^(\d+)_', d)
+            if m:
+                max_idx = max(max_idx, int(m.group(1)))
+        next_idx = max_idx + 1
+    except Exception:
+        pass
+
+    safe = re.sub(r'[^A-Za-z0-9åäöÅÄÖ _-]', '', name).strip()
+    safe = re.sub(r'\s+', ' ', safe)
+    if not safe:
+        safe = 'Module'
+    prefix = f'{next_idx:02d}'
+    dir_name = f'{prefix}_{safe}'
+    dir_path = os.path.join(content_root, dir_name)
+    try:
+        os.makedirs(dir_path, exist_ok=True)
+    except Exception as e:
+        return {'success': False, 'error': f'Could not create local dir: {e}', 'module_id': module_obj.id}
+
+    return {
+        'success': True,
+        'message': f'Module "{name}" created',
+        'module_id': module_obj.id,
+        'module_dir': dir_name,
+    }
+
+
 def is_valid_name(name):
     """
     Checks if the name starts with two or more digits followed by an underscore.
@@ -467,6 +544,7 @@ def main():
     parser.add_argument("--module-structure", action="store_true", help="Output Canvas module structure as JSON (for VS Code extension).")
     parser.add_argument("--import-item", help="Import a single Canvas item as JSON: {\"module_dir\":...,\"item_type\":...,\"content_id\":...,\"page_url\":...,\"title\":...,\"published\":...,\"indent\":...,\"external_url\":...}")
     parser.add_argument("--set-published", help="Set published state as JSON: {\"target\":\"module\"|\"item\",\"module_id\":N,\"item_id\":N,\"published\":bool}")
+    parser.add_argument("--create-module", help="Create a new Canvas module as JSON: {\"name\":\"...\",\"published\":bool}")
 
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument("--verbose", "-v", action="store_true", help="Show detailed debug output.")
@@ -545,6 +623,11 @@ def main():
     if args.set_published:
         result = _set_published(course, args.set_published)
         print(f'PUBLISH_RESULT_JSON:{json.dumps(result, ensure_ascii=False)}')
+        return
+
+    if args.create_module:
+        result = _create_module(course, content_root, args.create_module)
+        print(f'CREATE_MODULE_JSON:{json.dumps(result, ensure_ascii=False)}')
         return
 
     # Drift check mode: only check for Canvas-side modifications, then exit

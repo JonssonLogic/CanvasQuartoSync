@@ -33,3 +33,5 @@ The goal: multiple teachers collaborate on a course using a shared GitHub repo a
 - Should we add a "git pull" / "git push" button to the Module Structure panel?
 - Should we detect when the local repo is behind the remote (unpulled commits) and warn before syncing to Canvas?
 - Should Canvas sync be triggered automatically on git push (via GitHub Actions)?
+
+

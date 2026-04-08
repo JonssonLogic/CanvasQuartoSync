@@ -37,6 +37,7 @@ interface Module {
   id: number;
   published: boolean;
   items: ModuleItem[];
+  local_dir?: string;
 }
 
 interface LocalOnlyModule {
@@ -145,6 +146,8 @@ export async function openModuleStructurePanel(extensionPath: string): Promise<v
       await handleSetPublished(extensionPath, msg.data);
     } else if (msg.type === 'createItem') {
       await handleCreateItem(extensionPath, msg.moduleDir, msg.itemType);
+    } else if (msg.type === 'createModule') {
+      await handleCreateModule(extensionPath);
     }
   });
 
@@ -384,6 +387,60 @@ async function handleCreateItem(extensionPath: string, moduleDir: string, itemTy
   await refreshPanel(extensionPath);
 }
 
+async function handleCreateModule(extensionPath: string): Promise<void> {
+  const ws = getWorkspaceRoot();
+  if (!ws) return;
+
+  const name = await vscode.window.showInputBox({
+    prompt: 'Name of the new module',
+    placeHolder: 'e.g. Introduction to Sensors',
+    validateInput: (v) => (v && v.trim() ? null : 'Name is required'),
+  });
+  if (!name) return;
+
+  const pubPick = await vscode.window.showQuickPick(
+    [
+      { label: 'Draft', description: 'Create unpublished', value: false },
+      { label: 'Published', description: 'Create and publish immediately', value: true },
+    ],
+    { placeHolder: 'Publish state for the new module' }
+  );
+  if (!pubPick) return;
+
+  const pythonPath = resolvePython();
+  if (!pythonPath) return;
+  const cqsRoot = resolveCqsRoot(extensionPath);
+  const scriptPath = path.join(cqsRoot, 'sync_to_canvas.py');
+  const payload = JSON.stringify({ name: name.trim(), published: pubPick.value });
+  const args = [scriptPath, ws, '--create-module', payload];
+
+  setSyncing(true);
+  const result = await new Promise<string>((resolve) => {
+    let stdout = '';
+    const proc = spawn(pythonPath, args, { cwd: ws, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+    proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
+    proc.on('close', () => { setSyncing(false); resolve(stdout); });
+    proc.on('error', () => { setSyncing(false); resolve(''); });
+  });
+
+  const jsonLine = result.split('\n').find(l => l.trim().startsWith('CREATE_MODULE_JSON:'));
+  if (jsonLine) {
+    try {
+      const res = JSON.parse(jsonLine.trim().replace('CREATE_MODULE_JSON:', ''));
+      if (res.success) {
+        vscode.window.showInformationMessage(res.message + (res.module_dir ? ` (${res.module_dir})` : ''));
+      } else {
+        vscode.window.showErrorMessage('Create module failed: ' + res.error);
+      }
+    } catch {
+      vscode.window.showErrorMessage('Failed to parse create-module result.');
+    }
+  } else {
+    vscode.window.showErrorMessage('Create module produced no output.');
+  }
+  await refreshPanel(extensionPath);
+}
+
 // ── Fetch from Python ───────────────────────────────────────────────
 
 async function fetchStructure(
@@ -493,7 +550,7 @@ function renderBody(data: StructureData): string {
   infoParts.push(data.modules.length + ' modules');
   infoParts.push(canvasItems + ' items');
   h += '<div class="subtitle">' + infoParts.join(' &middot; ') + '</div>';
-  h += '</div><button class="refresh-btn" onclick="refresh()">Refresh</button></div>';
+  h += '</div><div style="display:flex;gap:8px"><button class="refresh-btn" onclick="doCreateModule()" title="Create a new Canvas module">+ New Module</button><button class="refresh-btn" onclick="refresh()">Refresh</button></div></div>';
 
   // Stats
   h += '<div class="stats">';
@@ -523,8 +580,9 @@ function renderBody(data: StructureData): string {
     const pubLbl = mod.published ? 'Published' : 'Draft';
 
     // Find local module dir for import/create
-    const modDirGuess = mod.items.find(i => i.local_path)?.local_path?.split('/')[0]
-      || ((mi + 1).toString().padStart(2, '0') + '_' + mod.name.replace(/[^a-zA-Z0-9åäöÅÄÖ ]/g, '').replace(/ /g, '_'));
+    const modDirGuess = mod.local_dir
+      || mod.items.find(i => i.local_path)?.local_path?.split('/')[0]
+      || ((mi + 1).toString().padStart(2, '0') + '_' + mod.name.replace(/[^a-zA-Z0-9åäöÅÄÖ _-]/g, '').replace(/\s+/g, ' ').trim());
 
     h += '<div class="module">';
     h += '<div class="module-header">';
@@ -737,7 +795,7 @@ function wrapHtml(body: string): string {
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);background:var(--vscode-editor-background);padding:16px 24px;line-height:1.5}
-.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;padding-bottom:12px;border-bottom:1px solid var(--vscode-widget-border)}
+.header{position:sticky;top:0;z-index:200;background:var(--vscode-editor-background);display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;padding:12px 0;border-bottom:1px solid var(--vscode-widget-border)}
 .header h1{font-size:18px;font-weight:600}
 .header .subtitle{font-size:12px;color:var(--vscode-descriptionForeground);margin-top:2px}
 .refresh-btn{background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px}
@@ -791,7 +849,7 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);backgr
 .module-action-btn{font-size:11px;padding:2px 8px;margin-left:4px}
 .new-btn{border-color:#6c757d;color:var(--vscode-foreground)}
 .new-btn:hover{background:rgba(108,117,125,0.15)}
-.new-menu{position:absolute;top:100%;right:0;z-index:50;background:var(--vscode-menu-background,var(--vscode-sideBar-background));border:1px solid var(--vscode-widget-border);border-radius:4px;padding:4px 0;min-width:160px;box-shadow:0 4px 12px rgba(0,0,0,0.3)}
+.new-menu{position:fixed;z-index:1000;background:var(--vscode-menu-background,var(--vscode-sideBar-background));border:1px solid var(--vscode-widget-border);border-radius:4px;padding:4px 0;min-width:160px;box-shadow:0 4px 12px rgba(0,0,0,0.3)}
 .new-menu.hidden{display:none}
 .new-menu-item{padding:6px 14px;font-size:12px;cursor:pointer;white-space:nowrap}
 .new-menu-item:hover{background:var(--vscode-list-hoverBackground)}
@@ -814,12 +872,22 @@ function refresh(){vscode.postMessage({type:"refresh"})}
 function openUrl(u){vscode.postMessage({type:"openUrl",url:u})}
 function doSync(p){vscode.postMessage({type:"sync",localPath:p})}
 function doSetPublished(d){vscode.postMessage({type:"setPublished",data:d})}
+function doCreateModule(){vscode.postMessage({type:"createModule"})}
 function doImport(jsonStr){try{var d=JSON.parse(jsonStr);vscode.postMessage({type:"import",itemData:d})}catch(e){console.error(e)}}
 function toggleNewMenu(mi){
   var menu=document.getElementById("new-menu-"+mi);
   var wasHidden=menu.classList.contains("hidden");
   document.querySelectorAll(".new-menu").forEach(function(m){m.classList.add("hidden");});
-  if(wasHidden)menu.classList.remove("hidden");
+  if(wasHidden){
+    var btn=menu.previousElementSibling;
+    var r=btn.getBoundingClientRect();
+    menu.classList.remove("hidden");
+    var mh=menu.offsetHeight||180;
+    var vh=window.innerHeight;
+    var top=(r.bottom+mh+4<=vh)?(r.bottom+2):Math.max(4,r.top-mh-2);
+    menu.style.top=top+"px";
+    menu.style.left=Math.max(4,r.right-160)+"px";
+  }
 }
 function doCreateItem(dir,type){
   document.querySelectorAll(".new-menu").forEach(function(m){m.classList.add("hidden");});
