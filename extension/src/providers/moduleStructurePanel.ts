@@ -148,6 +148,8 @@ export async function openModuleStructurePanel(extensionPath: string): Promise<v
       await handleCreateItem(extensionPath, msg.moduleDir, msg.itemType);
     } else if (msg.type === 'createModule') {
       await handleCreateModule(extensionPath);
+    } else if (msg.type === 'batchDelete') {
+      await handleBatchDelete(extensionPath, msg.items);
     }
   });
 
@@ -378,10 +380,25 @@ async function handleCreateItem(extensionPath: string, moduleDir: string, itemTy
 
   const prefix = nextIdx.toString().padStart(2, '0');
   const label = TYPE_LABELS[itemType] || 'Item';
-  const filename = `${prefix}_New_${label}.qmd`;
+
+  // Find next unused "New <Label>" suffix by scanning existing filenames
+  const baseRe = new RegExp(`^\\d{2,}_New_${label}(?:_(\\d+))?\\.qmd$`, 'i');
+  let suffix = 0;
+  for (const f of fs.readdirSync(modPath)) {
+    const m = f.match(baseRe);
+    if (m) {
+      const n = m[1] ? parseInt(m[1], 10) : 1;
+      if (n > suffix) suffix = n;
+    }
+  }
+  const nextSuffix = suffix === 0 ? 1 : suffix + 1;
+  const titleName = nextSuffix === 1 ? `New ${label}` : `New ${label} ${nextSuffix}`;
+  const fileSuffix = nextSuffix === 1 ? '' : `_${nextSuffix}`;
+  const filename = `${prefix}_New_${label}${fileSuffix}.qmd`;
   const filePath = path.join(modPath, filename);
 
-  fs.writeFileSync(filePath, template, 'utf-8');
+  const content = template.replace(/title: "New [^"]+"/, `title: "${titleName}"`);
+  fs.writeFileSync(filePath, content, 'utf-8');
   const uri = vscode.Uri.file(filePath);
   await vscode.window.showTextDocument(uri);
   await refreshPanel(extensionPath);
@@ -437,6 +454,61 @@ async function handleCreateModule(extensionPath: string): Promise<void> {
     }
   } else {
     vscode.window.showErrorMessage('Create module produced no output.');
+  }
+  await refreshPanel(extensionPath);
+}
+
+async function handleBatchDelete(extensionPath: string, items: Record<string, unknown>[]): Promise<void> {
+  const ws = getWorkspaceRoot();
+  if (!ws || !items || items.length === 0) return;
+
+  const modCount = items.filter(i => i.target === 'module').length;
+  const itemCount = items.filter(i => i.target === 'item').length;
+  const localCount = items.filter(i => i.target === 'local_file').length;
+  const parts: string[] = [];
+  if (modCount) parts.push(`${modCount} module${modCount > 1 ? 's' : ''} (and their contents)`);
+  if (itemCount) parts.push(`${itemCount} Canvas item${itemCount > 1 ? 's' : ''}`);
+  if (localCount) parts.push(`${localCount} local file${localCount > 1 ? 's' : ''}`);
+  const detail = 'This will permanently delete: ' + parts.join(', ') + '.\nLocal files matched to Canvas items will also be removed. This cannot be undone.';
+
+  const choice = await vscode.window.showWarningMessage(
+    `Delete ${items.length} selected item${items.length > 1 ? 's' : ''}?`,
+    { modal: true, detail },
+    'Delete'
+  );
+  if (choice !== 'Delete') return;
+
+  const pythonPath = resolvePython();
+  if (!pythonPath) return;
+  const cqsRoot = resolveCqsRoot(extensionPath);
+  const scriptPath = path.join(cqsRoot, 'sync_to_canvas.py');
+  const payload = JSON.stringify({ items });
+  const args = [scriptPath, ws, '--delete', payload];
+
+  setSyncing(true);
+  const result = await new Promise<string>((resolve) => {
+    let stdout = '';
+    const proc = spawn(pythonPath, args, { cwd: ws, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+    proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
+    proc.on('close', () => { setSyncing(false); resolve(stdout); });
+    proc.on('error', () => { setSyncing(false); resolve(''); });
+  });
+
+  const jsonLine = result.split('\n').find(l => l.trim().startsWith('DELETE_RESULT_JSON:'));
+  if (jsonLine) {
+    try {
+      const res = JSON.parse(jsonLine.trim().replace('DELETE_RESULT_JSON:', ''));
+      const msg = `Deleted ${res.deleted}` + (res.failed ? `, ${res.failed} failed` : '');
+      if (res.failed) {
+        vscode.window.showWarningMessage(msg + (res.errors?.length ? ': ' + res.errors.join('; ') : ''));
+      } else {
+        vscode.window.showInformationMessage(msg);
+      }
+    } catch {
+      vscode.window.showErrorMessage('Failed to parse delete result.');
+    }
+  } else {
+    vscode.window.showErrorMessage('Delete produced no output.');
   }
   await refreshPanel(extensionPath);
 }
@@ -586,6 +658,8 @@ function renderBody(data: StructureData): string {
 
     h += '<div class="module">';
     h += '<div class="module-header">';
+    const modDelData = esc(JSON.stringify({ target: 'module', module_id: mod.id, local_dir: modDirGuess }));
+    h += '<input type="checkbox" class="item-cb mod-cb" onclick="event.stopPropagation();onCheckChanged()" data-kind="delete" data-delete="' + modDelData.replace(/"/g, '&quot;') + '" title="Select module for delete"> ';
     h += '<span class="toggle" id="toggle-' + mi + '" onclick="toggleModule(' + mi + ')">&#9660;</span> ';
     h += '<span onclick="toggleModule(' + mi + ')" style="flex:1;cursor:pointer">' + esc(mod.name) + '</span>';
     const togglePubMod = !mod.published;
@@ -686,8 +760,18 @@ function renderBody(data: StructureData): string {
       // 7 grid cells: checkbox, dot, icon, title, badge, path, actions
       const dataKind = hasLocal ? 'sync' : 'import';
       const dataVal = hasLocal ? safePath : (importDataObj ? esc(JSON.stringify(importDataObj)) : '');
+      // Build delete payload for this item
+      let deleteObj: Record<string, unknown>;
+      if (isLocalOnly) {
+        deleteObj = { target: 'local_file', local_path: hasLocal ? item.local_path : '' };
+      } else if (item.module_item_id) {
+        deleteObj = { target: 'item', module_id: mod.id, item_id: item.module_item_id, local_path: hasLocal ? item.local_path : '' };
+      } else {
+        deleteObj = { target: 'local_file', local_path: hasLocal ? item.local_path : '' };
+      }
+      const deleteVal = esc(JSON.stringify(deleteObj));
       h += '<div class="item' + clickCls + '" data-kind="' + dataKind + '" data-value="' + dataVal.replace(/"/g, '&quot;') + '">';
-      h += '<span class="cb-cell"><input type="checkbox" class="item-cb" onclick="event.stopPropagation();onCheckChanged()" data-kind="' + dataKind + '" data-value="' + dataVal.replace(/"/g, '&quot;') + '"></span>';
+      h += '<span class="cb-cell"><input type="checkbox" class="item-cb" onclick="event.stopPropagation();onCheckChanged()" data-kind="' + dataKind + '" data-value="' + dataVal.replace(/"/g, '&quot;') + '" data-delete="' + deleteVal.replace(/"/g, '&quot;') + '"></span>';
       h += '<span class="status-dot ' + dotCls + unpubCls + '"></span>';
       h += '<span class="icon">' + icon + '</span>';
       h += '<span class="title"' + titleClick + '>' + esc(item.title) + '</span>';
@@ -760,8 +844,9 @@ function renderBody(data: StructureData): string {
     for (const om of data.local_only_modules) {
       for (const f of om.files) {
         const safeF = esc(f.replace(/\\/g, '/'));
+        const orphanDel = esc(JSON.stringify({ target: 'local_file', local_path: f.replace(/\\/g, '/') }));
         h += '<div class="item clickable">';
-        h += '<span class="cb-cell"></span>';
+        h += '<span class="cb-cell"><input type="checkbox" class="item-cb" onclick="event.stopPropagation();onCheckChanged()" data-kind="delete" data-value="" data-delete="' + orphanDel.replace(/"/g, '&quot;') + '"></span>';
         h += '<span class="status-dot not-synced"></span>';
         h += '<span class="icon">&#x1F4C4;</span>';
         h += '<span class="title" onclick="openFile(\'' + safeF.replace(/'/g, "\\'") + '\')">' + esc(f) + '</span>';
@@ -780,6 +865,7 @@ function renderBody(data: StructureData): string {
   h += '<span id="batch-count">0 selected</span>';
   h += '<button class="action-btn sync-btn" onclick="doBatchSync()" id="batch-sync-btn" style="display:none">Sync selected &#x2191;</button>';
   h += '<button class="action-btn import-btn" onclick="doBatchImport()" id="batch-import-btn" style="display:none">Import selected &#x2193;</button>';
+  h += '<button class="action-btn delete-btn" onclick="doBatchDelete()" id="batch-delete-btn">Delete selected &#x1F5D1;</button>';
   h += '<button class="action-btn" onclick="clearSelection()">Clear</button>';
   h += '</div>';
 
@@ -835,6 +921,9 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);backgr
 .action-btn.import-btn:hover{background:rgba(13,110,253,0.15)}
 .action-btn.sync-btn{border-color:#198754;color:#75b798}
 .action-btn.sync-btn:hover{background:rgba(25,135,84,0.15)}
+.action-btn.delete-btn{border-color:#dc3545;color:#ea868f}
+.action-btn.delete-btn:hover{background:rgba(220,53,69,0.15)}
+.mod-cb{cursor:pointer;width:14px;height:14px;accent-color:#dc3545;margin-right:2px}
 .unmatched-section{margin-top:24px;border:1px solid var(--vscode-widget-border);border-radius:6px;overflow:hidden}
 .unmatched-section .section-header{background:var(--vscode-sideBar-background);padding:10px 14px;font-weight:600;font-size:14px;color:var(--vscode-descriptionForeground)}
 .unmatched-item{padding:5px 14px 5px 20px;font-size:13px;color:var(--vscode-descriptionForeground);cursor:pointer}
@@ -912,9 +1001,10 @@ function onCheckChanged(){
   var countEl=document.getElementById('batch-count');
   var syncBtn=document.getElementById('batch-sync-btn');
   var importBtn=document.getElementById('batch-import-btn');
+  var deleteBtn=document.getElementById('batch-delete-btn');
   var syncCount=0,importCount=0;
-  cbs.forEach(function(cb){if(cb.dataset.kind==='sync')syncCount++;else importCount++;});
-  var total=syncCount+importCount;
+  cbs.forEach(function(cb){if(cb.dataset.kind==='sync')syncCount++;else if(cb.dataset.kind==='import')importCount++;});
+  var total=cbs.length;
   if(total===0){bar.classList.add('hidden');return;}
   bar.classList.remove('hidden');
   countEl.textContent=total+' selected';
@@ -922,6 +1012,7 @@ function onCheckChanged(){
   if(syncCount>0)syncBtn.textContent='Sync '+syncCount+' \\u2191';
   importBtn.style.display=importCount>0?'inline-flex':'none';
   if(importCount>0)importBtn.textContent='Import '+importCount+' \\u2193';
+  deleteBtn.textContent='Delete '+total;
 }
 function doBatchSync(){
   var cbs=document.querySelectorAll('.item-cb:checked[data-kind="sync"]');
@@ -936,6 +1027,17 @@ function doBatchImport(){
   if(items.length===0)return;
   vscode.postMessage({type:"batchImport",items:items});
   clearSelection();
+}
+function doBatchDelete(){
+  var cbs=document.querySelectorAll('.item-cb:checked');
+  var items=[];
+  cbs.forEach(function(cb){
+    var raw=cb.getAttribute('data-delete');
+    if(!raw)return;
+    try{items.push(JSON.parse(raw));}catch(e){}
+  });
+  if(items.length===0)return;
+  vscode.postMessage({type:"batchDelete",items:items});
 }
 function clearSelection(){
   document.querySelectorAll('.item-cb:checked').forEach(function(cb){cb.checked=false;});

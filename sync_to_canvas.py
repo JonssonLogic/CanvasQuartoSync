@@ -523,6 +523,69 @@ def _create_module(course, content_root: str, payload_json: str) -> dict:
     }
 
 
+def _delete_items(course, content_root: str, payload_json: str) -> dict:
+    """Delete a batch of Canvas items/modules and optionally their local files.
+
+    Payload: {"items":[{target,module_id,item_id?,local_path?,local_dir?}, ...]}
+    """
+    try:
+        data = json.loads(payload_json)
+    except json.JSONDecodeError as e:
+        return {'success': False, 'error': f'Invalid JSON: {e}'}
+
+    items = data.get('items') or []
+    deleted = 0
+    failed = 0
+    errors = []
+    import shutil
+
+    for entry in items:
+        target = entry.get('target')
+        try:
+            if target == 'item':
+                module_id = entry.get('module_id')
+                item_id = entry.get('item_id')
+                if module_id and item_id:
+                    module = course.get_module(module_id)
+                    mi = module.get_module_item(item_id)
+                    mi.delete()
+                local_path = entry.get('local_path')
+                if local_path:
+                    abs_p = os.path.join(content_root, local_path.replace('/', os.sep))
+                    if os.path.isfile(abs_p):
+                        os.remove(abs_p)
+                deleted += 1
+
+            elif target == 'module':
+                module_id = entry.get('module_id')
+                if module_id:
+                    module = course.get_module(module_id)
+                    module.delete()
+                local_dir = entry.get('local_dir')
+                if local_dir:
+                    abs_d = os.path.join(content_root, local_dir)
+                    if os.path.isdir(abs_d):
+                        shutil.rmtree(abs_d)
+                deleted += 1
+
+            elif target == 'local_file':
+                local_path = entry.get('local_path')
+                if local_path:
+                    abs_p = os.path.join(content_root, local_path.replace('/', os.sep))
+                    if os.path.isfile(abs_p):
+                        os.remove(abs_p)
+                    deleted += 1
+
+            else:
+                failed += 1
+                errors.append(f'Unknown target: {target}')
+        except Exception as e:
+            failed += 1
+            errors.append(str(e))
+
+    return {'success': failed == 0, 'deleted': deleted, 'failed': failed, 'errors': errors}
+
+
 def is_valid_name(name):
     """
     Checks if the name starts with two or more digits followed by an underscore.
@@ -545,6 +608,7 @@ def main():
     parser.add_argument("--import-item", help="Import a single Canvas item as JSON: {\"module_dir\":...,\"item_type\":...,\"content_id\":...,\"page_url\":...,\"title\":...,\"published\":...,\"indent\":...,\"external_url\":...}")
     parser.add_argument("--set-published", help="Set published state as JSON: {\"target\":\"module\"|\"item\",\"module_id\":N,\"item_id\":N,\"published\":bool}")
     parser.add_argument("--create-module", help="Create a new Canvas module as JSON: {\"name\":\"...\",\"published\":bool}")
+    parser.add_argument("--delete", help="Batch delete items/modules as JSON: {\"items\":[{\"target\":\"item|module|local_file\",...}]}")
 
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument("--verbose", "-v", action="store_true", help="Show detailed debug output.")
@@ -628,6 +692,11 @@ def main():
     if args.create_module:
         result = _create_module(course, content_root, args.create_module)
         print(f'CREATE_MODULE_JSON:{json.dumps(result, ensure_ascii=False)}')
+        return
+
+    if args.delete:
+        result = _delete_items(course, content_root, args.delete)
+        print(f'DELETE_RESULT_JSON:{json.dumps(result, ensure_ascii=False)}')
         return
 
     # Drift check mode: only check for Canvas-side modifications, then exit
