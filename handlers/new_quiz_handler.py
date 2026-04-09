@@ -94,7 +94,7 @@ class NewQuizHandler(BaseHandler):
                 quiz_obj = None
                 needs_update = True
 
-        # Build quiz payload
+        # Build quiz payload with the user's published state directly.
         quiz_payload = self._build_quiz_payload(title, published, canvas_meta)
 
         if needs_update:
@@ -104,6 +104,13 @@ class NewQuizHandler(BaseHandler):
 
             try:
                 if quiz_obj:
+                    # Repair the backing assignment BEFORE updating the quiz.
+                    # Canvas validates assignment-level constraints (e.g.
+                    # hide_in_gradebook) during quiz updates — a prior failed
+                    # sync can leave the assignment in an invalid state that
+                    # blocks all subsequent quiz API calls.
+                    self._update_backing_assignment(course, existing_id, canvas_meta)
+
                     logger.info("    [yellow]Updating new quiz:[/yellow] %s", title)
                     quiz_obj = client.update_quiz(course_id, existing_id, quiz_payload)
                 else:
@@ -118,19 +125,18 @@ class NewQuizHandler(BaseHandler):
                     if stub_assignment:
                         existing_id = str(stub_assignment.id)
                         logger.info("    [yellow]Adopting existing stub:[/yellow] %s", title)
+                        self._update_backing_assignment(course, existing_id, canvas_meta)
                         quiz_obj = client.update_quiz(course_id, existing_id, quiz_payload)
                     else:
                         logger.info("    [green]Creating new quiz:[/green] %s", title)
                         quiz_obj = client.create_quiz(course_id, quiz_payload)
                         existing_id = str(quiz_obj['id'])
+                        self._update_backing_assignment(course, existing_id, canvas_meta)
 
                     map_entry = None  # Clear stale item IDs — new quiz has no items yet
 
                 # Sync questions
                 self._sync_questions(client, course_id, existing_id, questions_data, content_root, file_path, current_mtime, map_entry)
-
-                # Apply assignment-level settings to the backing assignment
-                self._update_backing_assignment(course, existing_id, canvas_meta)
 
             except NewQuizAPIError as e:
                 logger.exception("    New Quiz API error: %s", e)
@@ -158,6 +164,11 @@ class NewQuizHandler(BaseHandler):
         and warn if points are set (since Canvas will reject the request).
         """
         assignment_settings = {}
+        # grading_type must be set on the backing assignment for autograding
+        # to work and for results to be visible. Defaults to "points" which
+        # matches what Canvas UI sets when creating a graded New Quiz.
+        grading_type = canvas_meta.get('grading_type', 'points')
+        assignment_settings['grading_type'] = grading_type
         if 'omit_from_final_grade' in canvas_meta:
             assignment_settings['omit_from_final_grade'] = canvas_meta['omit_from_final_grade']
         if canvas_meta.get('hide_in_gradebook'):
@@ -167,8 +178,9 @@ class NewQuizHandler(BaseHandler):
             if canvas_meta.get('points'):
                 logger.warning("    [yellow]hide_in_gradebook requires points to be 0 or unset.[/yellow] "
                                "Canvas will reject the request when points_possible > 0.")
-        elif 'hide_in_gradebook' in canvas_meta:
-            assignment_settings['hide_in_gradebook'] = False
+        # Note: do NOT send hide_in_gradebook: false explicitly — Canvas
+        # rejects it with "is not included in the list". Omitting the field
+        # keeps it at its current (default false) state.
         if assignment_settings:
             try:
                 assignment = course.get_assignment(int(assignment_id))
@@ -526,14 +538,16 @@ class NewQuizHandler(BaseHandler):
         elif q_type == 'formula_question':
             interaction_slug = 'formula'
 
-        # Scoring algorithm per official Canvas API docs:
+        # Scoring algorithm per Canvas New Quizzes API:
         # choice / true-false -> "Equivalence"
         # multi-answer -> "AllOrNothing"
+        # numeric / formula -> "Numeric" (enables autograding)
+        # essay / file-upload -> "None" (manual grading)
         scoring_algorithm = "Equivalence"
         if interaction_slug == 'multi-answer':
             scoring_algorithm = "AllOrNothing"
         elif interaction_slug in ('numeric', 'formula'):
-            scoring_algorithm = "None"
+            scoring_algorithm = "Numeric"
 
         item_data = {
             "entry_type": "Item",

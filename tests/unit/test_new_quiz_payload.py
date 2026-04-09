@@ -313,6 +313,29 @@ class TestResultViewSettings:
 
 class TestBackingAssignmentSettings:
 
+    def test_grading_type_defaults_to_points(self):
+        """grading_type defaults to 'points' for autograding support."""
+        from unittest.mock import MagicMock
+        mock_course = MagicMock()
+        mock_assignment = MagicMock()
+        mock_course.get_assignment.return_value = mock_assignment
+
+        handler._update_backing_assignment(mock_course, '123', {})
+
+        mock_course.get_assignment.assert_called_once_with(123)
+        mock_assignment.edit.assert_called_once_with(assignment={'grading_type': 'points'})
+
+    def test_grading_type_custom_value(self):
+        """User-specified grading_type overrides the default."""
+        from unittest.mock import MagicMock
+        mock_course = MagicMock()
+        mock_assignment = MagicMock()
+        mock_course.get_assignment.return_value = mock_assignment
+
+        handler._update_backing_assignment(mock_course, '123', {'grading_type': 'percentage'})
+
+        mock_assignment.edit.assert_called_once_with(assignment={'grading_type': 'percentage'})
+
     def test_omit_from_final_grade(self):
         """omit_from_final_grade is applied to the backing assignment."""
         from unittest.mock import MagicMock
@@ -323,7 +346,9 @@ class TestBackingAssignmentSettings:
         handler._update_backing_assignment(mock_course, '123', {'omit_from_final_grade': True})
 
         mock_course.get_assignment.assert_called_once_with(123)
-        mock_assignment.edit.assert_called_once_with(assignment={'omit_from_final_grade': True})
+        settings = mock_assignment.edit.call_args[1]['assignment']
+        assert settings['grading_type'] == 'points'
+        assert settings['omit_from_final_grade'] is True
 
     def test_hide_in_gradebook_auto_enables_omit(self):
         """hide_in_gradebook: true auto-enables omit_from_final_grade."""
@@ -335,13 +360,13 @@ class TestBackingAssignmentSettings:
         handler._update_backing_assignment(mock_course, '456', {'hide_in_gradebook': True})
 
         mock_course.get_assignment.assert_called_once_with(456)
-        mock_assignment.edit.assert_called_once_with(assignment={
-            'omit_from_final_grade': True,
-            'hide_in_gradebook': True,
-        })
+        settings = mock_assignment.edit.call_args[1]['assignment']
+        assert settings['grading_type'] == 'points'
+        assert settings['omit_from_final_grade'] is True
+        assert settings['hide_in_gradebook'] is True
 
-    def test_hide_in_gradebook_false_sent(self):
-        """hide_in_gradebook: false is explicitly sent."""
+    def test_hide_in_gradebook_false_not_sent(self):
+        """hide_in_gradebook: false is NOT sent — Canvas rejects it."""
         from unittest.mock import MagicMock
         mock_course = MagicMock()
         mock_assignment = MagicMock()
@@ -349,7 +374,9 @@ class TestBackingAssignmentSettings:
 
         handler._update_backing_assignment(mock_course, '456', {'hide_in_gradebook': False})
 
-        mock_assignment.edit.assert_called_once_with(assignment={'hide_in_gradebook': False})
+        settings = mock_assignment.edit.call_args[1]['assignment']
+        assert settings['grading_type'] == 'points'
+        assert 'hide_in_gradebook' not in settings
 
     def test_both_settings_combined(self):
         """Both settings sent in a single edit call."""
@@ -363,19 +390,22 @@ class TestBackingAssignmentSettings:
             'hide_in_gradebook': True,
         })
 
-        mock_assignment.edit.assert_called_once_with(assignment={
-            'omit_from_final_grade': True,
-            'hide_in_gradebook': True,
-        })
+        settings = mock_assignment.edit.call_args[1]['assignment']
+        assert settings['grading_type'] == 'points'
+        assert settings['omit_from_final_grade'] is True
+        assert settings['hide_in_gradebook'] is True
 
-    def test_no_assignment_settings_skips_api_call(self):
-        """When neither setting is specified, no API call is made."""
+    def test_grading_type_always_triggers_api_call(self):
+        """grading_type is always sent, so API call always happens."""
         from unittest.mock import MagicMock
         mock_course = MagicMock()
+        mock_assignment = MagicMock()
+        mock_course.get_assignment.return_value = mock_assignment
 
         handler._update_backing_assignment(mock_course, '123', {'points': 10})
 
-        mock_course.get_assignment.assert_not_called()
+        mock_course.get_assignment.assert_called_once_with(123)
+        mock_assignment.edit.assert_called_once_with(assignment={'grading_type': 'points'})
 
     def test_unrelated_meta_ignored(self):
         """Only assignment-level keys are picked up; quiz keys are ignored."""
@@ -389,4 +419,7 @@ class TestBackingAssignmentSettings:
             'omit_from_final_grade': False,
         })
 
-        mock_assignment.edit.assert_called_once_with(assignment={'omit_from_final_grade': False})
+        settings = mock_assignment.edit.call_args[1]['assignment']
+        assert settings['grading_type'] == 'points'
+        assert settings['omit_from_final_grade'] is False
+        assert 'shuffle_answers' not in settings

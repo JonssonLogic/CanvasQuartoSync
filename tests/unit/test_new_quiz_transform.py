@@ -111,7 +111,7 @@ class TestNumeric:
         }
         result = handler._transform_question(q, 1)
         assert result["entry"]["interaction_type_slug"] == "numeric"
-        assert result["entry"]["scoring_algorithm"] == "None"
+        assert result["entry"]["scoring_algorithm"] == "Numeric"
         scoring_values = result["entry"]["scoring_data"]["value"]
         assert len(scoring_values) == 1
         assert scoring_values[0]["type"] == "marginOfError"
@@ -151,7 +151,7 @@ class TestFormula:
         }
         result = handler._transform_question(q, 1)
         assert result["entry"]["interaction_type_slug"] == "formula"
-        assert result["entry"]["scoring_algorithm"] == "None"
+        assert result["entry"]["scoring_algorithm"] == "Numeric"
         scoring = result["entry"]["scoring_data"]["value"]
         assert scoring["formula"] == "A*B"
         assert len(scoring["generated_solutions"]) == 3

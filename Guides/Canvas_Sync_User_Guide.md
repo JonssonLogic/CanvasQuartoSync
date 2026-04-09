@@ -545,6 +545,7 @@ Settings shared by both formats and both engines (specified in `canvas` frontmat
 | `show_correct_answers` | Boolean | Classic only |
 | `quiz_type` | String | Classic only: `practice_quiz`, `assignment`, `graded_survey`, `survey` |
 | `points` | Float | New Quizzes only: total points possible |
+| `grading_type` | String | New Quizzes only: `points` (default), `percentage`, `pass_fail`, `letter_grade`, `gpa_scale`, `not_graded` |
 | `shuffle_questions` | Boolean | New Quizzes only |
 | `omit_from_final_grade` | Boolean | New Quizzes only — do not count towards final grade |
 | `hide_in_gradebook` | Boolean | New Quizzes only — hide from gradebook (requires `omit_from_final_grade` and `points` must be 0 or unset) |
