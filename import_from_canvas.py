@@ -243,9 +243,12 @@ class HtmlToMarkdown:
     and URLs are rewritten to local relative paths.
     """
 
-    def __init__(self, asset_downloader: AssetDownloader = None, context_dir: str = ''):
+    def __init__(self, asset_downloader: AssetDownloader = None, context_dir: str = '',
+                 sync_map: dict = None, content_root: str = ''):
         self.downloader = asset_downloader
         self.context_dir = context_dir
+        self._sync_map = sync_map or {}
+        self._content_root = content_root
 
     def _download_asset(self, url: str) -> str:
         """Download an asset if downloader is available, else return URL as-is."""
@@ -286,6 +289,11 @@ class HtmlToMarkdown:
         text = re.sub(r'<head[^>]*>.*?</head>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
+
+        # === Callout reconstruction ===
+        # Canvas stores callouts as inline-styled divs produced by _inline_callout_styles().
+        # Reconstruct them back to Quarto ::: {.callout-*} syntax.
+        text = self._reconstruct_callouts(text)
 
         # Process block elements first
 
@@ -362,6 +370,19 @@ class HtmlToMarkdown:
             text, flags=re.DOTALL | re.IGNORECASE
         )
 
+        # External iframes (YouTube, Falstad, Wokwi, Tinkercad, etc.) -> preserve as raw HTML
+        # Use placeholders to protect from _strip_tags later
+        self._iframe_placeholders = {}
+        def _protect_iframe(m):
+            key = f'\x00IFRAME_{len(self._iframe_placeholders)}\x00'
+            self._iframe_placeholders[key] = m.group(0)
+            return f'\n\n{key}\n\n'
+        text = re.sub(
+            r'<iframe[^>]*src="([^"]*)"[^>]*>.*?</iframe>',
+            _protect_iframe,
+            text, flags=re.DOTALL | re.IGNORECASE
+        )
+
         # Links — download linked files (pdf, docx, etc.)
         text = re.sub(
             r'<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>',
@@ -385,6 +406,10 @@ class HtmlToMarkdown:
 
         # Decode HTML entities
         text = unescape(text)
+
+        # Restore protected iframes
+        for key, iframe_html in getattr(self, '_iframe_placeholders', {}).items():
+            text = text.replace(key, iframe_html)
 
         # Clean up whitespace
         text = re.sub(r'\n{3,}', '\n\n', text)
@@ -437,7 +462,7 @@ class HtmlToMarkdown:
         return text
 
     def _process_link(self, url: str, inner_html: str) -> str:
-        """Process an <a> tag: download linked files, or just convert to markdown link."""
+        """Process an <a> tag: download linked files, reverse-resolve Canvas links, or convert to markdown link."""
         link_text = self._inline(inner_html).strip()
         if not link_text:
             link_text = self._strip_tags(inner_html).strip() or 'link'
@@ -456,6 +481,11 @@ class HtmlToMarkdown:
             local_path = self._download_asset(url)
             if local_path != url:  # Download succeeded
                 return f'[{link_text}]({local_path})'
+
+        # Try to reverse-resolve Canvas content URLs back to .qmd paths
+        resolved = self._reverse_resolve_link(url)
+        if resolved != url:
+            return f'[{link_text}]({resolved})'
 
         return f'[{link_text}]({url})'
 
@@ -546,6 +576,88 @@ class HtmlToMarkdown:
                 break
 
         return html
+
+    # --- Callout reconstruction ---
+
+    # Map border colors (from _inline_callout_styles) back to callout types.
+    # Covers defaults and common branding overrides.
+    _BORDER_TO_CALLOUT = {
+        '#198754': 'tip',
+        '#dc3545': 'important',
+        '#ffc107': 'warning',
+        '#0d6efd': 'note',
+        '#fd7e14': 'caution',
+    }
+
+    # Icons used by _inline_callout_styles (strip these from the title)
+    _CALLOUT_ICONS = {
+        '\U0001f4a1', '\u2757', '\u26a0\ufe0f', '\U0001f4dd', '\U0001f536',
+        '💡', '❗', '⚠️', '📝', '🔶',
+    }
+
+    def _reconstruct_callouts(self, html: str) -> str:
+        """Detect inline-styled callout divs and reconstruct ::: {.callout-*} syntax."""
+        pattern = (
+            r'<div\s+style="[^"]*border-left:\s*4px\s+solid\s+(#[0-9a-fA-F]{3,8})[^"]*">'
+            r'\s*<p\s+style="[^"]*font-weight:\s*bold[^"]*">\s*(.*?)\s*</p>'
+            r'\s*(.*?)\s*</div>'
+        )
+
+        def _callout_replacer(m):
+            border_color = m.group(1).lower()
+            raw_title = m.group(2).strip()
+            body_html = m.group(3).strip()
+
+            callout_type = self._BORDER_TO_CALLOUT.get(border_color, 'note')
+
+            # Strip the emoji icon from the title
+            title = raw_title
+            for icon in self._CALLOUT_ICONS:
+                title = title.replace(icon, '').strip()
+
+            body_md = self.convert(body_html) if body_html else ''
+
+            lines = [f'\n\n::: {{.callout-{callout_type}}}']
+            if title:
+                lines.append(f'## {title}')
+            if body_md:
+                lines.append(body_md)
+            lines.append(':::\n\n')
+            return '\n'.join(lines)
+
+        return re.sub(pattern, _callout_replacer, html, flags=re.DOTALL | re.IGNORECASE)
+
+    # --- Cross-link reverse resolution ---
+
+    def _reverse_resolve_link(self, url: str) -> str:
+        """Try to reverse-resolve a Canvas URL back to a relative .qmd path using the sync map."""
+        if not self._sync_map or not self._content_root:
+            return url
+
+        # Extract Canvas object ID from common URL patterns:
+        #   /courses/123/pages/page-slug
+        #   /courses/123/assignments/456
+        #   /courses/123/quizzes/456
+        page_match = re.search(r'/courses/\d+/pages/([^/?#]+)', url)
+        id_match = re.search(r'/courses/\d+/(?:assignments|quizzes)/(\d+)', url)
+
+        if page_match:
+            slug = page_match.group(1)
+            # Search sync map for matching page slug
+            for rel_path, entry in self._sync_map.items():
+                if isinstance(entry, dict):
+                    canvas_id = entry.get('id')
+                    if isinstance(canvas_id, str) and canvas_id == slug:
+                        return rel_path
+        elif id_match:
+            target_id = int(id_match.group(1))
+            for rel_path, entry in self._sync_map.items():
+                if isinstance(entry, dict):
+                    canvas_id = entry.get('id')
+                    if canvas_id == target_id:
+                        return rel_path
+
+        return url
 
 
 # ---------------------------------------------------------------------------
@@ -1017,7 +1129,7 @@ def main():
     )
     parser.add_argument(
         "--include",
-        help="Comma-separated list of content types to import: pages,assignments,quizzes,files,links (default: all)."
+        help="Comma-separated list of content types to import: pages,assignments,quizzes,files,links/external_urls (default: all)."
     )
 
     verbosity = parser.add_mutually_exclusive_group()
@@ -1050,6 +1162,10 @@ def main():
     include_types = None
     if args.include:
         include_types = set(t.strip().lower() for t in args.include.split(','))
+        # Accept 'external_urls' as alias for 'links'
+        if 'external_urls' in include_types:
+            include_types.discard('external_urls')
+            include_types.add('links')
 
     # Connect
     logger.info("[cyan]Connecting to Canvas...[/cyan]")

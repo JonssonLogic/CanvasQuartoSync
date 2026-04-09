@@ -1,0 +1,9 @@
+src/**
+webview/**
+test/**
+node_modules/**
+.vscode/**
+tsconfig*.json
+esbuild.mjs
+vite.config.ts
+.eslintrc*
