@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import frontmatter
 import re
@@ -155,9 +156,13 @@ class AssignmentHandler(BaseHandler):
 
         - If group_set is set: validate it exists on Canvas, return its ID.
         - If only group_assignment is true: list available group sets, prompt
-          the user to pick one by name, then write group_set back into the
-          frontmatter so subsequent syncs don't prompt again.
+          the user to pick one by name (interactive mode only), then write
+          group_set back into the frontmatter so subsequent syncs don't prompt again.
+          In non-interactive mode (e.g. VS Code extension), auto-applies if there
+          is exactly one group set, otherwise skips with a warning.
         """
+        interactive = sys.stdin.isatty()
+
         group_categories = list(course.get_group_categories())
 
         if not group_categories:
@@ -175,6 +180,9 @@ class AssignmentHandler(BaseHandler):
             else:
                 available = ', '.join(f'"{name}"' for name in gc_by_name)
                 logger.error("    [red]Group set \"%s\" not found on Canvas.[/red] Available: %s", group_set_name, available)
+                if not interactive:
+                    logger.warning("    [yellow]Non-interactive mode: skipping. Update group_set in frontmatter to one of: %s[/yellow]", available)
+                    return None
                 choice = input(f"    Enter a valid group set name (or press Enter to skip): ").strip()
                 if choice and choice in gc_by_name:
                     self._write_group_set_to_frontmatter(file_path, post, choice)
@@ -193,10 +201,15 @@ class AssignmentHandler(BaseHandler):
                 logger.info("    [cyan]Group set (apply all):[/cyan] %s", gc.name)
                 return gc.id
 
-        # Case 2: group_assignment is true but no group_set specified — prompt
+        # Case 2: group_assignment is true but no group_set specified
         if len(group_categories) == 1:
             gc = group_categories[0]
             logger.info("    [cyan]group_assignment: true — one group set available: \"%s\"[/cyan]", gc.name)
+            if not interactive:
+                # Auto-apply the only available group set
+                self._write_group_set_to_frontmatter(file_path, post, gc.name)
+                logger.info("    [green]Non-interactive mode: auto-applied group_set: %s[/green]", gc.name)
+                return gc.id
             choice = input(f"    Use group set \"{gc.name}\"? [Y/n]: ").strip()
             if choice.lower() in ('', 'y', 'yes'):
                 apply_all = input("    Apply to all remaining assignments? [y/N]: ").strip()
@@ -209,7 +222,11 @@ class AssignmentHandler(BaseHandler):
                 logger.warning("    [yellow]Skipping group assignment for this file.[/yellow]")
                 return None
         else:
-            logger.info("    [cyan]group_assignment: true — available group sets:[/cyan]")
+            available = ', '.join(f'"{name}"' for name in gc_by_name)
+            logger.info("    [cyan]group_assignment: true — available group sets:[/cyan] %s", available)
+            if not interactive:
+                logger.warning("    [yellow]Non-interactive mode: skipping. Add group_set to frontmatter with one of: %s[/yellow]", available)
+                return None
             for i, gc in enumerate(group_categories, 1):
                 logger.info("      %d. %s", i, gc.name)
             choice = input("    Enter group set name or number (or press Enter to skip): ").strip()
