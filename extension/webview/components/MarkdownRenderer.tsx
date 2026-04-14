@@ -3,6 +3,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import remarkDirective from 'remark-directive';
+import remarkSupersub from 'remark-supersub';
 import rehypeKatex from 'rehype-katex';
 import rehypeSlug from 'rehype-slug';
 import rehypeRaw from 'rehype-raw';
@@ -45,7 +46,7 @@ function handleLinkClick(e: React.MouseEvent, href: string) {
 
 export default function MarkdownRenderer({ content, imageMap, onCommentClick }: Props) {
   const remarkPlugins = useMemo(
-    () => [remarkGfm, remarkMath, remarkDirective, remarkCallouts],
+    () => [remarkGfm, remarkMath, remarkDirective, remarkCallouts, remarkSupersub],
     []
   );
 

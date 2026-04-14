@@ -71,11 +71,67 @@ function highlightCommentsInDom(
       break;
     }
 
-    // TODO: Strategy 2 — highlight comments on KaTeX math / complex rendered content
-    // The target text for math selections contains rendered unicode that doesn't
-    // match the DOM structure. Need a different approach (e.g. data attributes on
-    // source lines, or matching by surrounding plain text context).
   }
+}
+
+// ── KaTeX / non-text selection helpers ──────────────────────────────
+
+function findKatexAncestor(node: Node | null): Element | null {
+  let cur = node instanceof Element ? node : node?.parentElement ?? null;
+  while (cur) {
+    if (cur.classList?.contains('katex')) return cur;
+    cur = cur.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Given a DOM Range, return plain text suitable for searching in the markdown
+ * source. KaTeX elements are replaced with their LaTeX source; images are dropped.
+ */
+function extractSourceTextFromRange(range: Range): string {
+  const frag = range.cloneContents();
+  // Replace each KaTeX root with its LaTeX annotation
+  frag.querySelectorAll('.katex').forEach((el) => {
+    const annotation = el.querySelector('annotation[encoding="application/x-tex"]');
+    const latex = annotation?.textContent?.trim() ?? '';
+    // Wrap in $ or $$ depending on whether it was a display equation
+    const isDisplay = el.closest('.katex-display') !== null;
+    const replacement = document.createTextNode(isDisplay ? `$$${latex}$$` : `$${latex}$`);
+    el.parentNode?.replaceChild(replacement, el);
+  });
+  // Drop images
+  frag.querySelectorAll('img').forEach((img) => img.remove());
+  return frag.textContent?.trim() ?? '';
+}
+
+/**
+ * Fallback: walk up to nearest block-level ancestor, take its first ~30 chars
+ * of plain text (skipping math markup), and find that anchor in the source.
+ */
+function findOffsetFromDOMRange(range: Range, cleanContent: string): number {
+  const blockTags = new Set(['P', 'LI', 'TD', 'TH', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'DIV']);
+  let el: Element | null = range.startContainer instanceof Element
+    ? range.startContainer
+    : range.startContainer.parentElement;
+  while (el && !blockTags.has(el.tagName)) el = el.parentElement;
+  if (!el) return 0;
+
+  // Get plain text of the block, skipping .katex-mathml spans
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      return node.parentElement?.closest('.katex-mathml')
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  let blockText = '';
+  while (walker.nextNode()) blockText += (walker.currentNode as Text).textContent;
+  const anchor = blockText.trim().slice(0, 30);
+  if (!anchor) return 0;
+
+  const idx = cleanContent.indexOf(anchor);
+  return idx === -1 ? 0 : idx;
 }
 
 // ── App Component ────────────────────────────────────────────────────
@@ -86,6 +142,7 @@ export default function App() {
     fileContent?.content ?? '', vscode
   );
   const contentRef = useRef<HTMLDivElement>(null);
+  const savedRangeRef = useRef<Range | null>(null);
 
   // Strip comment block before preprocessing for display
   const processed = useMemo(() => {
@@ -98,6 +155,20 @@ export default function App() {
   useEffect(() => {
     console.log('[CQS Preview] React app loaded, signaling ready');
     vscode.postMessage({ type: 'ready' });
+  }, []);
+
+  // --- Raw source toggle ---
+  const [showRawSource, setShowRawSource] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'u') {
+        e.preventDefault();
+        setShowRawSource(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, []);
 
   // --- Comment UI state ---
@@ -195,23 +266,50 @@ export default function App() {
       return;
     }
 
-    const text = sel.toString().trim();
-    if (!text) { setSelection(null); return; }
+    const rawText = sel.toString().trim();
+    if (!rawText) { setSelection(null); return; }
 
     const range = sel.getRangeAt(0);
+    savedRangeRef.current = range.cloneRange();
     const rect = range.getBoundingClientRect();
 
     const { cleanContent } = extractComments(fileContent?.content ?? '');
-    let offset = cleanContent.indexOf(text);
+    let targetText = rawText;
+    let offset = -1;
+
+    // Strategy 1: exact match in source
+    offset = cleanContent.indexOf(rawText);
+
+    // Strategy 2: KaTeX — replace rendered math with LaTeX source and retry
     if (offset === -1) {
-      const shortText = text.slice(0, 40);
-      offset = cleanContent.indexOf(shortText);
-      if (offset === -1) offset = 0;
+      const sourceText = extractSourceTextFromRange(range);
+      if (sourceText && sourceText !== rawText) {
+        offset = cleanContent.indexOf(sourceText);
+        if (offset !== -1) targetText = sourceText;
+      }
     }
 
-    console.log('[CQS Comment] Text selected:', text.slice(0, 50), 'offset:', offset);
+    // Strategy 3: first non-empty line only (handles multi-line list/table selections)
+    if (offset === -1) {
+      const firstLine = rawText.split('\n').find(l => l.trim());
+      if (firstLine && firstLine !== rawText) {
+        offset = cleanContent.indexOf(firstLine.trim());
+        if (offset !== -1) targetText = firstLine.trim();
+      }
+    }
+
+    // Strategy 4: DOM position fallback — anchor to paragraph start
+    if (offset === -1 && savedRangeRef.current) {
+      offset = findOffsetFromDOMRange(savedRangeRef.current, cleanContent);
+      // Use first 40 chars of raw text as the stored target
+      targetText = rawText.slice(0, 40);
+    }
+
+    if (offset === -1) offset = 0;
+
+    console.log('[CQS Comment] Text selected:', targetText.slice(0, 50), 'offset:', offset);
     setSelection({
-      text,
+      text: targetText,
       offset,
       rect: { top: rect.bottom + window.scrollY + 4, left: rect.left + rect.width / 2 },
     });
@@ -238,14 +336,14 @@ export default function App() {
 
   return (
     <div onMouseUp={(e) => handleMouseUp(e)} onClick={handleClick} style={{ position: 'relative' }}>
-      {/* Comment toolbar */}
+      {/* Toolbar */}
       <div style={{
         position: 'sticky', top: 0, zIndex: 50,
         background: '#fff', borderBottom: '1px solid #ddd',
         padding: '4px 16px', display: 'flex', gap: '8px', alignItems: 'center',
         fontSize: '0.8rem',
       }}>
-        {comments.length > 0 && (
+        {!showRawSource && comments.length > 0 && (
           <button
             className={`comment-btn ${showComments ? 'comment-btn-primary' : ''}`}
             onClick={() => setShowComments(prev => !prev)}
@@ -253,17 +351,43 @@ export default function App() {
             {showComments ? `Hide ${comments.length} comment${comments.length !== 1 ? 's' : ''}` : `Show ${comments.length} comment${comments.length !== 1 ? 's' : ''}`}
           </button>
         )}
-        {comments.length === 0 && (
+        {!showRawSource && comments.length === 0 && (
           <span style={{ color: '#6b6b6b' }}>Select text to add a comment</span>
         )}
+        <div style={{ marginLeft: 'auto' }}>
+          <button
+            className={`comment-btn ${showRawSource ? 'comment-btn-primary' : ''}`}
+            title="Toggle raw source (Ctrl+U)"
+            onClick={() => setShowRawSource(prev => !prev)}
+          >
+            {showRawSource ? 'Rendered' : 'Raw source'}
+          </button>
+        </div>
       </div>
 
+      {showRawSource ? (
+        <pre style={{
+          fontFamily: 'var(--font-mono, monospace)',
+          fontSize: '0.85rem',
+          lineHeight: 1.6,
+          padding: '16px 24px',
+          margin: 0,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          color: 'var(--color-text, #2d3b45)',
+          background: 'var(--color-code-bg, #f7f7f7)',
+          minHeight: '100vh',
+        }}>
+          {fileContent.content}
+        </pre>
+      ) : (
       <div ref={contentRef}>
         <MarkdownRenderer
           content={processed}
           imageMap={fileContent.imageMap}
         />
       </div>
+      )}
 
       {/* "Add comment" button on text selection */}
       {selection && !commentInput && (
