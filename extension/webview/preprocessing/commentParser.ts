@@ -158,7 +158,7 @@ function extractQuoted(str: string, prefix: string): string | null {
     if (str[end] === '"') break;
     end++;
   }
-  return str.slice(start + 1, end).replace(/\\"/g, '"');
+  return str.slice(start + 1, end).replace(/\\(["\\])/g, '$1');
 }
 
 function extractInt(str: string, prefix: string): number | null {
@@ -271,7 +271,7 @@ export function locatePosition(cleanContent: string, offset: number): { section:
 }
 
 export function extractContext(cleanContent: string, offset: number, targetLength: number) {
-  const LEN = 80;
+  const LEN = 200;
   let beforeStart = Math.max(0, offset - LEN);
   const beforeText = cleanContent.slice(beforeStart, offset);
   const sentStart = beforeText.search(/[.!?]\s+[A-Z]/);
