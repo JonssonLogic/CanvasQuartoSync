@@ -2,7 +2,7 @@
   "name": "canvasquartosync",
   "displayName": "Canvas Quarto Sync",
   "description": "Write courses in Quarto, preview live, sync to Canvas in one click.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "KalleMirza",
   "license": "MIT",
   "repository": {
