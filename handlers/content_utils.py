@@ -458,13 +458,16 @@ def save_mapped_id(content_root, file_path, canvas_id, mtime=None):
     """
     Saves the Canvas ID and optionally the mtime for a local file path.
     """
+    from datetime import datetime, timezone
     rel_path = os.path.relpath(file_path, content_root).replace('\\', '/')
     sync_map = load_sync_map(content_root)
+    now_iso = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
     if mtime is not None:
         sync_map[rel_path] = {
             'id': canvas_id,
-            'mtime': mtime
+            'mtime': mtime,
+            'last_synced_at': now_iso,
         }
     else:
         # Backward compatibility / simple ID

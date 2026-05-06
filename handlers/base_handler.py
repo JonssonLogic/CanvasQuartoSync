@@ -248,6 +248,7 @@ class BaseHandler(ABC):
             # Inline styles for Canvas compatibility
             callout_styles = _load_callout_styles(content_root) if content_root else _DEFAULT_CALLOUT_STYLES
             html_body = self._inline_callout_styles(html_body, callout_styles)
+            html_body = self._inline_figure_alignment(html_body)
             html_body = self._inline_syntax_highlighting(html_body)
 
             # Cleanup
@@ -276,6 +277,10 @@ class BaseHandler(ABC):
             def make_replacement(match, s=style):
                 title = match.group(1)
                 body = match.group(2)
+                # Quarto injects <span class="screen-reader-only">Note</span> before
+                # the custom title for accessibility — strip it so it doesn't render
+                # as visible text in Canvas where Quarto's CSS is absent.
+                title = re.sub(r'<span[^>]*class="screen-reader-only"[^>]*>.*?</span>', '', title, flags=re.DOTALL).strip()
                 return (
                     f'<div style="border-left: 4px solid {s["border"]}; '
                     f'background-color: {s["bg"]}; '
@@ -288,6 +293,51 @@ class BaseHandler(ABC):
 
             html = re.sub(pattern, make_replacement, html, flags=re.DOTALL)
 
+        return html
+
+    @staticmethod
+    def _inline_figure_alignment(html):
+        """Inline text-align onto Quarto's fig-align figures so centering
+        survives on Canvas where Quarto's stylesheet is absent.
+
+        Canvas's HTML sanitizer is unpredictable about which wrapper
+        elements/attributes survive, so we style every level — the wrapper
+        div, the figure, the <p> around the img, and the figcaption."""
+        for cls, align in (
+            ('quarto-figure-center', 'center'),
+            ('quarto-figure-left', 'left'),
+            ('quarto-figure-right', 'right'),
+        ):
+            wrapper_pattern = (
+                r'<div class="quarto-figure ' + re.escape(cls) + r'">\s*'
+                r'<figure class="figure">(.*?)</figure>\s*'
+                r'</div>'
+            )
+
+            def style_inner(inner, a=align):
+                inner = re.sub(
+                    r'<p>(\s*<img)',
+                    f'<p style="text-align: {a};">\\1',
+                    inner,
+                )
+                inner = inner.replace(
+                    '<figcaption>',
+                    f'<figcaption style="text-align: {a};">',
+                )
+                return inner
+
+            html = re.sub(
+                wrapper_pattern,
+                lambda m, a=align: (
+                    f'<div style="text-align: {a};">'
+                    f'<figure class="figure" style="text-align: {a};">'
+                    f'{style_inner(m.group(1), a)}'
+                    f'</figure>'
+                    f'</div>'
+                ),
+                html,
+                flags=re.DOTALL,
+            )
         return html
 
     @staticmethod

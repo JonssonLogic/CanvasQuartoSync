@@ -21,6 +21,7 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 from html import unescape
 
 from handlers.content_utils import load_sync_map, save_sync_map
@@ -103,19 +104,23 @@ def store_canvas_hash(content_root: str, file_path: str, canvas_html: str):
 
     Call this after a successful sync to record what Canvas should contain.
     """
+    from datetime import datetime, timezone
     content_hash = compute_content_hash(canvas_html)
+    now_iso = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
-    # 1. Update hash in sync map
+    # 1. Update hash and last_synced_at in sync map
     sync_map = load_sync_map(content_root)
     rel_path = os.path.relpath(file_path, content_root).replace('\\', '/')
     entry = sync_map.get(rel_path)
 
     if isinstance(entry, dict):
         entry['canvas_hash'] = content_hash
+        entry['last_synced_at'] = now_iso
     else:
         sync_map[rel_path] = {
             'id': entry,
-            'canvas_hash': content_hash
+            'canvas_hash': content_hash,
+            'last_synced_at': now_iso,
         }
 
     save_sync_map(content_root, sync_map)
@@ -193,6 +198,81 @@ def _compute_diff(content_root: str, file_path: str, current_html: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Canvas → QMD markdown conversion (for diff display)
+# ---------------------------------------------------------------------------
+
+def _build_frontmatter(item_type: str, canvas_obj) -> str:
+    """Build YAML frontmatter from a Canvas API object for diff comparison."""
+    import yaml
+
+    meta = {'canvas': {'type': item_type}}
+    if item_type == 'page':
+        meta['title'] = getattr(canvas_obj, 'title', '')
+        meta['canvas']['published'] = getattr(canvas_obj, 'published', False)
+    elif item_type == 'assignment':
+        meta['title'] = getattr(canvas_obj, 'name', '')
+        meta['canvas']['published'] = getattr(canvas_obj, 'published', False)
+        pts = getattr(canvas_obj, 'points_possible', None)
+        if pts is not None:
+            meta['canvas']['points'] = pts
+        sub_types = getattr(canvas_obj, 'submission_types', None)
+        if sub_types:
+            meta['canvas']['submission_types'] = list(sub_types)
+        allowed_ext = getattr(canvas_obj, 'allowed_extensions', None)
+        if allowed_ext:
+            meta['canvas']['allowed_extensions'] = list(allowed_ext)
+        grading = getattr(canvas_obj, 'grading_type', None)
+        if grading:
+            meta['canvas']['grading_type'] = grading
+        for date_field in ('due_at', 'unlock_at', 'lock_at'):
+            val = getattr(canvas_obj, date_field, None)
+            if val:
+                meta['canvas'][date_field] = val
+        if getattr(canvas_obj, 'omit_from_final_grade', False):
+            meta['canvas']['omit_from_final_grade'] = True
+        # Group assignment detection
+        group_id = getattr(canvas_obj, 'group_category_id', None)
+        if group_id:
+            meta['canvas']['group_assignment'] = True
+
+    fm = yaml.dump(meta, default_flow_style=False, allow_unicode=True, sort_keys=False).strip()
+    return f'---\n{fm}\n---\n'
+
+
+def _canvas_html_to_qmd(html: str, item_type: str, canvas_obj,
+                         sync_map: dict, content_root: str) -> str:
+    """Convert Canvas HTML + API metadata into a .qmd-like string for diff comparison."""
+    from import_from_canvas import HtmlToMarkdown
+
+    converter = HtmlToMarkdown(sync_map=sync_map, content_root=content_root)
+    body_md = converter.convert(html)
+    frontmatter = _build_frontmatter(item_type, canvas_obj)
+    return frontmatter + '\n' + body_md
+
+
+DIFF_TEMP_DIR = '.canvas_diff_temp'
+
+
+def _write_diff_temp(content_root: str, rel_path: str, content: str) -> str:
+    """Write Canvas markdown to a temp file for VS Code diff editor."""
+    diff_dir = os.path.join(content_root, DIFF_TEMP_DIR)
+    os.makedirs(diff_dir, exist_ok=True)
+    safe_name = rel_path.replace('/', '__').replace('\\', '__')
+    temp_path = os.path.join(diff_dir, f'canvas__{safe_name}')
+    with open(temp_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    return temp_path
+
+
+def cleanup_diff_temp(content_root: str):
+    """Remove the temp diff directory."""
+    diff_dir = os.path.join(content_root, DIFF_TEMP_DIR)
+    if os.path.exists(diff_dir):
+        import shutil
+        shutil.rmtree(diff_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
 # Batch check (all items)
 # ---------------------------------------------------------------------------
 
@@ -200,7 +280,11 @@ def check_all_drift(course, content_root: str) -> list:
     """Check drift for all synced items.
 
     Returns a list of dicts for items that have drifted:
-        [{'file': str, 'type': str, 'title': str, 'diff': str, ...}]
+        [{'file': str, 'type': str, 'title': str, 'diff': str,
+          'canvas_qmd_path': str, ...}]
+
+    canvas_qmd_path is a temp file containing the Canvas content converted
+    to .qmd format, suitable for opening in VS Code's diff editor.
     """
     sync_map = load_sync_map(content_root)
     drifted_items = []
@@ -222,6 +306,7 @@ def check_all_drift(course, content_root: str) -> list:
                 current_html = None
                 item_type = 'unknown'
                 title = rel_path
+                canvas_obj = None
 
                 # Try as page
                 try:
@@ -229,6 +314,7 @@ def check_all_drift(course, content_root: str) -> list:
                     current_html = getattr(page, 'body', '') or ''
                     item_type = 'page'
                     title = page.title
+                    canvas_obj = page
                 except Exception:
                     pass
 
@@ -239,6 +325,7 @@ def check_all_drift(course, content_root: str) -> list:
                         current_html = getattr(assignment, 'description', '') or ''
                         item_type = 'assignment'
                         title = assignment.name
+                        canvas_obj = assignment
                     except Exception:
                         pass
 
@@ -249,6 +336,15 @@ def check_all_drift(course, content_root: str) -> list:
                         abs_path = os.path.join(content_root, rel_path.replace('/', os.sep))
                         diff_text = _compute_diff(content_root, abs_path, current_html)
 
+                        # Build Canvas QMD for VS Code diff editor
+                        canvas_qmd = _canvas_html_to_qmd(
+                            current_html, item_type, canvas_obj,
+                            sync_map, content_root
+                        )
+                        canvas_qmd_path = _write_diff_temp(
+                            content_root, rel_path, canvas_qmd
+                        )
+
                         drifted_items.append({
                             'file': rel_path,
                             'type': item_type,
@@ -256,6 +352,7 @@ def check_all_drift(course, content_root: str) -> list:
                             'stored_hash': stored_hash,
                             'current_hash': current_hash,
                             'diff': diff_text,
+                            'canvas_qmd_path': canvas_qmd_path,
                         })
 
         except Exception as e:
