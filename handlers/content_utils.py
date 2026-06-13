@@ -9,6 +9,13 @@ from handlers.log import logger
 # Global cache for folder names to IDs to avoid redundant API lookups
 FOLDER_CACHE = {}
 
+def is_valid_name(name):
+    """
+    Checks if the name starts with exactly two digits followed by an underscore.
+    Example: '01_Intro' -> True, 'Intro' -> False, '1_Intro' -> False
+    """
+    return bool(re.match(r'^\d{2}_', name))
+
 def parse_module_name(text):
     """
     Removes leading digits and underscore from a name (e.g. '01_Intro' -> 'Intro').
@@ -20,6 +27,33 @@ def parse_module_name(text):
     if match:
         return match.group(2)
     return text
+
+def expected_canvas_title(file_path):
+    """
+    Compute the Canvas module-item title a file would receive, WITHOUT rendering.
+
+    Mirrors the title rule used by every handler: an explicit frontmatter/JSON
+    `title`, otherwise the NN_-stripped stem. Used to match a file against its
+    Canvas module item when positioning a single synced asset among its siblings.
+
+    NOTE: this intentionally duplicates the (simple, stable) per-handler title
+    rule; if that rule ever changes, handlers should adopt this helper.
+    """
+    filename = os.path.basename(file_path)
+    stem, ext = os.path.splitext(filename)
+    ext = ext.lower()
+    try:
+        if ext in ('.qmd', '.md'):
+            post = frontmatter.load(file_path)
+            return post.metadata.get('title') or parse_module_name(stem)
+        if ext == '.json':
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return data.get('canvas', {}).get('title') or parse_module_name(stem)
+    except Exception:
+        return parse_module_name(stem)
+    # Solo asset (PDF, ZIP, etc.) — module item keeps the extension
+    return parse_module_name(filename)
 
 def clean_title(filename):
     """

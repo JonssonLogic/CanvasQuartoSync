@@ -1,31 +1,17 @@
 import os
 import argparse
-import sys
-import re
 from canvasapi import Canvas
 
 from handlers.log import logger, setup_logging
-from handlers.base_handler import BaseHandler
-from handlers.study_guide_handler import StudyGuideHandler
-from handlers.page_handler import PageHandler
-from handlers.assignment_handler import AssignmentHandler
-from handlers.quiz_handler import QuizHandler
-from handlers.new_quiz_handler import NewQuizHandler
 from handlers.calendar_handler import CalendarHandler
 from handlers.subheader_handler import SubHeaderHandler
 from handlers.external_link_handler import ExternalLinkHandler
-from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name
+from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name
+from handlers.single_sync import build_handlers, find_or_create_module, sync_single_file
 from handlers import __version__
-from handlers.config import load_config, get_api_credentials, get_course_id
+from handlers.config import get_api_credentials, get_course_id
 from handlers.drift_detector import check_all_drift
 
-
-def is_valid_name(name):
-    """
-    Checks if the name starts with exactly two digits followed by an underscore.
-    Example: '01_Intro' -> True, 'Intro' -> False, '1_Intro' -> False
-    """
-    return bool(re.match(r'^\d{2}_', name))
 
 def main():
     parser = argparse.ArgumentParser(description="Sync local content to Canvas.")
@@ -107,15 +93,20 @@ def main():
             logger.info("[green]No drift detected. Canvas content matches last sync.[/green]")
         return
 
-    handlers = [
-        StudyGuideHandler(),
-        PageHandler(),
-        AssignmentHandler(),
-        NewQuizHandler(),
-        QuizHandler(),
-        ExternalLinkHandler(),
-        SubHeaderHandler()
-    ]
+    handlers = build_handlers()
+
+    # --only: sync a single asset and exit (delegates to the reusable function
+    # so the same logic is available to a future GUI).
+    if args.only:
+        candidate = os.path.abspath(os.path.join(content_root, args.only))
+        if not os.path.exists(candidate):
+            candidate = os.path.abspath(args.only)
+        result = sync_single_file(course, content_root, candidate, canvas=canvas, handlers=handlers)
+        if result.success:
+            logger.info("[bold green]%s[/bold green]", result.message)
+        else:
+            logger.error("[red]%s[/red]", result.message)
+        return
 
     # Calendar Sync (Opt-in)
     if args.sync_calendar:
@@ -130,24 +121,6 @@ def main():
             logger.error("Calendar sync failed: %s", e)
     else:
         logger.info("[dim]Skipping calendar sync (use --sync-calendar to enable)[/dim]")
-
-    # --only filter: resolve to absolute path for matching
-    only_filter = None
-    if args.only:
-        # Try as relative to content_root first, then as relative to CWD / absolute
-        candidate = os.path.abspath(os.path.join(content_root, args.only))
-        if not os.path.exists(candidate):
-            candidate = os.path.abspath(args.only)
-        if not os.path.exists(candidate):
-            logger.error("[red]File not found:[/red] %s", args.only)
-            return
-        # Verify the file is inside the content root
-        if not candidate.startswith(content_root):
-            logger.error("[red]File is not inside content directory:[/red] %s", candidate)
-            return
-        only_filter = candidate
-        rel_display = os.path.relpath(only_filter, content_root)
-        logger.info("[cyan]Syncing only:[/cyan] %s", rel_display)
 
     logger.info("[bold cyan]Starting content sync...[/bold cyan]")
 
@@ -166,30 +139,14 @@ def main():
             if not is_valid_name(item):
                 continue
 
-            # --only: skip modules that don't contain the target file
-            if only_filter and not only_filter.startswith(item_path):
-                continue
-
             # This is a Module directory
             module_name = parse_module_name(item)
             logger.info("[cyan]Processing module:[/cyan] [bold]%s[/bold]", module_name)
             module_count += 1
 
             # Find or Create Module in Canvas
-            module_obj = None
             try:
-                # Helper to find module
-                modules = course.get_modules(search_term=module_name)
-                for m in modules:
-                    if m.name == module_name:
-                        module_obj = m
-                        break
-
-                if not module_obj:
-                    logger.info("  [green]Creating new module:[/green] %s", module_name)
-                    module_obj = course.create_module(module={'name': module_name})
-                else:
-                    logger.debug("  Found existing module: %s (ID: %s)", module_name, module_obj.id)
+                module_obj = find_or_create_module(course, module_name)
 
                 # Walk files inside the module
                 module_files = sorted(os.listdir(item_path))
@@ -204,10 +161,6 @@ def main():
                         continue
 
                     if not is_valid_name(filename):
-                        continue
-
-                    # --only: skip files that don't match
-                    if only_filter and os.path.abspath(file_path) != only_filter:
                         continue
 
                     # Delegation Logic
@@ -243,8 +196,8 @@ def main():
                                 synced_module_items.append(mod_item)
                             item_count += 1
 
-                # Reorder Module Items (skip when --only, since we didn't sync all items)
-                if synced_module_items and not only_filter:
+                # Reorder Module Items
+                if synced_module_items:
                     logger.debug("  Verifying module item order (%d items)...", len(synced_module_items))
                     for i, mod_item in enumerate(synced_module_items):
                         expected_position = i + 1
@@ -262,10 +215,6 @@ def main():
         # Case B: Root File (No Module)
         elif os.path.isfile(item_path):
              if not is_valid_name(item):
-                 continue
-
-             # --only: skip root files that don't match
-             if only_filter and os.path.abspath(item_path) != only_filter:
                  continue
 
              # Delegation Logic
@@ -286,9 +235,8 @@ def main():
                     handled = True
                     break
 
-    # 3. Cleanup Orphans (skip when --only to avoid deleting assets from un-synced files)
-    if not only_filter:
-        prune_orphaned_assets(course)
+    # 3. Cleanup Orphans
+    prune_orphaned_assets(course)
 
     logger.info("[bold green]Sync complete.[/bold green] Processed %d modules, synced %d items.", module_count, item_count)
 

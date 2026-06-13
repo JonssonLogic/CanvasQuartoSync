@@ -61,6 +61,11 @@ python sync_to_canvas.py
 # Sync from a specific folder
 python sync_to_canvas.py ../MyCourseData
 
+# Sync a SINGLE asset (one page/assignment/quiz/file) instead of the whole course.
+# The item is created/updated and placed in the correct slot of its module,
+# and recorded in the sync map so a later full sync recognizes it.
+python sync_to_canvas.py --only 01_Introduction/02_Welcome.qmd
+
 # Sync including Calendar (Opt-in)
 python sync_to_canvas.py --sync-calendar
 

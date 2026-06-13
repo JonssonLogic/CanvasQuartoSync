@@ -20,6 +20,7 @@ CanvasQuartoSync/
 ├── handlers/                  # All content-type handlers + shared utilities
 │   ├── __init__.py
 │   ├── base_handler.py        # Abstract base (can_handle, sync, add_to_module)
+│   ├── single_sync.py         # Reusable single-asset sync (GUI-ready entry point)
 │   ├── study_guide_handler.py  # .qmd → Canvas Page + PDF (dual output)
 │   ├── page_handler.py        # .qmd → Canvas Page
 │   ├── assignment_handler.py  # .qmd → Canvas Assignment
@@ -66,7 +67,7 @@ CanvasQuartoSync/
 ```
 sync_to_canvas.py
   │
-  ├── Parse CLI args (content_root, --course-id, --sync-calendar, --verbose, --quiet, --log-file)
+  ├── Parse CLI args (content_root, --course-id, --sync-calendar, --force, --check-drift, --only, --verbose, --quiet, --log-file)
   ├── Initialize logging (handlers/log.py → setup_logging())
   ├── Load Canvas API via canvasapi library
   ├── Walk content_root for NN_* folders (→ Modules) and NN_* files
@@ -174,6 +175,8 @@ The project has a full test suite in `tests/`. **Always run the tests before and
 .venv\Scripts\python -m pytest tests/e2e/ -v -m canvas --course-id 12345
 ```
 
+E2E credentials, course id, and a safety marker can be stored once in a gitignored `./.e2e/config.toml` (copy `tests/e2e/e2e.config.example.toml`) instead of passing them each run — resolution reuses `handlers/config.py`. The target course is purged and re-synced fresh each run, guarded by a course-name marker (`test_course_marker`) so a non-test course is never wiped. Shared logic lives in `tests/e2e/canvas_helpers.py`.
+
 See `TESTING.md` for the full guide including how to set up E2E credentials.
 
 ### Test tiers
@@ -206,6 +209,18 @@ Follow the **Arrange / Act / Assert** pattern (see `TESTING.md`). Group related 
 4. Add `can_handle()` tests to `tests/unit/test_handler_detection.py`.
 5. Add a representative content file to `tests/fixtures/e2e_content/`.
 6. Add E2E assertions to `tests/e2e/test_full_sync.py`.
+
+### Syncing a single asset
+
+A single content file can be synced without walking the whole course, via the
+`--only <relpath>` CLI flag **or** programmatically (e.g. from a future GUI).
+
+- **Reusable entry point**: `handlers/single_sync.py → sync_single_file(course, content_root, target_abs_path, canvas=None, handlers=None)`. It returns a `SingleSyncResult` dataclass (`success`, `message`, `module_item`, `position`) — no log parsing required.
+- **Same handlers as full sync**: both paths build the handler chain via `build_handlers()` and find/create modules via `find_or_create_module()` (both in `single_sync.py`), so behavior is identical to a full sync. The handler still writes the sync map (`save_mapped_id`), so a later full sync recognizes the item.
+- **Correct placement**: after syncing, `compute_insert_position()` determines the item's slot by counting the syncable sibling files (sorted filename order) that sort before it **and** are already present as module items. It matches files to module items by title via `content_utils.expected_canvas_title()` (a render-free title computation that mirrors the per-handler title rule).
+- The CLI `--only` branch in `sync_to_canvas.py` simply resolves the path and delegates to `sync_single_file()`.
+
+When adding a new content type, no extra work is needed for single-asset sync as long as the handler follows the standard pattern (returns its module item from `sync()` and updates the sync map). If the handler derives its title differently, update `expected_canvas_title()` to match.
 
 ### Modifying Quarto rendering
 - The render pipeline is in `PageHandler.sync()` and `AssignmentHandler.sync()` (duplicated — see Improvements).
