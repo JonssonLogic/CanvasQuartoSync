@@ -195,7 +195,16 @@ def resolve_cross_link(course, current_file_path, link_target, base_path):
                 return None
             # Title can be under canvas or at root
             target_title = canvas_meta.get('title') or post.metadata.get('title') or parse_module_name(os.path.splitext(filename)[0])
-            target_type = canvas_meta.get('type', 'page') # Default to page if unspecified
+            target_type = canvas_meta.get('type')
+            if not target_type:
+                # Classic quizzes carry no `canvas.type` (they're detected
+                # structurally). Recognise them by a `quiz_type` setting or inline
+                # question blocks; otherwise default to a page.
+                body = post.content or ''
+                if 'quiz_type' in canvas_meta or re.search(r':::+\s*\{\.question', body):
+                    target_type = 'quiz'
+                else:
+                    target_type = 'page'
 
         elif ext == '.json':
             # Check if New Quiz JSON
@@ -271,8 +280,11 @@ def resolve_cross_link(course, current_file_path, link_target, base_path):
         if not target_obj:
             logger.info("    [green]Creating stub new quiz:[/green] %s", target_title)
             from handlers.new_quiz_api import NewQuizAPIClient
-            api_url = course._requester.original_url
-            api_token = course._requester._access_token
+            # New Quizzes use a separate REST API; credentials come from the
+            # environment (same as NewQuizHandler) rather than canvasapi's
+            # private requester internals.
+            api_url = os.environ.get("CANVAS_API_URL") or getattr(course._requester, "original_url", None)
+            api_token = os.environ.get("CANVAS_API_TOKEN")
             client = NewQuizAPIClient(api_url, api_token)
 
             quiz_payload = {

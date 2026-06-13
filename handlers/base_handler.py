@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 import os
 import subprocess
 import re
+import html as html_lib
+import urllib.parse
 from handlers.content_utils import safe_delete_file, safe_delete_dir
 from handlers.config import load_config
 from handlers.log import logger
@@ -249,6 +251,7 @@ class BaseHandler(ABC):
             callout_styles = _load_callout_styles(content_root) if content_root else _DEFAULT_CALLOUT_STYLES
             html_body = self._inline_callout_styles(html_body, callout_styles)
             html_body = self._inline_syntax_highlighting(html_body)
+            html_body = self._inline_math(html_body)
 
             # Cleanup
             self._cleanup(temp_qmd, temp_html, temp_files_dir)
@@ -288,6 +291,58 @@ class BaseHandler(ABC):
 
             html = re.sub(pattern, make_replacement, html, flags=re.DOTALL)
 
+        return html
+
+    @staticmethod
+    def _inline_math(html):
+        """Convert Quarto's MathJax spans into Canvas equation images.
+
+        Quarto renders LaTeX as ``<span class="math inline">\\(..\\)</span>`` and
+        ``<span class="math display">\\[..\\]</span>`` plus a MathJax ``<head>``
+        script. Since we only ship the ``<main>`` body to Canvas (no scripts),
+        those delimiters would display as raw text. Canvas instead renders LaTeX
+        natively via ``/equation_images/<double-url-encoded latex>`` (the same
+        format import_from_canvas.py decodes), so we emit that here.
+        """
+        def equation_img(latex, display):
+            # Quarto puts the LaTeX as HTML text, so unescape entities (&amp; etc.)
+            latex = html_lib.unescape(latex).strip()
+            # Whitespace is insignificant in math; collapse it to keep URLs clean.
+            latex = re.sub(r'\s+', ' ', latex)
+            if not latex:
+                return ''
+            # Canvas double-url-encodes the LaTeX in the image path.
+            encoded = urllib.parse.quote(urllib.parse.quote(latex, safe=''), safe='')
+            attr = html_lib.escape(latex, quote=True)
+            img = (
+                f'<img class="equation_image" title="{attr}" '
+                f'src="/equation_images/{encoded}" alt="LaTeX: {attr}" '
+                f'data-equation-content="{attr}" />'
+            )
+            if display:
+                return f'<p style="text-align: center;">{img}</p>'
+            return img
+
+        def display_repl(match):
+            inner = match.group(1).strip()
+            inner = re.sub(r'^\\\[', '', inner)
+            inner = re.sub(r'\\\]$', '', inner)
+            return equation_img(inner, display=True)
+
+        def inline_repl(match):
+            inner = match.group(1).strip()
+            inner = re.sub(r'^\\\(', '', inner)
+            inner = re.sub(r'\\\)$', '', inner)
+            return equation_img(inner, display=False)
+
+        html = re.sub(
+            r'<span class="math display"[^>]*>(.*?)</span>',
+            display_repl, html, flags=re.DOTALL,
+        )
+        html = re.sub(
+            r'<span class="math inline"[^>]*>(.*?)</span>',
+            inline_repl, html, flags=re.DOTALL,
+        )
         return html
 
     @staticmethod
