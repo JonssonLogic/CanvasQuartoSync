@@ -1,0 +1,9 @@
+---
+title: "NPTEL: Strength of Materials"
+canvas:
+  type: external_url
+  url: "https://nptel.ac.in/courses/112107146"
+  published: true
+  indent: 1
+  new_tab: true
+---

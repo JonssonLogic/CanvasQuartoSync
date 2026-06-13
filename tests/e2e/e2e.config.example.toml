@@ -1,0 +1,22 @@
+# Example E2E test configuration.
+#
+# Copy this file to  ./.e2e/config.toml  (project root) and fill in your values.
+# The .e2e/ directory is gitignored, so your credentials stay local. It is kept
+# separate from ./.testing/ (a manual-sync scratch area) on purpose.
+#
+# Resolution reuses the regular sync's config system (handlers/config.py):
+#   - Environment variables (CANVAS_API_URL / CANVAS_API_TOKEN) take precedence
+#     and work on their own — .e2e/ is entirely optional.
+#   - The token is read from `canvas_token_path` (relative to .e2e/) only when
+#     CANVAS_API_TOKEN is not set.
+#
+# Then run:  python -m pytest tests/e2e/ -v -m canvas   (no flags needed)
+
+canvas_api_url    = "https://your-institution.instructure.com"
+canvas_token_path = "token.txt"          # put your API token in .e2e/token.txt
+course_id         = 12345                # your DISPOSABLE test course id
+
+# Safety marker: the E2E tests refuse to purge a course unless its name contains
+# this substring (case-insensitive). Prevents wiping a production course.
+# Default is "test"; override here or via the CANVAS_TEST_COURSE_MARKER env var.
+test_course_marker = "Training"

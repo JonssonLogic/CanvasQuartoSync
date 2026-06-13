@@ -1,5 +1,5 @@
 ---
-title: "Welcome to the Test Course"
+title: "Welcome to Mechanics of Materials"
 format:
   html:
     page-layout: article
@@ -8,40 +8,50 @@ canvas:
   published: true
 ---
 
-![Test image](../graphics/test_image.png)
+![Course banner](../graphics/test_image.png)
 
-This is a **test page** used by the E2E test suite.
+Welcome to **MECH201 — Mechanics of Materials**. This course covers axial
+loading, torsion, bending, and combined stresses in deformable bodies.
 
-## Inline Math
+<img src="../graphics/test_image.png" alt="Inline HTML logo" width="160" />
 
-The equation $E = mc^2$ is inline. Here is a fraction: $\frac{1}{2}$.
+## Core Relationships
 
-## Display Math
+Normal (axial) stress and strain are defined as
 
 $$
-\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}
+\sigma = \frac{F}{A}, \qquad \varepsilon = \frac{\Delta L}{L_0}.
 $$
 
-## Cross-Links
+Within the elastic region, Hooke's law links them through Young's modulus $E$:
+the inline relation $\sigma = E\,\varepsilon$ holds until the proportional limit.
 
-Link to the assignment: [Test Assignment](../02_Basics/01_Assignment.qmd).
+Strain energy stored in an axially loaded bar is
 
-Link to the quiz page: [Classic Quiz](05_Classic_Quiz.qmd).
+$$
+U = \int_0^{L} \frac{N(x)^2}{2 E A}\, dx .
+$$
 
-## External Link
+## SI Notation
 
-Visit [Python Docs](https://docs.python.org/3/).
+| Symbol | Quantity | SI Unit |
+|:-------|:---------|:--------|
+| $\sigma$ | Normal stress | $\text{Pa} = \text{N/m}^2$ |
+| $\tau$ | Shear stress | $\text{Pa}$ |
+| $\varepsilon$ | Normal strain | — (dimensionless) |
+| $E$ | Young's modulus | $\text{GPa}$ |
+| $I$ | Second moment of area | $\text{m}^4$ |
 
-## Lists
+## What You Will Do
 
-- Item A
-- Item B
-- Item C
+- Analyse statically determinate trusses
+- Compute bending stress in beams
+- Sit short concept quizzes
 
-## Table
+## Getting Started
 
-| Name | Value |
-|:-----|------:|
-| Alpha | 1 |
-| Beta | 2 |
-| Gamma | 3 |
+Start with the [Truss Analysis assignment](../02_Statics/01_Truss_Analysis.qmd),
+then take the [Syllabus Quiz](07_Syllabus_Quiz.qmd). The
+[Beam Bending concept quiz](../03_Beam Bending/01_Concept_Quiz.qmd) comes later.
+
+For unit conversions, see the [Engineering ToolBox](https://www.engineeringtoolbox.com/).

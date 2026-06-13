@@ -1,0 +1,54 @@
+---
+canvas:
+  type: new_quiz
+  title: "Beam Bending Concepts"
+  published: true
+  shuffle_answers: true
+  shuffle_questions: true
+  points: 10
+  allowed_attempts: -1
+  score_to_keep: highest
+  time_limit: 30
+  omit_from_final_grade: true
+  result_view:
+    restricted: false
+    show_questions: true
+    show_student_responses: true
+    show_correctness: true
+    show_correct_answers: true
+    show_points_awarded: true
+---
+
+:::: {.question name="Bending Stress Formula" points_possible="2.0"}
+
+The flexure formula for the bending stress in a beam is:
+
+- [x] $\sigma = \dfrac{M c}{I}$
+  - Correct.
+- [ ] $\sigma = \dfrac{T r}{J}$
+  - That is the torsion formula.
+- [ ] $\sigma = \dfrac{F}{A}$
+
+::::
+
+:::: {.question type="multiple_answers_question" name="Neutral Axis" points_possible="3.0"}
+
+Select all true statements about the neutral axis of a symmetric beam in pure
+bending.
+
+- [x] It passes through the centroid of the cross-section.
+- [x] The bending stress there is zero.
+- [ ] It carries the maximum bending stress.
+
+::::
+
+:::: {.question type="true_false_question" name="Linear Stress Distribution" points_possible="1.0"}
+
+In pure bending, the normal stress varies linearly with distance from the
+neutral axis.
+
+- [x] True
+  - Correct — $\sigma(y) = M y / I$.
+- [ ] False
+
+::::

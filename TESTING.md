@@ -39,16 +39,16 @@ python -m pytest tests/integration/ -v
 ### Tier 3: End-to-End Tests (`tests/e2e/`)
 **Requires real Canvas course + Quarto CLI.** Syncs dedicated test content (`tests/fixtures/e2e_content/`) to a real Canvas test course, then downloads and verifies the results. Each developer uses their own test course.
 
+Before each run the target course is **purged** (modules, pages, assignments, quizzes, and the `synced-images` / `synced-files` folders) and local sync state is reset, so results are deterministic. A **safety marker** prevents purging the wrong course — see [E2E Test Setup](#e2e-test-setup) below.
+
 ```bash
-# Set credentials
+# Option A — env vars + course id (good for CI)
 export CANVAS_API_URL="https://your-institution.instructure.com"
 export CANVAS_API_TOKEN="your-token"
-
-# Run E2E tests — pass YOUR test course ID
 python -m pytest tests/e2e/ -v -m canvas --course-id 12345
+# (or: export CANVAS_TEST_COURSE_ID="12345")
 
-# Or set it as an environment variable
-export CANVAS_TEST_COURSE_ID="12345"
+# Option B — store everything once in ./.e2e/ (see E2E Test Setup), then just:
 python -m pytest tests/e2e/ -v -m canvas
 ```
 
@@ -89,20 +89,28 @@ tests/
         test_add_to_module.py       # Module item create/update/match logic
         test_process_content.py     # Image/link processing with mocked uploads
     e2e/                            # Real Canvas course tests
-        conftest.py                 # Course setup/teardown fixtures
-        test_full_sync.py           # Verify modules, pages, quizzes, images, etc.
+        conftest.py                 # Course setup/teardown fixtures + manual-check prompt
+        canvas_helpers.py           # Credential resolution, purge, sync runner
+        e2e.config.example.toml     # Template for ./.e2e/config.toml
+        MANUAL_CHECKLIST.md         # Human-only visual checks (PDF, New Quizzes UI, polish)
+        test_full_sync.py           # Verify modules, pages, quizzes, images, math, etc.
+        test_single_asset.py        # --only single-asset sync + placement
         test_idempotency.py         # Second sync produces same result
     fixtures/
-        e2e_content/                # Dedicated test content for E2E tests
+        e2e_content/                # Dedicated test content (MECH201, Mechanics of Materials)
             _quarto.yml             # Quarto config (HTML + PDF)
             config.toml             # Course metadata for preprocessor
             branding.css            # Callout & brand styling
             schedule.yaml           # Calendar events
-            graphics/               # Test image
-            01_Introduction/        # Page, callouts, subheader, external links, quizzes
-            02_Basics/              # Upload + text entry assignments
-            03_Advanced/            # New Quizzes (MC, numeric, formula, JSON)
-            04_Course Documents/    # Study guide with preprocessing + PDF
+            graphics/               # Test image (markdown + HTML <img>)
+            01_Introduction/        # Pages (math/tables/callouts/code/HTML img,
+                                    #   unpublished+indented page), subheader,
+                                    #   2 external links, classic QMD + JSON quizzes
+            02_Statics/             # Assignments: dates, grading types,
+                                    #   omit_from_final_grade, group-set assignment
+            03_Beam_Bending/        # New Quizzes: result-view + omit settings,
+                                    #   numeric + formula, JSON
+            04_Course Documents/    # Study guide (preprocess + PDF) + solo CSV asset
 ```
 
 ---
@@ -138,16 +146,42 @@ def test_strips_two_digit_prefix():
 
 ## E2E Test Setup
 
-1. Create a **dedicated test course** in Canvas (do not use a production course)
-2. Set environment variables:
-   - `CANVAS_API_URL` — your institution's Canvas URL
-   - `CANVAS_API_TOKEN` — your API access token
-3. Pass your course ID when running tests:
-   - CLI flag: `--course-id 12345`
-   - Or env var: `CANVAS_TEST_COURSE_ID=12345`
-4. The E2E tests will **purge the course** before syncing, so ensure the course is disposable
+1. Create a **dedicated, disposable test course** in Canvas (never a production course). The E2E run **purges everything** in it.
+
+2. Provide credentials + course id. Resolution reuses the regular sync's config system (`handlers/config.py`), so you can mix env vars and files; **env vars always take precedence**:
+
+   - **Env vars only:** set `CANVAS_API_URL`, `CANVAS_API_TOKEN`, and pass `--course-id 12345` (or set `CANVAS_TEST_COURSE_ID`).
+   - **Stored in a file (`./.e2e/`):** create a gitignored `.e2e/` directory at the project root and copy [`tests/e2e/e2e.config.example.toml`](tests/e2e/e2e.config.example.toml) to `.e2e/config.toml`:
+
+     ```toml
+     # .e2e/config.toml
+     canvas_api_url     = "https://your-institution.instructure.com"
+     canvas_token_path  = "token.txt"     # token goes in .e2e/token.txt (omit to use $CANVAS_API_TOKEN)
+     course_id          = 12345
+     test_course_marker = "Training"      # safety marker (see below)
+     ```
+
+     `.e2e/` is **separate from `.testing/`** (a manual-sync scratch area) on purpose. The token file is optional — if absent, `CANVAS_API_TOKEN` is used.
+
+3. **Safety marker.** The tests refuse to purge a course unless its name contains the marker substring (case-insensitive). Default is `"test"`; override via `test_course_marker` in `.e2e/config.toml` or the `CANVAS_TEST_COURSE_MARKER` env var. If the guard blocks the run, you'll see a clear "Refusing to purge" message — set the marker to match your test course's name.
+
+4. **What the purge clears each run:** modules, pages, assignments, quizzes, the `synced-images` / `synced-files` Canvas folders, and the local `.canvas_sync_map.json` + `.canvas_snapshots/` in the fixture dir.
 
 The E2E tests sync content from `tests/fixtures/e2e_content/` (not `Example/`), so test results are stable and independent of your project's example content.
+
+### Manual verification step
+
+Automated assertions confirm objects exist with the right settings **and** that
+content rendered (math → Canvas equation images that are HTTP-checked, callouts
+styled, code highlighted, tables, no raw markdown, etc.). A few things still need
+human eyes — the PDF, the New Quizzes UI, and overall visual polish. At the end of
+every live run the suite prints a **MANUAL VERIFICATION** prompt with the course
+URL; walk the short list in [`tests/e2e/MANUAL_CHECKLIST.md`](tests/e2e/MANUAL_CHECKLIST.md).
+
+Manual verification is **advisory** (no pytest gate). An **AI agent** that runs
+this suite while testing a content change must surface the checklist and ask the
+developer to confirm the visual items before declaring the change verified — see
+[CLAUDE.md](CLAUDE.md).
 
 ---
 

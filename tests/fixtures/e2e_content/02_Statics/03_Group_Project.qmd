@@ -1,0 +1,36 @@
+---
+title: "Group Design Project"
+format:
+  html:
+    page-layout: article
+canvas:
+  type: assignment
+  published: true
+  points: 30
+  grading_type: letter_grade
+  submission_types: [online_upload]
+  allowed_extensions: [pdf, zip]
+  group_set: "MECH201 Project Groups"
+  due_at: "2026-10-15T23:59:00Z"
+---
+
+# Group Design Project
+
+In groups, design a cantilever bracket that safely carries a tip load of
+$P = 5\ \text{kN}$ with a factor of safety of at least $n = 2.5$.
+
+## Design Constraint
+
+The maximum bending stress must satisfy
+
+$$
+\sigma_{\max} = \frac{M c}{I} \le \frac{\sigma_y}{n}.
+$$
+
+| Deliverable | Weight |
+|:------------|-------:|
+| CAD model | 40% |
+| Stress report | 40% |
+| Reflection | 20% |
+
+Submit one `.pdf` report and a `.zip` of CAD files **per group**.

@@ -1,0 +1,94 @@
+---
+title: "Stress, Strain & Material Behaviour"
+format:
+  html:
+    page-layout: article
+canvas:
+  type: page
+  published: true
+---
+
+This page tests callout blocks, syntax-highlighted code, LaTeX, and tables in a
+single engineering page.
+
+## Stress Tensor
+
+In 3-D the state of stress at a point is the symmetric Cauchy stress tensor
+
+$$
+\boldsymbol{\sigma} =
+\begin{bmatrix}
+\sigma_{xx} & \tau_{xy} & \tau_{xz} \\
+\tau_{xy} & \sigma_{yy} & \tau_{yz} \\
+\tau_{xz} & \tau_{yz} & \sigma_{zz}
+\end{bmatrix}.
+$$
+
+The principal stresses for plane stress follow from
+
+$$
+\sigma_{1,2} = \frac{\sigma_x + \sigma_y}{2}
+\pm \sqrt{\left(\frac{\sigma_x - \sigma_y}{2}\right)^2 + \tau_{xy}^2}.
+$$
+
+## Callout Blocks
+
+::: {.callout-note}
+## Sign Convention
+Tensile stress is positive; compressive stress is negative.
+:::
+
+::: {.callout-warning}
+## Stress Concentrations
+Sharp notches raise local stress well above the nominal value $\sigma_{nom}$.
+:::
+
+::: {.callout-tip}
+## Quick Check
+For a circular shaft, polar moment $J = \tfrac{\pi d^4}{32}$.
+:::
+
+::: {.callout-important}
+## Yielding
+Compare the von Mises stress $\sigma_v$ against the yield strength $\sigma_y$.
+:::
+
+::: {.callout-caution}
+## Buckling
+Slender columns can fail by buckling **before** reaching $\sigma_y$.
+:::
+
+## Typical Material Properties
+
+| Material | $E$ (GPa) | Yield $\sigma_y$ (MPa) | Density (kg/m³) |
+|:---------|----------:|-----------------------:|----------------:|
+| Structural steel | 200 | 250 | 7850 |
+| Aluminium 6061-T6 | 69 | 276 | 2700 |
+| Titanium Ti-6Al-4V | 114 | 880 | 4430 |
+
+## Computing Axial Stress
+
+```python
+def axial_stress(force_n: float, area_mm2: float) -> float:
+    """Return axial stress in MPa for a force in N and area in mm^2."""
+    return force_n / area_mm2  # N/mm^2 == MPa
+
+
+sigma = axial_stress(40_000, 200.0)
+print(f"Stress = {sigma:.1f} MPa")
+```
+
+```javascript
+// Convert a bending moment (N*m) and section modulus (m^3) to stress (Pa)
+function bendingStress(moment, sectionModulus) {
+    return moment / sectionModulus;
+}
+```
+
+Inline code such as `sigma = F / A` should be preserved. Fenced blocks must not
+have their contents treated as links or images:
+
+```
+![not an image](nope.png)
+[not a link](nowhere.qmd)
+```

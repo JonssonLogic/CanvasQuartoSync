@@ -1,0 +1,39 @@
+{
+    "canvas": {
+        "quiz_engine": "new",
+        "title": "Section Properties (JSON New Quiz)",
+        "published": true,
+        "points": 5,
+        "shuffle_answers": true,
+        "allowed_attempts": 2,
+        "score_to_keep": "latest",
+        "result_view": {
+            "restricted": true,
+            "show_correctness": true,
+            "show_correct_answers": false
+        }
+    },
+    "questions": [
+        {
+            "question_name": "Second Moment of Area",
+            "question_text": "For a rectangle (base $b$, height $h$) about its centroidal axis, $I = b h^3 / 12$.",
+            "question_type": "true_false_question",
+            "points_possible": 2,
+            "answers": [
+                {"answer_text": "True", "weight": 100},
+                {"answer_text": "False", "weight": 0}
+            ]
+        },
+        {
+            "question_name": "Polar Moment",
+            "question_text": "Which property governs the torsional stiffness of a circular shaft?",
+            "question_type": "multiple_choice_question",
+            "points_possible": 3,
+            "answers": [
+                {"answer_text": "Polar moment of area $J$", "weight": 100},
+                {"answer_text": "Cross-sectional area $A$", "weight": 0},
+                {"answer_text": "Section modulus $S$", "weight": 0}
+            ]
+        }
+    ]
+}

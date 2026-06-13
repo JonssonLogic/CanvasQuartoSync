@@ -1,0 +1,61 @@
+---
+canvas:
+  title: "Syllabus & Statics Quiz"
+  quiz_type: assignment
+  published: true
+  shuffle_answers: true
+  show_correct_answers: true
+  allowed_attempts: -1
+  time_limit: 20
+  due_at: "2026-09-15T23:59:00Z"
+  one_question_at_a_time: true
+---
+
+:::: {.question name="Stress Definition"}
+
+Axial stress $\sigma$ is defined as which ratio?
+
+- [x] Force divided by cross-sectional area, $F/A$
+  - Correct — stress is force per unit area.
+- [ ] Area divided by force, $A/F$
+- [ ] Force times area, $F \cdot A$
+- [ ] Change in length over original length
+
+::::
+
+:::: {.question name="Units of Stress"}
+
+Which unit is equivalent to one pascal?
+
+- [ ] $\text{N} \cdot \text{m}$
+- [x] $\text{N/m}^2$
+- [ ] $\text{kg} \cdot \text{m/s}$
+- [ ] $\text{J/s}$
+
+::::
+
+:::: {.question name="Hooke Region" points=2}
+
+In which region does $\sigma = E\varepsilon$ hold?
+
+::: {.answer correct=true comment="Yes — linear elastic behaviour."}
+The **linear-elastic** region, below the proportional limit.
+:::
+
+::: {.answer comment="No — that is past yielding."}
+The plastic region.
+:::
+
+::: {.answer}
+The fracture region.
+:::
+
+::::
+
+:::: {.question type="essay_question" name="Ductile vs Brittle"}
+
+In your own words, explain why a ductile material (e.g. mild steel) fails
+differently from a brittle material (e.g. cast iron). Mention the stress–strain
+curve and necking.
+
+::::

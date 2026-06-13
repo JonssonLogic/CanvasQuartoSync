@@ -1,17 +1,20 @@
-"""End-to-end test: sync test content to a real Canvas course and verify results.
+"""End-to-end test: sync the test content to a real Canvas course and verify.
 
-Requires CANVAS_API_URL, CANVAS_API_TOKEN env vars and --course-id.
-Run with: python -m pytest tests/e2e/ -v -m canvas --course-id 12345
+Requires Canvas credentials + a test course (env vars, --course-id, or .e2e/).
+Run with: python -m pytest tests/e2e/ -v -m canvas
 
-Test content lives in tests/fixtures/e2e_content/ and covers:
-  - Pages (with images, math, callouts, code, cross-links, tables)
-  - Assignments (upload + text entry)
-  - Classic Quizzes (QMD checklist, QMD div answers, JSON format)
-  - New Quizzes (multiple choice, true/false, multi-answer, numeric, formula, JSON)
-  - SubHeaders
-  - External Links (with indent, new_tab)
-  - Study Guides (with preprocessing, front_page, PDF)
-  - Calendar events (schedule.yaml)
+Test content lives in tests/fixtures/e2e_content/ — a mechanical-engineering
+themed course (MECH201, Mechanics of Materials) that exercises:
+  - Pages (markdown + HTML images, inline/display LaTeX, callouts, code,
+    tables, cross-links, an unpublished + indented page)
+  - Assignments (upload + text entry; due/unlock/lock dates; grading types;
+    omit_from_final_grade; a group-set assignment)
+  - Classic Quizzes (QMD with settings + essay; JSON with short-answer + essay)
+  - New Quizzes (MC/multi/TF + result-view settings + omit_from_final_grade;
+    numeric + formula; JSON)
+  - SubHeaders, External links (indented, new_tab)
+  - Study guide (preprocess, front_page, dual PDF output)
+  - A solo file asset (CSV) uploaded as a module item
 """
 
 import pytest
@@ -19,27 +22,22 @@ import pytest
 pytestmark = pytest.mark.canvas
 
 
+def _find(items, predicate):
+    return next((x for x in items if predicate(x)), None)
+
+
 # ---------------------------------------------------------------------------
 # Modules
 # ---------------------------------------------------------------------------
 class TestModulesCreated:
 
-    def test_introduction_module_exists(self, synced_modules):
-        assert "Introduction" in synced_modules
-
-    def test_basics_module_exists(self, synced_modules):
-        assert "Basics" in synced_modules
-
-    def test_advanced_module_exists(self, synced_modules):
-        assert "Advanced" in synced_modules
-
-    def test_course_documents_module_exists(self, synced_modules):
-        assert "Course Documents" in synced_modules
+    def test_expected_modules_exist(self, synced_modules):
+        for name in ("Introduction", "Statics", "Beam Bending", "Course Documents"):
+            assert name in synced_modules, f"Missing module {name!r}: {list(synced_modules)}"
 
     def test_module_count(self, synced_modules):
-        """Exactly 4 modules should exist."""
         assert len(synced_modules) == 4, (
-            f"Expected 4 modules, got {len(synced_modules)}: {list(synced_modules.keys())}"
+            f"Expected 4 modules, got {len(synced_modules)}: {list(synced_modules)}"
         )
 
 
@@ -49,94 +47,139 @@ class TestModulesCreated:
 class TestPageContent:
 
     def test_welcome_page_exists(self, synced_pages):
-        matching = [t for t in synced_pages if "Welcome" in t]
-        assert len(matching) >= 1, f"No 'Welcome' page. Pages: {list(synced_pages.keys())}"
+        assert any("Welcome" in t for t in synced_pages), list(synced_pages)
 
-    def test_welcome_page_has_html(self, synced_pages):
-        """Page body should contain rendered HTML, not raw QMD."""
-        matching = [t for t in synced_pages if "Welcome" in t]
-        if matching:
-            page = synced_pages[matching[0]]
-            body = getattr(page, "body", "")
-            assert "<" in body, "Page body should contain HTML tags"
-            assert "---" not in body[:50], "Page body should not start with YAML frontmatter"
+    def test_welcome_page_has_html_and_table(self, synced_pages):
+        page = synced_pages[next(t for t in synced_pages if "Welcome" in t)]
+        body = getattr(page, "body", "") or ""
+        assert "<" in body, "Page body should contain HTML"
+        assert "---" not in body[:50], "Body should not start with YAML frontmatter"
+        assert "<table" in body.lower(), "Welcome page should render the SI-units table"
 
-    def test_welcome_page_has_table(self, synced_pages):
-        """Welcome page contains a markdown table that should render as HTML table."""
-        matching = [t for t in synced_pages if "Welcome" in t]
-        if matching:
-            body = getattr(synced_pages[matching[0]], "body", "")
-            assert "<table" in body.lower(), "Page should contain an HTML table"
+    def test_welcome_page_has_html_img_tag(self, synced_pages):
+        """The inline <img ...> tag should survive and point at a Canvas URL."""
+        page = synced_pages[next(t for t in synced_pages if "Welcome" in t)]
+        body = getattr(page, "body", "") or ""
+        assert "<img" in body.lower(), "Welcome page should contain an HTML <img> tag"
 
-    def test_callouts_page_exists(self, synced_pages):
-        matching = [t for t in synced_pages if "Callout" in t]
-        assert len(matching) >= 1, f"No callouts page. Pages: {list(synced_pages.keys())}"
+    def test_welcome_page_renders_math_as_equation_images(self, synced_pages):
+        """LaTeX should become Canvas equation images, not raw \\[..\\] / \\(..\\)."""
+        page = synced_pages[next(t for t in synced_pages if "Welcome" in t)]
+        body = getattr(page, "body", "") or ""
+        assert "equation_image" in body, "Math should render as Canvas equation images"
+        assert "\\[" not in body and "\\(" not in body, "Raw LaTeX delimiters should be gone"
 
-    def test_callouts_page_has_callout_html(self, synced_pages):
-        """Callout blocks should be rendered with inline styles."""
-        matching = [t for t in synced_pages if "Callout" in t]
-        if matching:
-            body = getattr(synced_pages[matching[0]], "body", "")
-            assert "callout" in body.lower() or "border" in body.lower(), (
-                "Callout page should contain callout-styled HTML"
-            )
+    def _stress_body(self, synced_pages):
+        match = [t for t in synced_pages if "Stress" in t]
+        assert match, f"No stress/strain page. Pages: {list(synced_pages)}"
+        return getattr(synced_pages[match[0]], "body", "") or ""
 
-    def test_callouts_page_has_code_block(self, synced_pages):
-        """Syntax-highlighted code blocks should be present."""
-        matching = [t for t in synced_pages if "Callout" in t]
-        if matching:
-            body = getattr(synced_pages[matching[0]], "body", "")
-            # Quarto renders code blocks with <pre> or <code> tags
-            assert "<code" in body.lower() or "<pre" in body.lower(), (
-                "Page should contain code blocks"
-            )
+    def test_stress_page_callouts_styled(self, synced_pages):
+        """All five callouts become inline-styled blocks; no raw fences leak."""
+        body = self._stress_body(synced_pages)
+        assert body.count("border-left") >= 5, "Expected 5 inline-styled callouts"
+        assert ":::" not in body, "Raw callout fences should not leak into the page"
+
+    def test_stress_page_code_highlighted(self, synced_pages):
+        body = self._stress_body(synced_pages)
+        assert "<pre" in body.lower(), "Expected a rendered code block"
+        assert "background-color:#f7f7f7" in body, "Code block should have inlined styling"
+        assert "```" not in body, "Raw code fences should not leak into the page"
+
+    def test_stress_page_has_material_table(self, synced_pages):
+        assert "<table" in self._stress_body(synced_pages).lower(), "Material table should render"
+
+    def test_formula_sheet_is_unpublished(self, synced_pages):
+        """The draft formula sheet is published: false."""
+        match = [t for t in synced_pages if "Formula" in t]
+        assert match, f"No formula sheet page. Pages: {list(synced_pages)}"
+        assert getattr(synced_pages[match[0]], "published", True) is False
 
 
-# ---------------------------------------------------------------------------
-# Images
-# ---------------------------------------------------------------------------
 class TestImageUpload:
 
     def test_images_use_canvas_urls(self, synced_pages):
-        """All images should point to Canvas file URLs, not local paths."""
         for title, page in synced_pages.items():
             body = getattr(page, "body", "") or ""
-            if "img" in body.lower():
-                assert "src=\"../" not in body, (
-                    f"Page '{title}' still has relative image paths"
-                )
+            assert 'src="../' not in body, f"Page '{title}' still has a relative image path"
+            assert "](../graphics" not in body, f"Page '{title}' has an unresolved markdown image"
+
+
+class TestCrossLinks:
+
+    def test_welcome_cross_links_resolved(self, synced_pages):
+        body = getattr(synced_pages[next(t for t in synced_pages if "Welcome" in t)], "body", "") or ""
+        assert ".qmd" not in body, "Page still has unresolved .qmd cross-links"
+
+
+class TestMathRendering:
+
+    def test_all_equation_images_actually_render(self, synced_pages):
+        """Every Canvas equation image must return a real image (200, image/*).
+
+        This catches LaTeX that Canvas can't render (e.g. unsupported macros or
+        matrix environments) without a human having to look at each page.
+        """
+        import os
+        import re
+        import requests
+
+        base = os.environ.get("CANVAS_API_URL", "").rstrip("/")
+        srcs = set()
+        for page in synced_pages.values():
+            body = getattr(page, "body", "") or ""
+            for tag in re.findall(r'<img[^>]*class="equation_image"[^>]*>', body):
+                m = re.search(r'src="([^"]+)"', tag)
+                if not m:
+                    continue
+                src = m.group(1)
+                srcs.add(base + src if src.startswith("/") else src)
+
+        assert srcs, "No equation images found on any synced page"
+
+        session = requests.Session()
+        failures = []
+        for src in sorted(srcs):
+            try:
+                r = session.get(src, timeout=30)
+                ctype = r.headers.get("content-type", "")
+                if r.status_code != 200 or not ctype.startswith("image/"):
+                    failures.append(f"[{r.status_code} {ctype}] {src}")
+            except Exception as e:  # noqa: BLE001
+                failures.append(f"[ERROR {e}] {src}")
+
+        assert not failures, "Equation images that did not render:\n  " + "\n  ".join(failures)
 
 
 # ---------------------------------------------------------------------------
-# Assignments
+# Assignments (dates, grading types, omit, group set)
 # ---------------------------------------------------------------------------
 class TestAssignments:
 
-    def test_at_least_two_assignments(self, canvas_course):
+    def test_three_non_quiz_assignments(self, canvas_course):
         assignments = list(canvas_course.get_assignments())
-        # We have Upload Assignment + Text Entry + potentially New Quiz assignments
         non_quiz = [a for a in assignments if not getattr(a, "is_quiz_assignment", False)]
-        assert len(non_quiz) >= 2, (
-            f"Expected at least 2 non-quiz assignments, got {len(non_quiz)}"
-        )
+        assert len(non_quiz) >= 3, f"Expected >=3 non-quiz assignments, got {len(non_quiz)}"
 
-    def test_upload_assignment_has_points(self, canvas_course):
-        """Upload Assignment should have 10 points."""
-        for a in canvas_course.get_assignments():
-            if "Upload" in (a.name or ""):
-                assert a.points_possible == 10, (
-                    f"Upload Assignment points: {a.points_possible}"
-                )
-                return
-        pytest.fail("Upload Assignment not found")
+    def test_truss_assignment_points_and_dates(self, canvas_course):
+        a = _find(canvas_course.get_assignments(), lambda x: "Truss" in (x.name or ""))
+        assert a is not None, "Truss Analysis assignment not found"
+        assert a.points_possible == 20
+        assert a.due_at, "Truss assignment should have a due date"
+        assert a.unlock_at, "Truss assignment should have an unlock date"
+        assert a.lock_at, "Truss assignment should have a lock date"
 
-    def test_text_entry_assignment_exists(self, canvas_course):
-        """Text Entry Assignment should exist with 5 points."""
-        for a in canvas_course.get_assignments():
-            if "Text Entry" in (a.name or ""):
-                assert a.points_possible == 5
-                return
-        pytest.fail("Text Entry Assignment not found")
+    def test_reflection_grading_and_omit(self, canvas_course):
+        a = _find(canvas_course.get_assignments(), lambda x: "Reflection" in (x.name or ""))
+        assert a is not None, "Reflection assignment not found"
+        assert a.grading_type == "pass_fail"
+        assert getattr(a, "omit_from_final_grade", False) is True
+
+    def test_group_project_uses_group_set(self, canvas_course):
+        a = _find(canvas_course.get_assignments(), lambda x: "Group Design Project" in (x.name or ""))
+        assert a is not None, "Group Design Project assignment not found"
+        assert a.grading_type == "letter_grade"
+        assert getattr(a, "group_category_id", None), "Group project should reference a group set"
 
 
 # ---------------------------------------------------------------------------
@@ -144,49 +187,24 @@ class TestAssignments:
 # ---------------------------------------------------------------------------
 class TestClassicQuizzes:
 
-    def test_qmd_quiz_exists(self, canvas_course):
-        quizzes = list(canvas_course.get_quizzes())
-        matching = [q for q in quizzes if "Checklist" in (q.title or "")]
-        assert len(matching) >= 1, (
-            f"No checklist quiz found. Quizzes: {[q.title for q in quizzes]}"
-        )
+    def test_syllabus_quiz(self, canvas_course):
+        q = _find(canvas_course.get_quizzes(), lambda x: "Syllabus" in (x.title or ""))
+        assert q is not None, f"Quizzes: {[x.title for x in canvas_course.get_quizzes()]}"
+        assert len(list(q.get_questions())) == 4
+        assert q.time_limit == 20
+        assert q.allowed_attempts == -1
 
-    def test_qmd_quiz_has_questions(self, canvas_course):
-        """The QMD classic quiz should have 3 questions (checklist + div answers)."""
-        for q in canvas_course.get_quizzes():
-            if "Checklist" in (q.title or ""):
-                questions = list(q.get_questions())
-                assert len(questions) == 3, (
-                    f"Expected 3 questions, got {len(questions)}"
-                )
-                return
-        pytest.fail("Checklist quiz not found")
+    def test_syllabus_quiz_has_essay_question(self, canvas_course):
+        q = _find(canvas_course.get_quizzes(), lambda x: "Syllabus" in (x.title or ""))
+        assert q is not None
+        types = {qq.question_type for qq in q.get_questions()}
+        assert "essay_question" in types, f"Question types: {types}"
 
-    def test_json_quiz_exists(self, canvas_course):
-        quizzes = list(canvas_course.get_quizzes())
-        matching = [q for q in quizzes if "JSON Classic" in (q.title or "")]
-        assert len(matching) >= 1, (
-            f"No JSON quiz found. Quizzes: {[q.title for q in quizzes]}"
-        )
-
-    def test_json_quiz_has_questions(self, canvas_course):
-        """The JSON classic quiz should have 2 questions."""
-        for q in canvas_course.get_quizzes():
-            if "JSON Classic" in (q.title or ""):
-                questions = list(q.get_questions())
-                assert len(questions) == 2, (
-                    f"Expected 2 questions, got {len(questions)}"
-                )
-                return
-
-    def test_quiz_allows_unlimited_attempts(self, canvas_course):
-        """The checklist quiz should allow unlimited attempts."""
-        for q in canvas_course.get_quizzes():
-            if "Checklist" in (q.title or ""):
-                assert q.allowed_attempts == -1, (
-                    f"Expected -1 attempts, got {q.allowed_attempts}"
-                )
-                return
+    def test_materials_json_quiz(self, canvas_course):
+        q = _find(canvas_course.get_quizzes(), lambda x: "Materials Knowledge" in (x.title or ""))
+        assert q is not None
+        assert len(list(q.get_questions())) == 4
+        assert q.allowed_attempts == 3
 
 
 # ---------------------------------------------------------------------------
@@ -194,122 +212,105 @@ class TestClassicQuizzes:
 # ---------------------------------------------------------------------------
 class TestNewQuizzes:
 
-    def test_new_quiz_mc_exists(self, canvas_course):
-        """New Quiz with MC/TF/Multi-answer should exist as an assignment."""
-        for a in canvas_course.get_assignments():
-            if "Multiple Choice and True/False" in (a.name or ""):
-                return
-        pytest.fail("New Quiz MC assignment not found")
+    def test_concept_quiz_exists(self, canvas_course):
+        a = _find(canvas_course.get_assignments(), lambda x: "Beam Bending Concepts" in (x.name or ""))
+        assert a is not None, "New Quiz 'Beam Bending Concepts' not found"
 
-    def test_new_quiz_numeric_formula_exists(self, canvas_course):
-        """New Quiz with numeric/formula questions should exist."""
-        for a in canvas_course.get_assignments():
-            if "Numeric and Formula" in (a.name or ""):
-                return
-        pytest.fail("New Quiz Numeric/Formula assignment not found")
+    def test_concept_quiz_omit_from_final_grade(self, canvas_course):
+        a = _find(canvas_course.get_assignments(), lambda x: "Beam Bending Concepts" in (x.name or ""))
+        assert a is not None
+        assert getattr(a, "omit_from_final_grade", False) is True
 
-    def test_new_quiz_json_exists(self, canvas_course):
-        """New Quiz from JSON should exist."""
-        for a in canvas_course.get_assignments():
-            if "New Quiz from JSON" in (a.name or ""):
-                return
-        pytest.fail("New Quiz JSON assignment not found")
+    def test_calculation_quiz_exists(self, canvas_course):
+        a = _find(canvas_course.get_assignments(), lambda x: "Beam Bending Calculations" in (x.name or ""))
+        assert a is not None, "New Quiz 'Beam Bending Calculations' not found"
+
+    def test_json_new_quiz_exists(self, canvas_course):
+        a = _find(canvas_course.get_assignments(), lambda x: "Section Properties" in (x.name or ""))
+        assert a is not None, "New Quiz 'Section Properties (JSON New Quiz)' not found"
 
 
 # ---------------------------------------------------------------------------
-# Module Items: order, types, indent
+# Module items: counts, types, indent, ordering
 # ---------------------------------------------------------------------------
 class TestModuleItems:
 
-    def test_introduction_has_multiple_items(self, synced_modules):
-        """Introduction module should have at least 6 items (2 pages, subheader,
-        external link, quiz, json quiz, indented link)."""
-        module = synced_modules.get("Introduction")
-        if not module:
-            pytest.skip("Introduction module not found")
-        items = list(module.get_module_items())
-        assert len(items) >= 6, (
-            f"Expected >= 6 items, got {len(items)}: "
-            f"{[i.title for i in items]}"
-        )
+    def test_introduction_item_count(self, synced_modules):
+        items = list(synced_modules["Introduction"].get_module_items())
+        assert len(items) == 8, f"Expected 8 items, got {len(items)}: {[i.title for i in items]}"
+
+    def test_statics_item_count(self, synced_modules):
+        items = list(synced_modules["Statics"].get_module_items())
+        assert len(items) == 3, f"Expected 3 items, got {len(items)}: {[i.title for i in items]}"
+
+    def test_beam_bending_item_count(self, synced_modules):
+        items = list(synced_modules["Beam Bending"].get_module_items())
+        assert len(items) == 3, f"Expected 3 items, got {len(items)}: {[i.title for i in items]}"
 
     def test_items_ordered_by_prefix(self, synced_modules):
-        """Items should be ordered by their NN_ filename prefix."""
-        module = synced_modules.get("Introduction")
-        if not module:
-            pytest.skip("Introduction module not found")
-        items = list(module.get_module_items())
-        titles = [item.title for item in items]
-        assert len(titles) >= 2, f"Too few items: {titles}"
-
-    def test_external_url_item_exists(self, synced_modules):
-        """At least one module should contain an ExternalUrl item."""
-        for name, module in synced_modules.items():
-            for item in module.get_module_items():
-                if item.type == "ExternalUrl":
-                    return
-        pytest.fail("No ExternalUrl module item found")
+        """Introduction items should follow NN_ filename order."""
+        titles = [i.title for i in synced_modules["Introduction"].get_module_items()]
+        assert titles[0].startswith("Welcome") or "Welcome" in titles[0], titles
 
     def test_subheader_item_exists(self, synced_modules):
-        """At least one module should contain a SubHeader item."""
-        for name, module in synced_modules.items():
-            for item in module.get_module_items():
-                if item.type == "SubHeader":
-                    return
-        pytest.fail("No SubHeader module item found")
+        items = synced_modules["Introduction"].get_module_items()
+        assert _find(items, lambda i: i.type == "SubHeader") is not None
 
     def test_indented_external_link(self, synced_modules):
-        """The indented external link should have indent > 0."""
-        module = synced_modules.get("Introduction")
-        if not module:
-            pytest.skip("Introduction module not found")
-        for item in module.get_module_items():
-            if item.type == "ExternalUrl" and getattr(item, "indent", 0) > 0:
-                return
-        pytest.fail("No indented ExternalUrl item found in Introduction")
+        items = synced_modules["Introduction"].get_module_items()
+        link = _find(items, lambda i: i.type == "ExternalUrl" and getattr(i, "indent", 0) > 0)
+        assert link is not None, "No indented ExternalUrl in Introduction"
+
+    def test_indented_page_item(self, synced_modules):
+        """The formula sheet is added to the module with indent > 0."""
+        items = synced_modules["Introduction"].get_module_items()
+        page = _find(items, lambda i: i.type == "Page" and getattr(i, "indent", 0) > 0)
+        assert page is not None, "No indented Page item (formula sheet) in Introduction"
 
 
 # ---------------------------------------------------------------------------
-# Study Guide
+# Solo file asset
+# ---------------------------------------------------------------------------
+class TestSoloAsset:
+
+    def test_csv_file_item_in_course_documents(self, synced_modules):
+        items = synced_modules["Course Documents"].get_module_items()
+        f = _find(items, lambda i: i.type == "File" and "Material_Properties" in (i.title or ""))
+        assert f is not None, f"CSV file item missing: {[(i.type, i.title) for i in items]}"
+
+
+# ---------------------------------------------------------------------------
+# Study guide
 # ---------------------------------------------------------------------------
 class TestStudyGuide:
 
-    def test_study_guide_page_exists(self, synced_pages):
-        """Study guide should be synced as a page."""
-        matching = [t for t in synced_pages if "Course PM" in t or "StudyGuide" in t]
-        assert len(matching) >= 1, (
-            f"No study guide page. Pages: {list(synced_pages.keys())}"
-        )
+    def test_study_guide_page_exists_with_grading_table(self, synced_pages):
+        match = [t for t in synced_pages if "Course PM" in t]
+        assert match, f"No study guide page. Pages: {list(synced_pages)}"
+        body = getattr(synced_pages[match[0]], "body", "") or ""
+        assert "<table" in body.lower(), "Study guide should contain HTML tables"
 
-    def test_study_guide_has_grading_table(self, synced_pages):
-        """The preprocessed study guide should contain a grading criteria table."""
-        matching = [t for t in synced_pages if "Course PM" in t or "StudyGuide" in t]
-        if matching:
-            body = getattr(synced_pages[matching[0]], "body", "")
-            assert "<table" in body.lower(), "Study guide should contain HTML tables"
+    def test_study_guide_renders_math(self, synced_pages):
+        """The 'Key Formulae' LaTeX should render as Canvas equation images."""
+        match = [t for t in synced_pages if "Course PM" in t]
+        assert match
+        body = getattr(synced_pages[match[0]], "body", "") or ""
+        assert "equation_image" in body, "Study guide math should be equation images"
+        assert "\\[" not in body, "Raw LaTeX display delimiters should be gone"
+
+    def test_pdf_file_item_present(self, synced_modules):
+        items = synced_modules["Course Documents"].get_module_items()
+        pdf = _find(items, lambda i: i.type == "File" and "PDF" in (i.title or ""))
+        assert pdf is not None, f"Study guide PDF item missing: {[(i.type, i.title) for i in items]}"
+
+    def test_course_documents_item_count(self, synced_modules):
+        """Course PM page + PDF file + CSV file."""
+        items = list(synced_modules["Course Documents"].get_module_items())
+        assert len(items) >= 3, f"Expected >=3 items, got {[(i.type, i.title) for i in items]}"
 
     def test_front_page_set(self, canvas_course):
-        """The study guide should be set as the course front page."""
-        # Get the front page
         try:
             front = canvas_course.get_page("front_page")
-            assert front is not None, "No front page set"
+            assert front is not None
         except Exception:
-            # Some Canvas versions use show_front_page or default_view
             pass
-
-
-# ---------------------------------------------------------------------------
-# Cross-links
-# ---------------------------------------------------------------------------
-class TestCrossLinks:
-
-    def test_welcome_cross_links_resolved(self, synced_pages):
-        """Cross-links to other .qmd files should resolve to Canvas URLs."""
-        matching = [t for t in synced_pages if "Welcome" in t]
-        if matching:
-            body = getattr(synced_pages[matching[0]], "body", "")
-            # Should not contain raw .qmd references
-            assert ".qmd" not in body, (
-                "Page still has unresolved .qmd cross-links"
-            )

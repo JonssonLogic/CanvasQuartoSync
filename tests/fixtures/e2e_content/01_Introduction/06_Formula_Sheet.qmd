@@ -1,0 +1,42 @@
+---
+title: "Formula Sheet (Draft)"
+format:
+  html:
+    page-layout: article
+canvas:
+  type: page
+  published: false
+  indent: 1
+---
+
+> **Draft — not yet released to students.** This page is intentionally
+> unpublished and indented under *Reference Material*.
+
+## Axial Loading
+
+$$
+\sigma = \frac{N}{A}, \qquad \delta = \frac{N L}{A E}.
+$$
+
+## Torsion of Circular Shafts
+
+$$
+\tau = \frac{T r}{J}, \qquad J = \frac{\pi d^4}{32}, \qquad
+\phi = \frac{T L}{G J}.
+$$
+
+## Bending
+
+$$
+\sigma = \frac{M c}{I}, \qquad I_{\text{rect}} = \frac{b h^3}{12}.
+$$
+
+## Quick-Reference Constants
+
+| Quantity | Symbol | Typical value |
+|:---------|:-------|:--------------|
+| Gravity | $g$ | $9.81\ \text{m/s}^2$ |
+| Steel modulus | $E$ | $200\ \text{GPa}$ |
+| Steel shear modulus | $G$ | $79\ \text{GPa}$ |
+
+See the [Stress & Strain page](02_Stress_and_Strain.qmd) for derivations.

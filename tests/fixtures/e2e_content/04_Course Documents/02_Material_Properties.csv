@@ -1,0 +1,6 @@
+material,youngs_modulus_GPa,yield_strength_MPa,density_kg_m3,poisson_ratio
+Structural steel,200,250,7850,0.30
+Aluminium 6061-T6,69,276,2700,0.33
+Titanium Ti-6Al-4V,114,880,4430,0.34
+Gray cast iron,110,,7200,0.26
+Copper,117,70,8960,0.34

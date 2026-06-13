@@ -1,8 +1,8 @@
 ---
-title: "Canvas API Docs"
+title: "Engineering ToolBox"
 canvas:
   type: external_url
-  url: "https://canvas.instructure.com/doc/api/"
+  url: "https://www.engineeringtoolbox.com/"
   published: true
   indent: 1
   new_tab: true

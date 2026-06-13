@@ -1,0 +1,50 @@
+{
+    "canvas": {
+        "title": "Materials Knowledge Quiz (JSON)",
+        "quiz_type": "practice_quiz",
+        "published": true,
+        "indent": 1,
+        "shuffle_answers": true,
+        "allowed_attempts": 3
+    },
+    "questions": [
+        {
+            "question_name": "Young's Modulus",
+            "question_text": "Young's modulus $E$ has the same units as which quantity?",
+            "question_type": "multiple_choice_question",
+            "points_possible": 1,
+            "answers": [
+                {"answer_text": "Stress", "weight": 100},
+                {"answer_text": "Strain", "weight": 0},
+                {"answer_text": "Force", "weight": 0}
+            ]
+        },
+        {
+            "question_name": "Strain Dimensionless",
+            "question_text": "Engineering strain $\\varepsilon = \\Delta L / L_0$ is dimensionless.",
+            "question_type": "true_false_question",
+            "points_possible": 1,
+            "answers": [
+                {"answer_text": "True", "weight": 100},
+                {"answer_text": "False", "weight": 0}
+            ]
+        },
+        {
+            "question_name": "Yield Strength Term",
+            "question_text": "The stress at which permanent deformation begins is called the ____ strength.",
+            "question_type": "short_answer_question",
+            "points_possible": 1,
+            "answers": [
+                {"answer_text": "yield", "weight": 100},
+                {"answer_text": "Yield", "weight": 100}
+            ]
+        },
+        {
+            "question_name": "Explain Factor of Safety",
+            "question_text": "Define the factor of safety and explain why it is used in design.",
+            "question_type": "essay_question",
+            "points_possible": 2,
+            "answers": []
+        }
+    ]
+}

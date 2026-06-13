@@ -1,0 +1,63 @@
+---
+title: "Course PM — Mechanics of Materials (MECH201)"
+canvas:
+  type: study_guide
+  preprocess: true
+  published: true
+  front_page: true
+  pdf:
+    target_module: "Course Documents"
+    filename: "CoursePM-MECH201.pdf"
+    title: "Course PM (PDF)"
+    published: true
+---
+
+# Introduction
+
+Welcome to **Mechanics of Materials (MECH201)**, a 7.5 ECTS course covering the
+mechanics of deformable solids: axial loading, torsion, bending, and combined
+stresses.
+
+# Schedule
+
+| Week | Topic | Activity |
+|:-----|:------|:---------|
+| 1 | Stress & Strain | Lecture, Tensile Lab |
+| 2 | Statics & Trusses | Lecture, Truss assignment |
+| 3 | Beam Bending | Lecture, Concept quiz |
+| 4 | Combined Loading | Project work |
+
+# Examination
+
+| Component | Credits | Grade |
+|:----------|:--------|:------|
+| Written exam | 4.5 ECTS | 5/4/3/F |
+| Laboratory work | 1.5 ECTS | P/F |
+| Design project | 1.5 ECTS | 5/4/3/F |
+
+# Grading Criteria
+
+| ILO | Fail | 3 | 4 | 5 |
+|:----|:-----|:--|:--|:--|
+| Stress analysis | Cannot set up equilibrium | Solves determinate cases | Handles indeterminate cases | Optimises designs |
+| Material behaviour | Confuses stress and strain | States Hooke's law | Relates curves to failure | Predicts failure modes |
+| Communication | No clear report | Readable report | Well-structured report | Publication quality |
+
+# Key Formulae
+
+The course revolves around a handful of relationships:
+
+$$
+\sigma = \frac{F}{A}, \qquad \tau = \frac{T r}{J}, \qquad \sigma = \frac{M c}{I}.
+$$
+
+# Teaching Staff
+
+| Name | Role | Image | Link |
+|:-----|:-----|:------|:-----|
+| Dr. Test Lecturer | Course responsible | placeholder.png | https://example.com/staff |
+
+# Research Connection
+
+Course content connects to ongoing research in lightweight structures and
+fatigue, as described in the education plan.

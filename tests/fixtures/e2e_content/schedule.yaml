@@ -1,14 +1,14 @@
 context: "e2e_test"
 events:
-  - title: "E2E Test Lecture"
+  - title: "MECH201 — Lecture 1: Stress & Strain"
     date: "2026-09-01"
     time: "10:00-12:00"
-    location: "Test Room A"
-    description: "An event created by the E2E test suite."
+    location: "Lecture Hall M:A"
+    description: "Introduction to axial stress, strain, and Hooke's law."
 
-  - title: "E2E Test Recurring"
-    start_date: "2026-09-01"
-    end_date: "2026-09-08"
+  - title: "MECH201 — Lab: Tensile Testing"
+    start_date: "2026-09-07"
+    end_date: "2026-09-28"
     days: ["Mon"]
     time: "14:00-16:00"
-    location: "Test Room B"
+    location: "Materials Lab M:1042"

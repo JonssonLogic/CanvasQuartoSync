@@ -1,0 +1,47 @@
+---
+canvas:
+  type: new_quiz
+  title: "Beam Bending Calculations"
+  published: true
+  points: 15
+  allowed_attempts: 1
+  calculator_type: scientific
+---
+
+:::: {.question type="numeric_question" name="Max Bending Stress" points_possible="5.0"}
+
+A rectangular beam has a section modulus of $S = 5\times 10^{4}\ \text{mm}^3$ and
+carries a maximum bending moment of $M = 2\ \text{kN·m}$. What is the maximum
+bending stress in MPa? (Use $\sigma = M/S$.)
+
+::: {.answer value="40" margin="2" margin_type="percent" correct=true}
+:::
+
+::::
+
+:::: {.question type="formula_question" name="Parametric Bending Stress" points_possible="10.0"}
+
+A beam carries a bending moment $M = [M]\ \text{kN·m}$ with section modulus
+$S = [S]\times 10^{3}\ \text{mm}^3$. What is the bending stress in MPa?
+
+::: {.formula}
+formula: M * 1000000 / (S * 1000)
+margin: 2
+margin_type: percent
+answer_count: 5
+distribution: even
+:::
+
+::: {.variable name="M"}
+min: 1
+max: 10
+precision: 0
+:::
+
+::: {.variable name="S"}
+min: 20
+max: 100
+precision: 0
+:::
+
+::::

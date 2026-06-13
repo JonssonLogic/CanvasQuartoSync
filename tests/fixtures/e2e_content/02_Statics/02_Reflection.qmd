@@ -1,0 +1,21 @@
+---
+title: "Weekly Reflection"
+format:
+  html:
+    page-layout: article
+canvas:
+  type: assignment
+  published: true
+  points: 0
+  grading_type: pass_fail
+  submission_types: [online_text_entry]
+  omit_from_final_grade: true
+---
+
+# Weekly Reflection
+
+Write a short reflection (200–300 words) on what you found most challenging in
+this week's material on stress and strain.
+
+This assignment is graded **complete/incomplete** and is **omitted from the
+final grade**.

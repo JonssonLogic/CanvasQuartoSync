@@ -1,24 +1,30 @@
 """
 E2E conftest.py — fixtures for real Canvas API testing.
 
-These tests require:
-  - CANVAS_API_URL and CANVAS_API_TOKEN environment variables
-  - A test course ID via --course-id flag or CANVAS_TEST_COURSE_ID env var
-  - Quarto CLI installed and in PATH
+Credentials, the test course id, and the safety marker are resolved through the
+*regular* config system (`handlers.config`). They may be supplied via:
+  - environment variables (CANVAS_API_URL, CANVAS_API_TOKEN, CANVAS_TEST_COURSE_ID),
+  - the `--course-id` CLI flag, and/or
+  - a gitignored `./.e2e/` directory (config.toml + token file).
+See tests/e2e/e2e.config.example.toml for the file format.
 
 Run with:
+  python -m pytest tests/e2e/ -v -m canvas              # creds from .testing/
   python -m pytest tests/e2e/ -v -m canvas --course-id 12345
 
 All tests in this directory are marked with @pytest.mark.canvas.
 """
 
 import os
-import sys
-import subprocess
 import pytest
 
-# Project root
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from tests.e2e.canvas_helpers import (
+    resolve_credentials,
+    purge_course,
+    reset_local_state,
+    ensure_group_category,
+    run_sync,
+)
 
 # Dedicated test content (independent of Example/)
 E2E_CONTENT_DIR = os.path.join(
@@ -26,67 +32,77 @@ E2E_CONTENT_DIR = os.path.join(
     "fixtures", "e2e_content",
 )
 
+# Group set referenced by 02_Statics/03_Group_Project.qmd. Must exist on Canvas
+# before the sync, or the group assignment would prompt interactively.
+GROUP_CATEGORY_NAME = "MECH201 Project Groups"
 
-def _get_credentials(request):
-    """Return (api_url, api_token, course_id) or skip."""
-    api_url = os.environ.get("CANVAS_API_URL")
-    api_token = os.environ.get("CANVAS_API_TOKEN")
-    if not api_url or not api_token:
-        pytest.skip("Canvas credentials not set (CANVAS_API_URL, CANVAS_API_TOKEN)")
+# Set when the live suite actually syncs, so the manual-verification prompt is
+# only printed when tests ran against Canvas (not when skipped).
+_course_web_url = None
 
-    # Course ID: CLI flag > env var
-    course_id = request.config.getoption("--course-id")
-    if not course_id:
-        course_id = os.environ.get("CANVAS_TEST_COURSE_ID")
-    if not course_id:
-        pytest.skip(
-            "No test course ID provided. Use --course-id or set CANVAS_TEST_COURSE_ID env var."
-        )
-
-    return api_url, api_token, course_id
+# The few things automated assertions can't see — printed at the end of a run.
+_HUMAN_CHECKS = [
+    "Course PM (PDF) opens and looks correct (LaTeX, math, tables)",
+    "New Quizzes render in the New Quizzes UI (Beam Bending Concepts / "
+    "Calculations / Section Properties); numeric & formula questions show values",
+    "Overall branding / layout looks right",
+]
 
 
 @pytest.fixture(scope="session")
-def canvas_course(request):
-    """Connect to real Canvas course. Purge existing content, then sync test content.
+def e2e_credentials(request):
+    """Resolve (api_url, api_token, course_id, marker) or skip the E2E suite."""
+    api_url, api_token, course_id, marker = resolve_credentials(
+        cli_course_id=request.config.getoption("--course-id")
+    )
+    if not api_url or not api_token:
+        pytest.skip(
+            "Canvas credentials not found. Set CANVAS_API_URL / CANVAS_API_TOKEN "
+            "or create .e2e/config.toml (see tests/e2e/e2e.config.example.toml)."
+        )
+    if not course_id:
+        pytest.skip(
+            "No test course id. Use --course-id, set CANVAS_TEST_COURSE_ID, or add "
+            "course_id to .e2e/config.toml."
+        )
+    return {
+        "api_url": api_url,
+        "api_token": api_token,
+        "course_id": course_id,
+        "marker": marker,
+    }
+
+
+@pytest.fixture(scope="session")
+def canvas_course(e2e_credentials):
+    """Connect to the test course, purge it, reset local state, then sync content.
 
     Returns the canvasapi Course object for verification.
     """
-    api_url, api_token, course_id = _get_credentials(request)
-
     from canvasapi import Canvas
-    canvas = Canvas(api_url, api_token)
-    course = canvas.get_course(course_id)
 
-    # --- Purge the course ---
-    for module in course.get_modules():
-        module.delete()
+    canvas = Canvas(e2e_credentials["api_url"], e2e_credentials["api_token"])
+    course = canvas.get_course(e2e_credentials["course_id"])
 
-    for page in course.get_pages():
-        try:
-            if getattr(page, "front_page", False):
-                page.edit(wiki_page={"front_page": False})
-            page.delete()
-        except Exception:
-            pass
+    # Record the course URL so the manual-verification prompt can show it.
+    global _course_web_url
+    _course_web_url = f"{e2e_credentials['api_url'].rstrip('/')}/courses/{e2e_credentials['course_id']}"
 
-    for assignment in course.get_assignments():
-        assignment.delete()
+    # Fresh every run: wipe the course (guarded by the safety marker) and clear
+    # local sync state so the forced sync starts clean.
+    purge_course(course, e2e_credentials["marker"])
+    reset_local_state(E2E_CONTENT_DIR)
 
-    for quiz in course.get_quizzes():
-        quiz.delete()
+    # The group-set assignment needs its group category to exist up front.
+    ensure_group_category(course, GROUP_CATEGORY_NAME)
 
-    # --- Sync test content ---
-    sync_script = os.path.join(PROJECT_ROOT, "sync_to_canvas.py")
-
-    result = subprocess.run(
-        [sys.executable, sync_script, E2E_CONTENT_DIR, "--force", "--course-id", course_id],
-        capture_output=True,
-        text=True,
-        env={**os.environ},
-        cwd=PROJECT_ROOT,
+    result = run_sync(
+        E2E_CONTENT_DIR,
+        e2e_credentials["course_id"],
+        e2e_credentials["api_url"],
+        e2e_credentials["api_token"],
+        "--force",
     )
-
     if result.returncode != 0:
         pytest.fail(f"Sync failed (exit code {result.returncode}):\n{result.stderr}")
 
@@ -110,3 +126,25 @@ def synced_pages(canvas_course):
         full = canvas_course.get_page(p.url)
         pages[full.title] = full
     return pages
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """After a live E2E run, prompt the developer for the manual-only checks.
+
+    Automated assertions cover everything that can be read back from the API
+    (math rendered to equation images, callouts/code styled, tables, dates,
+    grading, indentation, etc.). This prints the short list of things that
+    still need human eyes, with the course URL. Only shown when the suite
+    actually synced to Canvas (not when skipped).
+    """
+    if not _course_web_url:
+        return
+    tr = terminalreporter
+    tr.write_sep("=", "MANUAL VERIFICATION (things automation can't see)", yellow=True, bold=True)
+    tr.write_line(f"Course:    {_course_web_url}")
+    tr.write_line(f"Modules:   {_course_web_url}/modules")
+    tr.write_line("Full list: tests/e2e/MANUAL_CHECKLIST.md")
+    tr.write_line("")
+    for item in _HUMAN_CHECKS:
+        tr.write_line(f"  [ ] {item}")
+    tr.write_sep("=", "", yellow=True)

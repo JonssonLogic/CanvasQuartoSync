@@ -1,0 +1,48 @@
+---
+title: "Truss Analysis"
+format:
+  html:
+    page-layout: article
+canvas:
+  type: assignment
+  published: true
+  points: 20
+  grading_type: points
+  submission_types: [online_upload]
+  allowed_extensions: [pdf, py, ipynb]
+  unlock_at: "2026-09-02T08:00:00Z"
+  due_at: "2026-09-16T23:59:00Z"
+  lock_at: "2026-09-23T23:59:00Z"
+---
+
+# Truss Analysis
+
+Analyse the statically determinate truss below using the **method of joints**.
+
+## Governing Equations
+
+At every pin joint the forces are in equilibrium:
+
+$$
+\sum F_x = 0, \qquad \sum F_y = 0.
+$$
+
+A member of length $L$, area $A$, and modulus $E$ carrying axial force $N$
+elongates by
+
+$$
+\delta = \frac{N L}{A E}.
+$$
+
+## Expected Member Forces (sample)
+
+| Member | Length (m) | Force (kN) | State |
+|:-------|-----------:|-----------:|:------|
+| AB | 3.0 | +12.5 | Tension |
+| BC | 4.0 | −8.0 | Compression |
+| AC | 5.0 | +6.4 | Tension |
+
+## Submission
+
+Upload a single `.pdf`, `.py`, or `.ipynb` showing your free-body diagrams and
+calculations. Due dates and a one-week late window are configured on Canvas.
