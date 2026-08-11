@@ -47,6 +47,74 @@ class TestExpectedCanvasTitle:
         assert expected_canvas_title(str(f)) == "Broken"
 
 
+class TestQuizTitlesComeFromCanvasBlock:
+    """Quiz handlers read canvas.title and ignore the top-level title:."""
+
+    def test_classic_quiz_uses_canvas_title(self, tmp_path):
+        f = tmp_path / "02_Concept.qmd"
+        f.write_text("---\ncanvas:\n  type: quiz\n  title: Beam Quiz\n---\n", encoding="utf-8")
+        assert expected_canvas_title(str(f)) == "Beam Quiz"
+
+    def test_new_quiz_uses_canvas_title(self, tmp_path):
+        f = tmp_path / "02_Concept.qmd"
+        f.write_text("---\ncanvas:\n  type: new_quiz\n  title: Beam Quiz\n---\n", encoding="utf-8")
+        assert expected_canvas_title(str(f)) == "Beam Quiz"
+
+    def test_canvas_title_wins_over_top_level_title(self, tmp_path):
+        f = tmp_path / "02_Concept.qmd"
+        f.write_text(
+            "---\ntitle: Ignored\ncanvas:\n  type: new_quiz\n  title: Beam Quiz\n---\n",
+            encoding="utf-8")
+        assert expected_canvas_title(str(f)) == "Beam Quiz"
+
+    def test_top_level_title_alone_is_ignored_for_quizzes(self, tmp_path):
+        f = tmp_path / "02_Concept.qmd"
+        f.write_text("---\ntitle: Ignored\ncanvas:\n  type: quiz\n---\n", encoding="utf-8")
+        assert expected_canvas_title(str(f)) == "Concept"
+
+    def test_structurally_detected_quiz_uses_canvas_title(self, tmp_path):
+        """A classic quiz may carry no canvas.type at all."""
+        f = tmp_path / "02_Pop.qmd"
+        f.write_text(
+            "---\ncanvas:\n  title: Pop Quiz\n---\n"
+            ":::: {.question name=\"Q1\"}\nText\n\n- [x] Yes\n::::\n",
+            encoding="utf-8")
+        assert expected_canvas_title(str(f)) == "Pop Quiz"
+
+    def test_study_guide_filename_wins_over_quiz_type(self, tmp_path):
+        """StudyGuideHandler is first in the chain and titles from the top level."""
+        f = tmp_path / "02_KursPM.qmd"
+        f.write_text(
+            "---\ntitle: Course PM\ncanvas:\n  type: quiz\n  title: Ignored\n---\n",
+            encoding="utf-8")
+        assert expected_canvas_title(str(f)) == "Course PM"
+
+    def test_json_new_quiz_uses_canvas_title(self, tmp_path):
+        f = tmp_path / "04_Quiz.json"
+        f.write_text('{"canvas": {"quiz_engine": "new", "title": "JSON Quiz"}}',
+                     encoding="utf-8")
+        assert expected_canvas_title(str(f)) == "JSON Quiz"
+
+
+class TestUnclaimedFilesKeepTheirExtension:
+    """No handler claims these, so they upload as solo assets."""
+
+    def test_qmd_without_canvas_metadata(self, tmp_path):
+        f = tmp_path / "02_Template.qmd"
+        f.write_text("---\ntitle: A Template\n---\nBody\n", encoding="utf-8")
+        assert expected_canvas_title(str(f)) == "Template.qmd"
+
+    def test_qmd_with_unknown_canvas_type(self, tmp_path):
+        f = tmp_path / "02_Thing.qmd"
+        f.write_text("---\ncanvas:\n  type: webinar\n---\n", encoding="utf-8")
+        assert expected_canvas_title(str(f)) == "Thing.qmd"
+
+    def test_json_that_is_not_a_quiz(self, tmp_path):
+        f = tmp_path / "04_Data.json"
+        f.write_text('{"rows": [1, 2, 3]}', encoding="utf-8")
+        assert expected_canvas_title(str(f)) == "Data.json"
+
+
 # --- compute_insert_position ---
 
 def _fake_module(items):
@@ -87,6 +155,24 @@ class TestComputeInsertPosition:
         module_dir = _make_module_dir(tmp_path, ["01_A.qmd", "02_B.qmd", "03_C.qmd"])
         module = _fake_module(["C"])
         assert compute_insert_position(module, module_dir, "02_B.qmd") == 1
+
+    def test_counts_a_quiz_sibling_titled_via_canvas_block(self, tmp_path):
+        """Regression: a quiz sibling titled under canvas.title must still match.
+
+        expected_canvas_title() used to read the top-level `title:` for every
+        .qmd, so a quiz using the documented `canvas.title` never matched its
+        module item and was not counted - pushing the new item too far up.
+        """
+        (tmp_path / "01_Intro.qmd").write_text(
+            "---\ntitle: Intro\ncanvas:\n  type: page\n---\n", encoding="utf-8")
+        (tmp_path / "02_Check.qmd").write_text(
+            "---\ncanvas:\n  type: new_quiz\n  title: Knowledge Check\n---\n",
+            encoding="utf-8")
+        (tmp_path / "03_Lab.qmd").write_text(
+            "---\ntitle: Lab\ncanvas:\n  type: assignment\n---\n", encoding="utf-8")
+
+        module = _fake_module(["Intro", "Knowledge Check"])
+        assert compute_insert_position(module, str(tmp_path), "03_Lab.qmd") == 3
 
     def test_ignores_non_prefixed_and_dirs(self, tmp_path):
         (tmp_path / "graphics").mkdir()

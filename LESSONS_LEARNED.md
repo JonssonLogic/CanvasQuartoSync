@@ -83,6 +83,16 @@ Rendering uses `_temp_{filename}.qmd` → `quarto render` → extract from `_tem
 ### Retry-With-Backoff for File Deletion
 When the project lives inside a Dropbox/OneDrive folder, the sync service can lock temp files immediately after creation. `safe_delete_file()` and `safe_delete_dir()` retry up to 5 times with 0.5s delays to handle this.
 
+### Title Rules Are Not Uniform Across Handlers
+Quiz handlers (`QuizHandler`, `NewQuizHandler`) take their title from **`canvas.title`**
+and ignore the top-level frontmatter `title:`. Every other handler does the opposite.
+Anything that predicts a Canvas title without rendering — currently
+`content_utils.expected_canvas_title()`, used by `compute_insert_position()` to place a
+single synced asset — must branch on the content type, and must respect handler order
+(`StudyGuideHandler` runs first and also claims files whose name contains
+`studyguide`/`kurspm`). A file no handler claims uploads as a solo asset, whose module
+item title **keeps the file extension**.
+
 ### Always Fetch Before Create-or-Update
 When implementing update logic for any Canvas object, **always try to fetch the existing object** before deciding to create a new one — even if the local file has changed. A common bug pattern: putting the "fetch existing" call inside the "skip if unchanged" branch means that when the file *does* change, the handler thinks no object exists and creates a duplicate. The fetch must happen unconditionally whenever a sync map ID is available.
 

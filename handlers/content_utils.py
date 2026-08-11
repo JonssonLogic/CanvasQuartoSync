@@ -28,32 +28,86 @@ def parse_module_name(text):
         return match.group(2)
     return text
 
+# Handlers that title from the top-level frontmatter `title:`.
+_TOP_LEVEL_TITLE_TYPES = {'page', 'assignment', 'study_guide', 'subheader', 'external_url'}
+# Quiz handlers title from `canvas.title` and ignore the top-level `title:`.
+_CANVAS_TITLE_TYPES = {'quiz', 'new_quiz'}
+
+
+def _is_structural_quiz(file_path):
+    """Mirror QuizHandler.can_handle()'s fallback scan for `:::: {.question` blocks."""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            head = f.read(4096)
+    except Exception:
+        return False
+    return ':::: {.question' in head or '::::{.question' in head
+
+
 def expected_canvas_title(file_path):
     """
     Compute the Canvas module-item title a file would receive, WITHOUT rendering.
 
-    Mirrors the title rule used by every handler: an explicit frontmatter/JSON
-    `title`, otherwise the NN_-stripped stem. Used to match a file against its
-    Canvas module item when positioning a single synced asset among its siblings.
+    Mirrors the title rule of whichever handler would claim the file, because
+    `compute_insert_position()` matches local files to module items by title.
+    The rule is not uniform across handlers:
 
-    NOTE: this intentionally duplicates the (simple, stable) per-handler title
-    rule; if that rule ever changes, handlers should adopt this helper.
+      - quizzes (both engines) title from `canvas.title`;
+      - every other content type titles from the top-level `title:`;
+      - a file no handler claims is uploaded as a solo asset, whose module-item
+        title keeps the file extension.
+
+    Handler order matters: StudyGuideHandler runs first and also claims files
+    whose name contains 'studyguide'/'kurspm', regardless of declared type.
+
+    NOTE: this duplicates the per-handler title rules. If a handler's rule
+    changes, update this helper too — tests/unit/test_single_sync.py covers the
+    agreement between them.
     """
     filename = os.path.basename(file_path)
     stem, ext = os.path.splitext(filename)
     ext = ext.lower()
+    # A file no handler claims is uploaded as a solo asset, extension and all.
+    solo_title = parse_module_name(filename)
+
     try:
         if ext in ('.qmd', '.md'):
             post = frontmatter.load(file_path)
-            return post.metadata.get('title') or parse_module_name(stem)
+            canvas_meta = post.metadata.get('canvas') or {}
+            declared = canvas_meta.get('type')
+
+            name_lower = filename.lower()
+            if (declared == 'study_guide'
+                    or 'studyguide' in name_lower or 'kurspm' in name_lower):
+                return post.metadata.get('title') or parse_module_name(stem)
+
+            if declared in _CANVAS_TITLE_TYPES:
+                return canvas_meta.get('title') or parse_module_name(stem)
+
+            if declared in _TOP_LEVEL_TITLE_TYPES:
+                return post.metadata.get('title') or parse_module_name(stem)
+
+            # Classic quizzes may carry no canvas.type and are detected structurally.
+            if declared is None and _is_structural_quiz(file_path):
+                return canvas_meta.get('title') or parse_module_name(stem)
+
+            return solo_title
+
         if ext == '.json':
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            return data.get('canvas', {}).get('title') or parse_module_name(stem)
+            if isinstance(data, dict):
+                canvas_meta = data.get('canvas') or {}
+                if 'questions' in data or canvas_meta.get('quiz_engine') == 'new':
+                    return canvas_meta.get('title') or parse_module_name(stem)
+            elif isinstance(data, list) and data and 'question_name' in data[0]:
+                # Legacy list format carries no metadata, so the stem is the title.
+                return parse_module_name(stem)
+            return solo_title
     except Exception:
         return parse_module_name(stem)
-    # Solo asset (PDF, ZIP, etc.) — module item keeps the extension
-    return parse_module_name(filename)
+
+    return solo_title
 
 def clean_title(filename):
     """

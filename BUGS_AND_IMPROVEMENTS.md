@@ -17,24 +17,6 @@ This document tracks **active** known issues and planned enhancements for the **
 - **Mitigation**: The script detects this case, updates the quiz in-place (without crashing), and prints a direct URL to the quiz so the user can quickly click "Save It Now" manually.
 - **Status**: **Known limitation** — cannot be fixed without Canvas-side changes or SSO browser automation.
 
-### 2. `expected_canvas_title()` Disagrees With Quiz Handlers
-
-**Problem**: `content_utils.expected_canvas_title()` reads the **top-level** `title:` from
-frontmatter, but `QuizHandler` and `NewQuizHandler` take their title from
-**`canvas.title`** and ignore the top-level one.
-
-**Effect**: For a quiz whose title is set under `canvas:` (the documented way), the two
-disagree — `expected_canvas_title()` returns the `NN_`-stripped filename while Canvas
-shows the `canvas.title` value. `compute_insert_position()` in `single_sync.py` matches
-module items by title, so a `--only` sync of a sibling can compute the wrong slot when
-a quiz sits before it in the module.
-
-- **Location**: [content_utils.py](handlers/content_utils.py) `expected_canvas_title()`
-- **Fix**: make the helper mirror the per-handler rule — prefer `canvas.title` for
-  `.qmd` files whose `canvas.type` is `quiz`/`new_quiz` (and for structurally-detected
-  classic quizzes), falling back to the top-level `title:` otherwise.
-- **Found by**: writing the content-kit documentation; not yet covered by a test.
-
 ---
 
 ## 📋 Kit Gaps
