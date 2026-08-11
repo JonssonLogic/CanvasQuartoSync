@@ -1,15 +1,15 @@
 ---
-title: "Test New Quiz"
 canvas:
   type: new_quiz
+  title: "Test New Quiz"
   published: true
 ---
 
-:::: {.question}
+:::: {.question name="Image recognition"}
 What is this an image of?
 
-![test_image](../Example/graphics/placeholder.png)
+![test_image](../graphics/elephant.jpg)
 
-- [x] A placeholder
+- [x] An elephant
 - [ ] A dog
 ::::

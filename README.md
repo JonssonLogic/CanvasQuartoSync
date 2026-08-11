@@ -11,6 +11,7 @@ Allows you to manage your entire course as a local code repository (Git) while k
 
 - [🚀 Key Features](#-key-features)
 - [📚 Documentation & Examples](#-documentation--examples)
+- [🤖 Authoring with an AI Assistant](#-authoring-with-an-ai-assistant)
 - [🛠️ Prerequisites](#-prerequisites)
 - [📦 Installation](#-installation)
 - [⚙️ Configuration](#-configuration)
@@ -36,6 +37,7 @@ Allows you to manage your entire course as a local code repository (Git) while k
 *   **Auto-Cleanup**: Automatically "prunes" (deletes) orphaned assets from Canvas `synced-` folders when they are removed from your local files.
 *   **Opt-in Calendar**: Manage your course schedule in a simple YAML file (`--sync-calendar`).
 *   **Clean Output**: Semantic HTML rendering without duplicate headers or metadata clutter.
+*   **AI Authoring Kit**: Scaffold a content folder so an AI assistant knows the format from the first prompt, plus an offline validator that catches mistakes before you sync.
 
 ## 📚 Documentation & Examples
 
@@ -109,6 +111,31 @@ python sync_to_canvas.py --log-file sync.log
 
 ### Portable Mode
 Copy `run_sync_here.bat` to your content folder to run the sync with a simple double-click (Windows).
+
+## 🤖 Authoring with an AI Assistant
+
+Course content is usually written in a separate folder, with an AI assistant open on it —
+which by default knows nothing about this tool's conventions. Scaffold that folder once:
+
+```powershell
+python init_content_project.py C:\Courses\MECH201
+```
+
+This installs a Claude Code skill plus reference documentation into the folder, so a
+fresh session starts out knowing the `NN_` naming rules, the `canvas.*` frontmatter
+schema, and the quiz syntax — without reading this repository. It also drops in
+`check_content.bat`, an offline validator:
+
+```powershell
+check_content.bat 01_Introduction\02_Welcome.qmd
+```
+
+It needs no Canvas connection and reports what each file **will become in Canvas**, plus
+the mistakes that otherwise only surface after a sync — missing `NN_` prefixes,
+misspelled settings, broken image paths, quiz questions that won't grade.
+
+The kit instructs assistants **never to sync**: pushing to a live course stays your call.
+Full details in the [User Guide](Guides/Canvas_Sync_User_Guide.md#8-authoring-with-an-ai-assistant).
 
 ## 📂 File Organization
 

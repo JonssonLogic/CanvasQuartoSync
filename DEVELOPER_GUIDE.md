@@ -33,6 +33,15 @@ CanvasQuartoSync/
 │   ├── external_link_handler.py # .qmd → Module External URL link
 │   ├── content_utils.py       # Shared: image upload, cross-linking, sync map, pruning
 │   └── log.py                 # Logging configuration (logger + setup_logging)
+├── validate_content.py        # Offline content validation (no Canvas/network needed)
+├── init_content_project.py    # Scaffolds a content folder with the AI authoring kit
+├── content_kit/               # Source of the kit copied into content folders
+│   ├── CLAUDE.md.template     # Lands in the content folder root
+│   ├── skills/canvas-content/ # Claude Code skill: SKILL.md + reference/*.md
+│   ├── check_content.bat/.sh  # Validator wrappers (paths stamped at scaffold time)
+│   ├── update_kit.bat/.sh     # One-click kit refresh
+│   ├── starter/               # config.toml, _quarto.yml, branding.css, .gitignore
+│   └── example/               # Sample module for --with-example
 ├── Guides/
 │   ├── Canvas_Sync_User_Guide.md   # Full user-facing documentation
 │   └── Canvas_token_setup.md       # How to get a Canvas API token
@@ -194,6 +203,7 @@ See `TESTING.md` for the full guide including how to set up E2E credentials.
 - **New content type / handler** → add `can_handle()` tests in `tests/unit/test_handler_detection.py` and a sync integration test in `tests/integration/`. Add at least one representative content file to `tests/fixtures/e2e_content/` and a corresponding assertion in `tests/e2e/test_full_sync.py`.
 - **New parser logic** (quiz format, preprocessor, etc.) → add unit tests directly in a `tests/unit/test_<module>.py` file covering the happy path plus edge cases.
 - **New content utility** (upload logic, cross-linking, etc.) → add unit tests in `tests/unit/test_content_utils.py` and, if Canvas API interaction is involved, a mocked integration test.
+- **New `canvas.*` setting** → update `CANVAS_SCHEMA` in `validate_content.py` plus both docs (see "Adding or renaming a `canvas.*` setting" below); `tests/unit/test_doc_consistency.py` enforces this.
 - **Bug fix** → add a test that reproduces the bug first, then fix it. This prevents regressions.
 
 Follow the **Arrange / Act / Assert** pattern (see `TESTING.md`). Group related tests in a class and use descriptive names (`test_rejects_missing_prefix`, not `test_case_3`).
@@ -221,6 +231,34 @@ A single content file can be synced without walking the whole course, via the
 - The CLI `--only` branch in `sync_to_canvas.py` simply resolves the path and delegates to `sync_single_file()`.
 
 When adding a new content type, no extra work is needed for single-asset sync as long as the handler follows the standard pattern (returns its module item from `sync()` and updates the sync map). If the handler derives its title differently, update `expected_canvas_title()` to match.
+
+### Adding or renaming a `canvas.*` setting
+
+Settings are documented in two places on purpose (the kit is what AI assistants read;
+the user guide is what humans read), with a machine-readable schema keeping them honest.
+Update **three** places, or `tests/unit/test_doc_consistency.py` will fail:
+
+1. `validate_content.py` → `CANVAS_SCHEMA` (the source of truth for names and value types)
+2. `content_kit/skills/canvas-content/reference/frontmatter.md` → a table row
+3. `Guides/Canvas_Sync_User_Guide.md` → wherever that content type is described
+
+The test asserts the schema and both documents describe exactly the same set of keys,
+in both directions — so a setting can't ship undocumented, and the docs can't describe
+a setting the tool doesn't support.
+
+### The content authoring kit
+
+`content_kit/` is the source; `init_content_project.py` copies it into a content folder
+and stamps machine-specific paths into the wrappers. Notes for maintainers:
+
+- Paths come from `sys.executable` and `__file__`, never a hardcoded `.venv` — the
+  installer puts the venv in `~/venvs/canvas_quarto_env`, outside the repo.
+- The skill directory is replaced wholesale on `--update` (tool-owned), while
+  `config.toml`, course content, and an edited `CLAUDE.md` are left alone.
+- `kit_status()` powers the stale-kit notice in `sync_to_canvas.py`; it must stay
+  advisory and never raise.
+- The kit tells assistants **never to run the sync scripts**. Preserve that when
+  editing `SKILL.md` or `CLAUDE.md.template`.
 
 ### Modifying Quarto rendering
 - The render pipeline is in `PageHandler.sync()` and `AssignmentHandler.sync()` (duplicated — see Improvements).

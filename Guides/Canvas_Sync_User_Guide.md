@@ -30,6 +30,11 @@
   - [Usage](#usage-1)
 - [7. Synchronization Strategy & Tracking](#7-synchronization-strategy--tracking)
   - [The Sync Map (.canvas_sync_map.json)](#the-sync-map-canvas_sync_mapjson)
+- [8. Authoring with an AI Assistant](#8-authoring-with-an-ai-assistant)
+  - [Setting up a content folder](#setting-up-a-content-folder)
+  - [The workflow](#the-workflow)
+  - [Checking content yourself](#checking-content-yourself)
+  - [Keeping the kit up to date](#keeping-the-kit-up-to-date)
 
 This system automates the synchronization of local course content to a Canvas course. It supports pages, assignments, quizzes, module headers, and calendar events.
 
@@ -139,14 +144,29 @@ DailyWork/
       type: page
       published: true      # (optional, Default: false)
       indent: 0            # (optional, 0-5)
+      front_page: false    # (optional, Default: false) — see below
     ---
     ```
+
+*   **`front_page: true`** makes this page the course home page and switches the course
+    to display it. Only one page should set this.
+
+> [!NOTE]
+> Canvas does not allow the front page to be unpublished. If a page is the course front
+> page, `published: false` is rejected and the sync updates the title and body only,
+> leaving the published state untouched.
 
 ### Study Guides (`.qmd`)
 
 A study guide is rendered to **both** a Canvas page (HTML) and a downloadable PDF, synced from a single `.qmd` file.
 
 There are two modes: **preprocessed** (recommended) and **manual**.
+
+> [!WARNING]
+> **Filename detection.** Any `.qmd` whose filename contains `studyguide` or `kurspm`
+> (case-insensitive) is treated as a study guide **even without** `canvas.type:
+> study_guide`. Avoid those words in ordinary page filenames, or the sync will try to
+> render a PDF from them.
 
 #### Preprocessed Mode (`preprocess: true`)
 
@@ -246,8 +266,26 @@ If `preprocess` is not set to `true`, you manage dual-format content yourself us
       allowed_extensions: [py, txt]     # (optional)
       omit_from_final_grade: true       # (optional, Default: false) — do not count towards final grade
       indent: 1                       # (optional)
+      group_assignment: true            # (optional, Default: false) — group submission
+      group_set: "Project Groups"       # (optional) — name of an existing Canvas group set
     ---
     ```
+
+#### Group Assignments
+
+Set `group_assignment: true` to make an assignment a group submission. Canvas needs to
+know **which** group set to use:
+
+*   **With `group_set`**: the named group set is used. It must already exist in the
+    Canvas course — the sync does not create group sets.
+*   **Without `group_set`**: the sync **stops and prompts you** to pick one from the
+    course's existing group sets, then writes your choice back into the `.qmd`
+    frontmatter so later syncs run unattended. You can also apply that choice to all
+    remaining assignments in the same run.
+
+> [!TIP]
+> Always set `group_set` explicitly for unattended or scripted syncs — otherwise the
+> run blocks waiting for input.
 
 ### Text Headers (`.qmd`)
 *   Used to create visual separators within modules.
@@ -550,6 +588,7 @@ Settings shared by both formats and both engines (specified in `canvas` frontmat
 | `show_correct_answers` | Boolean | Classic only |
 | `quiz_type` | String | Classic only: `practice_quiz`, `assignment`, `graded_survey`, `survey` |
 | `points` | Float | New Quizzes only: total points possible |
+| `instructions` | String | New Quizzes only: text shown to students before the quiz starts |
 | `grading_type` | String | New Quizzes only: `points` (default), `percentage`, `pass_fail`, `letter_grade`, `gpa_scale`, `not_graded` |
 | `shuffle_questions` | Boolean | New Quizzes only |
 | `omit_from_final_grade` | Boolean | New Quizzes only — do not count towards final grade |
@@ -708,3 +747,94 @@ The first time a file is synced, the system records its unique **Canvas ID** and
 If you manually delete an image or file on Canvas that was previously synced, the sync tool won't re-upload it automatically because the local file's `mtime` hasn't changed.
 *   **To force a re-upload of a specific asset**: Open the `.canvas_sync_map.json` file, find the block for that specific asset (e.g., `"images/my_chart.png"`), and delete it. Then make a tiny change to the `.qmd` file linking it (like adding a space) and run the sync. The tool will upload the asset fresh.
 *   **To force a full course re-sync**: Delete the `.canvas_sync_map.json` file entirely. The tool will safely adopt existing modules, pages, assignments, and quiz questions by matching their exact titles/names. It will not create duplicates as long as you haven't renamed items locally. It will also clean up any duplicate quiz questions that share the exact same name.
+
+---
+
+## 8. Authoring with an AI Assistant
+
+You will usually write course content in a **separate folder** from this tool, with an
+AI coding assistant (Claude Code, Copilot, Cursor) open on it. A fresh assistant session
+knows nothing about CanvasQuartoSync: not the `NN_` naming rules, not the `canvas.*`
+settings, not the quiz syntax.
+
+The **authoring kit** fixes that. It installs a documentation bundle into your content
+folder so any assistant opened there starts out knowing the format — without reading
+this tool's source code.
+
+### Setting up a content folder
+
+Run the scaffolder once per course, pointing it at the content folder:
+
+```powershell
+python init_content_project.py C:\Courses\MECH201
+```
+
+It creates:
+
+```text
+MECH201/
+├── CLAUDE.md                      # Loaded automatically by Claude Code every session
+├── .claude/skills/canvas-content/ # The authoring skill + reference documentation
+├── check_content.bat / .sh        # Offline content validator
+├── update_kit.bat / .sh           # One-click kit refresh
+├── config.toml                    # Course id and metadata (edit this first)
+├── _quarto.yml                    # Quarto format config (HTML + PDF)
+├── branding.css                   # Brand colours and callout styling
+└── .gitignore
+```
+
+Add `--with-example` for a sample module to copy from.
+
+The wrappers are stamped with the **absolute path of the Python interpreter you ran the
+scaffolder with**, so the virtual environment can live anywhere and be named anything.
+If you later move the tool or the venv, re-run with `--update`.
+
+Existing content is never overwritten — running the scaffolder on a folder that already
+has content is safe.
+
+### The workflow
+
+1. Set `course_id` and `course_name` in `config.toml`.
+2. Open the content folder in your editor and start the assistant.
+3. Ask for what you want — a page, a quiz, an embedded video, a whole module. The
+   assistant writes the files, validates them, and reports back.
+4. Review the result and iterate.
+5. **You run the sync** when it's ready — `run_sync_here.bat`, or
+   `python sync_to_canvas.py <folder>`.
+
+The kit deliberately instructs the assistant **never to sync to Canvas**. Pushing to a
+live course stays a human decision, so an assistant cannot reach your students by
+accident.
+
+### Checking content yourself
+
+The validator is useful on its own, assistant or not:
+
+```powershell
+check_content.bat                                  # everything
+check_content.bat 01_Introduction\02_Welcome.qmd   # one file
+```
+
+It runs offline — no Canvas connection, no credentials, no Quarto — and reports what
+each file **will become in Canvas**, plus the mistakes that otherwise only surface after
+a sync:
+
+*   files missing the `NN_` prefix, which the sync silently ignores;
+*   misspelled settings (`publish:` instead of `published:`);
+*   invalid dates, out-of-range indents, unknown grading types;
+*   broken image and link paths;
+*   quiz problems: mixed answer styles, missing correct answers, numeric or formula
+    questions on the Classic engine, formulas that divide by zero.
+
+It exits non-zero if it found errors, so it also works in a pre-commit hook or CI.
+
+### Keeping the kit up to date
+
+The kit ships with the tool, so upgrading the tool can leave a content folder's copy
+behind. Two things keep them aligned, and neither rewrites files behind your back:
+
+*   **`update_kit.bat`** in the content folder — double-click to refresh. Your content,
+    `config.toml`, and any edits you made to `CLAUDE.md` are preserved; if `CLAUDE.md`
+    has been edited the refresh skips it and says so.
+*   **A notice on sync** — `sync_to_canvas.py` prints a one-line warning when the
+    folder's kit is older than the tool.

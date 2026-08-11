@@ -42,6 +42,16 @@ def main():
 
     logger.info("Target content directory: [dim]%s[/dim]", content_root)
 
+    # Advisory only: tell the user if this folder's AI authoring kit predates the
+    # tool. Never blocks a sync and never rewrites anything.
+    try:
+        from init_content_project import kit_status
+        stale = kit_status(content_root)
+        if stale:
+            logger.warning("[yellow]%s[/yellow]", stale)
+    except Exception:
+        pass
+
     # Force re-render: delete sync map to clear cached mtimes
     if args.force:
         sync_map_path = os.path.join(content_root, '.canvas_sync_map.json')

@@ -1,0 +1,20 @@
+# CanvasQuartoSync course settings.
+#
+# Credentials: CANVAS_API_URL / CANVAS_API_TOKEN environment variables take
+# precedence over anything set here. Use canvas_token_path only if you prefer
+# keeping the token in a file - and make sure that file is gitignored.
+
+course_id   = 0                      # <- your Canvas course id (numeric)
+course_name = "My Course"
+course_code = "ABC123"
+credits     = "7.5 ECTS"
+semester    = "Spring 2026"
+language    = "english"              # or "swedish"
+
+# canvas_api_url    = "https://your-institution.instructure.com"
+# canvas_token_path = "token.txt"
+
+[branding]
+css = "branding.css"
+# Optional: an institution theme stylesheet loaded on Canvas pages
+# canvas_css_url = "https://example.com/your-institution-theme.css"

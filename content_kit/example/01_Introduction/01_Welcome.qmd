@@ -1,0 +1,22 @@
+---
+title: "Welcome"
+format:
+  html:
+    page-layout: article
+canvas:
+  type: page
+  published: false
+  indent: 0
+---
+
+Welcome to the course.
+
+This file demonstrates the conventions:
+
+- it lives in `01_Introduction/`, so it becomes an item in the **Introduction** module;
+- its `01_` prefix sets its position and is stripped from the Canvas title;
+- `canvas.type: page` makes it a Canvas Page;
+- it starts unpublished, so it won't be visible to students until you set
+  `published: true`.
+
+Delete this file once you have real content.

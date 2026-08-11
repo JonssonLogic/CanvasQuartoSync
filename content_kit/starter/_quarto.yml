@@ -1,0 +1,47 @@
+# Course Template — shared format config for all course QMD files
+# LaTeX packages and PDF styling live here.
+# HTML/Canvas styling is injected by the qmd_preprocessor from branding.css.
+# Individual QMD files only need content + canvas frontmatter.
+#
+# The brand-* color names match the --brand-* CSS variables in branding.css.
+# Update both files when changing your institution's colors.
+
+lang: en
+
+format:
+  html:
+    page-layout: article
+    toc: false
+    number-sections: false
+
+  pdf:
+    documentclass: article
+    papersize: a4
+    geometry:
+      - margin=2.5cm
+    toc: false
+    number-sections: true
+    colorlinks: true
+    linkcolor: "brand-primary"
+    urlcolor: "brand-primary"
+    include-in-header:
+      text: |
+        \usepackage{hyperref}
+        \usepackage{booktabs}
+        \usepackage{longtable}
+        \usepackage{array}
+        \usepackage{graphicx}
+        \usepackage{fancyhdr}
+        \usepackage{xcolor}
+        \usepackage{colortbl}
+        \definecolor{brand-primary}{RGB}{150,27,129}
+        \definecolor{brand-heading}{RGB}{0,56,101}
+        \definecolor{brand-accent}{RGB}{85,170,167}
+        \definecolor{brand-warn}{RGB}{255,181,0}
+        \definecolor{brand-grey}{RGB}{121,121,121}
+        \definecolor{lightgray}{gray}{0.9}
+        \renewcommand{\familydefault}{\sfdefault}
+        \renewcommand{\maketitle}{}
+        \usepackage{titlesec}
+        \titleformat{\section}{\Large\bfseries\color{brand-heading}}{\thesection}{1em}{}
+        \titleformat{\subsection}{\large\bfseries\color{brand-heading}}{\thesubsection}{1em}{}

@@ -13,7 +13,7 @@ canvas:
 
 # Introduction
 
-![](graphics/elephant.jpg)
+![](../graphics/elephant.jpg)
 
 Welcome to Mechatronics (TMRK16), a hands-on 7.5 ECTS course where you work in groups of three to design and build a remote-controlled car.
 

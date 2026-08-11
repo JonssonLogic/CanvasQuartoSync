@@ -1,0 +1,43 @@
+/*
+ * Example branding file for CanvasQuartoSync.
+ *
+ * The preprocessor reads CSS custom properties (--brand-*) from this file
+ * to style both Canvas HTML pages and PDF output consistently.
+ *
+ * To adapt for your institution:
+ *   1. Copy this file to your course folder
+ *   2. Change the colors to match your institution's brand
+ *   3. Set branding.css in config.toml to point to your copy
+ *
+ * The CSS rules below are injected into Canvas HTML pages.
+ * The --brand-* variables are also parsed to generate matching LaTeX
+ * color definitions for PDF rendering.
+ */
+
+:root {
+  --brand-primary: #961B81;     /* Primary/identity colour — links, accents */
+  --brand-heading: #003865;     /* Headings, table headers */
+  --brand-accent: #55AAA7;      /* Complementary accent */
+  --brand-warn: #FFB500;        /* Warning/highlight accent */
+  --brand-grey: #797979;        /* Neutral grey */
+}
+
+h1, h2 { color: var(--brand-heading) !important; }
+h3 { color: var(--brand-primary) !important; }
+a { color: var(--brand-primary) !important; }
+a:hover { color: var(--brand-heading) !important; }
+details summary { color: var(--brand-heading) !important; }
+details { border-color: var(--brand-primary) !important; }
+table th, table thead tr { background-color: var(--brand-heading) !important; color: #fff !important; }
+table tr:nth-child(even) { background-color: #f0f4f7; }
+
+/*
+ * Callout styles — used by CanvasQuartoSync to inline-style Quarto callouts.
+ * Each rule maps a .callout-<type> class to border-color, background-color, and icon.
+ * The --callout-icon property is a custom extension parsed by the sync tool.
+ */
+.callout-tip       { border-color: #198754; background-color: #d1e7dd; --callout-icon: "\U0001f4a1"; }
+.callout-important { border-color: #dc3545; background-color: #f8d7da; --callout-icon: "\U00002757"; }
+.callout-warning   { border-color: #ffc107; background-color: #fff3cd; --callout-icon: "\U000026a0"; }
+.callout-note      { border-color: #0d6efd; background-color: #cfe2ff; --callout-icon: "\U0001f4dd"; }
+.callout-caution   { border-color: #fd7e14; background-color: #ffe5d0; --callout-icon: "\U0001f536"; }

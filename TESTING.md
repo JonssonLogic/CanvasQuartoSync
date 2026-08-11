@@ -85,6 +85,9 @@ tests/
         test_drift_detector.py      # HTML normalization and hashing
         test_qmd_preprocessor.py    # Study guide preprocessing
         test_config.py              # Config resolution priority
+        test_validate_content.py    # Offline content validation
+        test_init_content_project.py # Content-folder scaffolding + kit updates
+        test_doc_consistency.py     # canvas.* settings documented in kit AND user guide
     integration/                    # Mocked Canvas API tests
         test_add_to_module.py       # Module item create/update/match logic
         test_process_content.py     # Image/link processing with mocked uploads

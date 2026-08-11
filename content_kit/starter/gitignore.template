@@ -1,0 +1,17 @@
+# CanvasQuartoSync state - machine-specific, do not commit
+.canvas_sync_map.json
+.canvas_snapshots/
+
+# Credentials
+token.txt
+.env
+
+# Quarto / render artifacts
+_temp_*
+tmp-*
+*_files/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

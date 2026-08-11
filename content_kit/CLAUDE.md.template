@@ -1,0 +1,39 @@
+# Course content folder
+
+This folder is the **source of truth** for a Canvas course. Files here are rendered by
+Quarto and pushed to Canvas by CanvasQuartoSync, which lives outside this folder.
+
+- Course: `@@COURSE_NAME@@`
+- Settings (course id, credentials, branding): `config.toml`
+
+## Working here
+
+**Use the `canvas-content` skill** for anything involving course material - it defines
+the required `NN_` file naming, the `canvas.*` frontmatter schema for each content type,
+the quiz syntax, and how links and images resolve. Invoke it with `/canvas-content` or
+just start working on content and it will load.
+
+Three rules that always apply:
+
+1. **Never sync to Canvas.** Don't run `sync_to_canvas.py`, `run_sync_here.bat`,
+   `import_from_canvas.py`, or `purge_course.py`. Pushing to a live course is the
+   course owner's decision. Write files and stop.
+2. **Validate before reporting.** After creating or editing content, run
+   `check_content.bat <path>` (Windows) or `./check_content.sh <path>`. It runs offline
+   in about a second and reports what each file will become in Canvas. Fix every ERROR.
+3. **Stay in scope.** Do what was asked. Don't create extra files or restructure existing
+   content as a side effect.
+
+## Layout
+
+```
+01_Introduction/          module -> Canvas module "Introduction"
+  01_Welcome.qmd          module item, in this order
+  02_Syllabus.qmd
+graphics/                 images - no NN_ prefix, never synced as content
+config.toml               course id and metadata
+schedule.yaml             calendar events (only synced on request)
+```
+
+Folders and files **without** an `NN_` prefix are ignored by the sync. That is the most
+common reason content doesn't appear in Canvas.
