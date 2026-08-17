@@ -22,6 +22,61 @@ The Canvas API silently **ignores** the `published` field when creating a new mo
 - Passing an **empty string** `''` means **"clear the date"**.
 - This distinction matters when a user removes a `due_at` from their frontmatter — we must send `''`, not `None`.
 
+### Dates Must Be Normalised Before They Reach Any API
+Dates used to travel from source file to Canvas untouched. What a date *meant* then
+depended on three things that had nothing to do with the author's intent:
+
+- **The file format.** JSON has no date type, so `"2026-08-17T09:00:00"` stayed a
+  string. PyYAML resolves the same unquoted text in `.qmd` frontmatter into a
+  `datetime` (preserving `tzinfo`), and a bare date into a `datetime.date`.
+- **Quoting.** Only in YAML, and only sometimes — which made quoting silently
+  load-bearing in one handler and irrelevant in every other.
+- **The receiving handler.** `canvasapi` form-encodes, so `requests` called `str()`
+  on a `datetime` and it survived. The New Quizzes client posts JSON, where the same
+  value hit `json.dumps` and aborted the sync with *"Object of type datetime is not
+  JSON serializable"*. The E2E suite missed this for a long time because its only
+  New Quiz fixture happened to quote its date.
+
+Everything now funnels through `handlers/dates.py → to_canvas_iso()`, which always
+returns a `str`. That makes the JSON crash unrepresentable rather than merely fixed.
+
+### Local Wall-Clock Time Beats Both `Z` and Fixed Offsets
+Canvas accepts ISO 8601 with an offset and stores UTC. Neither literal form is safe
+to author by hand across a semester:
+
+- A hardcoded `+02:00` is **wrong** for the half of the year Sweden is on `+01:00`.
+- A fixed `09:00Z` is a valid instant but not a stable clock time — it displays as
+  11:00 local in summer and 10:00 after the clocks change, so a weekly deadline
+  drifts an hour mid-semester.
+
+Authors therefore write naive local times and the tool converts. The zone comes from
+`config.toml` first, then the Canvas course's `time_zone`. Resolution is **lazy** —
+a course whose dates all carry `Z` never needs one — which is what let this ship
+without a content migration. Values already carrying `Z` or an offset are passed
+through untouched and keep their exact prior meaning.
+
+Note the mismatch case is a warning, not an error: we always send UTC, so the stored
+instant is right regardless. What a mismatch changes is *display*, since Canvas
+renders in the course's zone — students would see a different clock time than the
+files state.
+
+`tzdata` is a hard dependency on Windows, which ships no system tz database.
+
+### Comparing Dates Against Canvas Means Comparing Instants
+Canvas answers in UTC no matter what was sent. The calendar handler used to dedup by
+substring-matching the local time against `start_at`, which worked only because it
+also sent local-looking UTC. Converting times broke it instantly — every sync would
+have created duplicate events. Parse both sides and compare instants
+(`parse_canvas_utc()`); never match timestamp substrings.
+
+### Daylight Saving Has Two Odd Local Times
+Spring forward creates an hour that never happens; autumn back creates one that
+happens twice. `zoneinfo` resolves both silently. PEP 495's `fold` flag is set for
+*both* cases, so a differing `utcoffset()` between `fold=0` and `fold=1` cannot tell
+them apart — test for the gap first (a round trip through UTC lands on a different
+wall clock), then for ambiguity. The validator warns; neither is an error, since both
+still resolve to a real instant.
+
 ### Quiz Detection: Structural, Not Name-Based
 Early versions detected quizzes by checking if the filename contained `"Quiz"`. This was brittle. The current approach checks the **JSON structure** (presence of `questions` array and `canvas` metadata block) or the presence of `:::: {.question` blocks in `.qmd` files.
 

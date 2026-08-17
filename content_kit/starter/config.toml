@@ -11,6 +11,10 @@ credits     = "7.5 ECTS"
 semester    = "Spring 2026"
 language    = "english"              # or "swedish"
 
+# Timezone for times written without a Z or offset (e.g. due_at: "2026-03-15T23:59:00").
+# Optional - defaults to the Canvas course's own timezone. Use an IANA name.
+# timezone  = "Europe/Stockholm"
+
 # canvas_api_url    = "https://your-institution.instructure.com"
 # canvas_token_path = "token.txt"
 

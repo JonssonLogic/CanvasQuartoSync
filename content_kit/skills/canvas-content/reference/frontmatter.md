@@ -32,7 +32,7 @@ Putting `title:` at the top level of a quiz file does **not** work - it is ignor
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `points` | number | `0` | Points possible |
-| `due_at` | ISO 8601 | unset | e.g. `2026-03-15T23:59:00Z`. Removing the key **clears** the date in Canvas |
+| `due_at` | ISO 8601 | unset | e.g. `"2026-03-15T23:59:00"` (course-local). Removing the key **clears** the date in Canvas |
 | `unlock_at` | ISO 8601 | unset | Available from |
 | `lock_at` | ISO 8601 | unset | Available until |
 | `grading_type` | string | Canvas default | `points`, `percentage`, `pass_fail`, `letter_grade`, `gpa_scale`, `not_graded` |
@@ -158,6 +158,36 @@ canvas:
 
 ## Dates
 
-Use ISO 8601: `2026-03-15T23:59:00Z`. **Removing a date key clears it in Canvas** -
-the local file is the source of truth, so an omitted `due_at` means "no due date",
-not "leave whatever is there".
+Use ISO 8601 and **write the time students should see**:
+
+```yaml
+due_at: "2026-03-15T23:59:00"     # 23:59 course-local, all year round
+```
+
+A time with no `Z` and no offset is read as **course-local wall clock** and
+converted to the right UTC instant at sync time, so daylight saving is handled for
+you. Prefer this form - it is the one that keeps a weekly 23:59 deadline at 23:59
+in every week of the semester.
+
+Adding `Z` or an offset still means exactly what it says, and is passed through
+untouched:
+
+```yaml
+due_at: "2026-03-15T22:59:00Z"        # an exact UTC instant
+due_at: "2026-03-15T23:59:00+01:00"   # an exact instant, stated as an offset
+```
+
+Avoid hardcoding an offset unless you mean it: `+02:00` is simply wrong for the
+half of the year Sweden is on `+01:00`, and a fixed `...Z` deadline shifts by an
+hour when the clocks change. See `gotchas.md`.
+
+**Quote your dates.** Unquoted values still work, but quoting keeps YAML from
+reinterpreting them and reads consistently with the JSON quiz format.
+
+**Removing a date key clears it in Canvas** - the local file is the source of
+truth, so an omitted `due_at` means "no due date", not "leave whatever is there".
+
+The timezone comes from `timezone` in `config.toml` if set, otherwise from the
+Canvas course's own setting. Run `check_content` and it will flag the two times
+daylight saving makes strange: an hour that never happens, and one that happens
+twice.

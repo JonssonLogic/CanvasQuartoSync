@@ -6,6 +6,7 @@ import frontmatter
 
 from handlers.base_handler import BaseHandler
 from handlers.content_utils import get_mapped_id, save_mapped_id, parse_module_name, process_content, safe_delete_file, safe_delete_dir
+from handlers.dates import resolve_timezone, to_canvas_iso
 from handlers.qmd_quiz_parser import parse_qmd_quiz
 from handlers.log import logger
 
@@ -197,11 +198,15 @@ class QuizHandler(BaseHandler):
                 'access_code': 'access_code'
             }
 
+            tz = resolve_timezone(course, content_root)
+
             for local_key, canvas_key in setting_map.items():
                 if local_key in ['due_at', 'unlock_at', 'lock_at']:
                     # Source of Truth: Use empty string to explicitly clear dates in Canvas API
-                    # (None values are ignored by the API, but '' clears the field)
-                    quiz_payload[canvas_key] = canvas_meta.get(local_key) or ''
+                    # (None values are ignored by the API, but '' clears the field). Naive
+                    # times are read as course-local and converted to UTC.
+                    quiz_payload[canvas_key] = to_canvas_iso(
+                        canvas_meta.get(local_key), tz, local_key)
                 elif local_key == 'description':
                     # description_file takes precedence over inline description
                     if description_html:

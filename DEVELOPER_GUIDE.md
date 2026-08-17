@@ -32,6 +32,7 @@ CanvasQuartoSync/
 │   ├── subheader_handler.py   # .md/.qmd → Module SubHeader (visual separator)
 │   ├── external_link_handler.py # .qmd → Module External URL link
 │   ├── content_utils.py       # Shared: image upload, cross-linking, sync map, pruning
+│   ├── dates.py               # Shared: course-local times → UTC (DST-aware)
 │   └── log.py                 # Logging configuration (logger + setup_logging)
 ├── validate_content.py        # Offline content validation (no Canvas/network needed)
 ├── init_content_project.py    # Scaffolds a content folder with the AI authoring kit
@@ -108,6 +109,28 @@ All handlers inherit `BaseHandler` (ABC):
 | `prune_orphaned_assets()` | Deletes files in `synced-images`/`synced-files` that are no longer referenced |
 | `load_sync_map()` / `save_sync_map()` | Persist `.canvas_sync_map.json` (maps local path → Canvas ID + mtime) |
 | `safe_delete_file/dir()` | Retry-with-backoff deletion (Dropbox/OneDrive lock workaround) |
+
+### Dates (`dates.py`)
+
+Every handler funnels its date fields through one normaliser, so all APIs receive
+the same thing: a UTC string.
+
+| Function | What it does |
+|---|---|
+| `to_canvas_iso(value, tz, field)` | The workhorse. `None`/`''` → `''` (clears the field in Canvas); a value already carrying `Z` or an offset is returned unchanged; a naive value — string, or the `datetime`/`date` PyYAML builds from unquoted frontmatter — is read in `tz` and converted to UTC |
+| `resolve_timezone(course, content_root)` | `config.toml` `timezone` first, else the Canvas course's `time_zone`. Cached; warns once when the two disagree |
+| `dst_anomaly()` / `naive_local()` | Classify a local time as `"gap"` (never happens) or `"ambiguous"` (happens twice); used by the validator |
+| `parse_canvas_utc()` / `to_local_naive()` | Read Canvas's UTC back — for comparing instants (calendar dedup) and for the import direction |
+
+Two properties worth preserving when touching this:
+
+- **It always returns a `str`.** The New Quizzes endpoint is JSON, so a `datetime`
+  reaching `json.dumps` aborts the sync. Returning a string makes that unrepresentable.
+- **Explicit offsets pass through untouched**, so adopting this was not a content
+  migration — every pre-existing `...Z` file kept its exact meaning.
+
+Timezone resolution is *lazy*: a course whose dates all carry `Z` never needs one
+configured. `tzdata` is a hard requirement on Windows, which ships no tz database.
 
 ---
 

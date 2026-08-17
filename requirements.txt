@@ -4,3 +4,4 @@ python-frontmatter
 PyYAML
 asteval
 rich
+tzdata; sys_platform == "win32"

@@ -124,7 +124,7 @@ def main():
         cal_handler = CalendarHandler()
         schedule_path = os.path.join(content_root, "schedule.yaml")
         try:
-            cal_handler.sync(schedule_path, course, canvas_obj=canvas)
+            cal_handler.sync(schedule_path, course, canvas_obj=canvas, content_root=content_root)
         except FileNotFoundError:
             logger.warning("No schedule.yaml found at %s", schedule_path)
         except Exception as e:

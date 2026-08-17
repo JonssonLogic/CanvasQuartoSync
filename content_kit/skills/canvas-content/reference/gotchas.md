@@ -27,6 +27,19 @@ line - see recipes.md.
 Your files are authoritative. **Removing a date key clears that date in Canvas** rather
 than leaving the existing value. If a due date should stay, it must stay in the file.
 
+**Write local time, not a hardcoded offset.** `due_at: "2026-11-17T09:00:00"` means
+09:00 to students whatever the season. The two literal forms are traps:
+
+- `+02:00` is wrong for the half of the year Sweden is on `+01:00`, and Canvas will
+  faithfully shift the deadline by an hour.
+- A fixed `...Z` is a valid instant but not a stable clock time: `09:00Z` shows as
+  11:00 local in summer and 10:00 after the clocks change, so a weekly deadline drifts
+  mid-semester.
+
+Two local times are genuinely odd and `check_content` warns about both: the hour that
+never happens when clocks jump forward, and the hour that happens twice when they go
+back. Move the time by an hour rather than leaving it.
+
 ## Titles and renaming
 
 - Renaming a *file* is safe: the sync tracks Canvas IDs in `.canvas_sync_map.json`, so

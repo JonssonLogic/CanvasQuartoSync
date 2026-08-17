@@ -4,5 +4,9 @@ credits = "7.5 ECTS"
 semester = "Spring 2026"
 language = "english"
 
+# Pinned so the naive dates in the fixtures resolve to a known instant
+# regardless of how the test course is configured in Canvas.
+timezone = "Europe/Stockholm"
+
 [branding]
 css = "branding.css"

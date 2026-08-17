@@ -7,6 +7,7 @@ from datetime import datetime
 from canvasapi import Canvas
 from handlers.base_handler import BaseHandler
 from handlers.content_utils import process_content, safe_delete_file, safe_delete_dir, get_mapped_id, save_mapped_id, parse_module_name
+from handlers.dates import resolve_timezone, to_canvas_iso
 from handlers.drift_detector import check_drift, store_canvas_hash
 from handlers.log import logger
 
@@ -53,10 +54,12 @@ class AssignmentHandler(BaseHandler):
         published = canvas_meta.get('published', False)
         points = canvas_meta.get('points', 0)
         # Source of Truth: Use empty string to explicitly clear dates in Canvas API
-        # (None values are ignored by the API, but '' clears the field)
-        due_at = canvas_meta.get('due_at') or ''
-        unlock_at = canvas_meta.get('unlock_at') or ''
-        lock_at = canvas_meta.get('lock_at') or ''
+        # (None values are ignored by the API, but '' clears the field). Naive
+        # times are read as course-local and converted to UTC; see handlers/dates.py.
+        tz = resolve_timezone(course, content_root)
+        due_at = to_canvas_iso(canvas_meta.get('due_at'), tz, 'due_at')
+        unlock_at = to_canvas_iso(canvas_meta.get('unlock_at'), tz, 'unlock_at')
+        lock_at = to_canvas_iso(canvas_meta.get('lock_at'), tz, 'lock_at')
         grading_type = canvas_meta.get('grading_type') or ''
         submission_types = canvas_meta.get('submission_types', ['online_upload'])
         allowed_extensions = canvas_meta.get('allowed_extensions', [])

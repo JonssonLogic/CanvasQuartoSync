@@ -37,6 +37,7 @@ from canvasapi import Canvas
 from handlers import __version__
 from handlers.log import logger, setup_logging
 from handlers.config import load_config, get_api_credentials, get_course_id
+from handlers.dates import resolve_timezone, to_local_naive
 
 
 # ---------------------------------------------------------------------------
@@ -640,16 +641,22 @@ canvas:
 '''
 
 
-def generate_assignment_qmd(title: str, body_md: str, assignment) -> str:
-    """Generate a QMD file for a Canvas assignment."""
+def generate_assignment_qmd(title: str, body_md: str, assignment, tz=None) -> str:
+    """Generate a QMD file for a Canvas assignment.
+
+    Canvas answers in UTC, but files are authored in course-local wall clock, so
+    dates are converted back on the way in. That keeps the round trip symmetric:
+    an imported file reads the way you would have written it, and re-syncing it
+    reproduces the same instant.
+    """
     safe_title = title.replace('"', '\\"')
 
     # Extract assignment properties
     published = getattr(assignment, 'published', False)
     points = getattr(assignment, 'points_possible', 0) or 0
-    due_at = getattr(assignment, 'due_at', None) or ''
-    unlock_at = getattr(assignment, 'unlock_at', None) or ''
-    lock_at = getattr(assignment, 'lock_at', None) or ''
+    due_at = to_local_naive(getattr(assignment, 'due_at', None), tz)
+    unlock_at = to_local_naive(getattr(assignment, 'unlock_at', None), tz)
+    lock_at = to_local_naive(getattr(assignment, 'lock_at', None), tz)
     submission_types = getattr(assignment, 'submission_types', ['online_upload'])
     allowed_extensions = getattr(assignment, 'allowed_extensions', [])
     grading_type = getattr(assignment, 'grading_type', '') or ''
@@ -667,11 +674,11 @@ def generate_assignment_qmd(title: str, body_md: str, assignment) -> str:
     if allowed_extensions:
         canvas_lines.append(f'  allowed_extensions: [{", ".join(allowed_extensions)}]')
     if due_at:
-        canvas_lines.append(f'  due_at: {due_at}')
+        canvas_lines.append(f'  due_at: "{due_at}"')
     if unlock_at:
-        canvas_lines.append(f'  unlock_at: {unlock_at}')
+        canvas_lines.append(f'  unlock_at: "{unlock_at}"')
     if lock_at:
-        canvas_lines.append(f'  lock_at: {lock_at}')
+        canvas_lines.append(f'  lock_at: "{lock_at}"')
     if grading_type:
         canvas_lines.append(f'  grading_type: {grading_type}')
     if omit_from_final_grade:
@@ -802,6 +809,9 @@ def import_course(course, output_path: str, dry_run: bool = False, include_types
     # Create asset downloader (shared across modules for dedup)
     downloader = AssetDownloader(output_path, api_token=api_token, api_url=api_url, dry_run=dry_run)
 
+    # Dates come back from Canvas as UTC; write them as course-local wall clock.
+    tz = resolve_timezone(course, output_path)
+
     logger.info("[bold cyan]Fetching modules...[/bold cyan]")
     modules = list(course.get_modules())
     logger.info("Found [bold]%d[/bold] modules", len(modules))
@@ -861,7 +871,7 @@ def import_course(course, output_path: str, dry_run: bool = False, include_types
                     if assignment:
                         desc_html = getattr(assignment, 'description', '') or ''
                         body_md = converter.convert(desc_html)
-                        content = generate_assignment_qmd(item_title, body_md, assignment)
+                        content = generate_assignment_qmd(item_title, body_md, assignment, tz)
                         _write_qmd(mod_dir, item_prefix, safe_item_name, content, dry_run)
 
                 elif item_type == 'Quiz':

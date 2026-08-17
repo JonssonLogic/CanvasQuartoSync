@@ -111,3 +111,23 @@ A single `.qmd` file that produces **two Canvas artifacts** from one source:
 - The handler renders the QMD twice (`--to html` and `--to pdf`), syncs the HTML as a Canvas Page, and uploads the PDF as a file item in the target module.
 - Requires a LaTeX distribution (e.g., `quarto install tinytex`) for PDF rendering.
 - If PDF rendering fails, the HTML page is still synced (partial success).
+
+---
+
+### ~~8. Unified Date/Time Handling~~ (Implemented)
+Dates used to travel from source file to Canvas untouched, so their meaning depended on
+the file format, on whether the author quoted them, and on which handler consumed them.
+
+_Implemented in `handlers/dates.py`. Authors now write course-local wall clock
+(`due_at: "2026-11-17T09:00:00"`) and the tool converts to the correct UTC instant,
+daylight saving included. The zone comes from `timezone` in `config.toml`, else the
+Canvas course's own `time_zone`; resolution is lazy, so an all-`Z` course needs no
+configuration. Values already carrying `Z` or an offset pass through untouched, so this
+was not a content migration._
+
+_This also closed two bugs: New Quizzes aborting on unquoted `.qmd` dates (the payload
+is JSON, and `to_canvas_iso()` always returns a `str`), and calendar events being
+hardcoded to UTC. Converting calendar times additionally required replacing the
+duplicate check, which had been substring-matching a local time against the UTC
+`start_at` Canvas returns. See LESSONS_LEARNED.md for the reasoning; `tzdata` is now
+required on Windows._

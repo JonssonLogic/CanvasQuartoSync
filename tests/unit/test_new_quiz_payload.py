@@ -423,3 +423,54 @@ class TestBackingAssignmentSettings:
         assert settings['grading_type'] == 'points'
         assert settings['omit_from_final_grade'] is False
         assert 'shuffle_answers' not in settings
+
+
+# ---------------------------------------------------------------------------
+# Dates
+# ---------------------------------------------------------------------------
+
+class TestDates:
+    """The New Quizzes payload is JSON-serialised, so every date must be a str.
+
+    Regression: PyYAML turns an unquoted frontmatter timestamp into a datetime,
+    which used to reach json.dumps and abort the sync with
+    "Object of type datetime is not JSON serializable".
+    """
+
+    def test_unquoted_yaml_datetime_is_serialisable(self):
+        import datetime
+        import json
+        from handlers.dates import get_zone
+
+        payload = handler._build_quiz_payload("Q", False, {
+            'due_at': datetime.datetime(2026, 8, 17, 9, 0),      # unquoted YAML
+            'unlock_at': datetime.date(2026, 8, 1),              # unquoted date
+        }, get_zone("Europe/Stockholm"))
+
+        assert payload['due_at'] == "2026-08-17T07:00:00Z"
+        assert payload['unlock_at'] == "2026-07-31T22:00:00Z"
+        json.dumps({"quiz": payload})  # must not raise
+
+    def test_naive_string_converts_to_utc(self):
+        from handlers.dates import get_zone
+        payload = handler._build_quiz_payload("Q", False, {
+            'due_at': "2026-11-17T09:00:00",
+        }, get_zone("Europe/Stockholm"))
+        assert payload['due_at'] == "2026-11-17T08:00:00Z"   # CET, not CEST
+
+    def test_explicit_utc_is_untouched(self):
+        payload = handler._build_quiz_payload("Q", False, {
+            'due_at': "2026-06-01T23:59:00Z",
+        })
+        assert payload['due_at'] == "2026-06-01T23:59:00Z"
+
+    def test_result_view_dates_are_normalised(self):
+        from handlers.dates import get_zone
+        payload = handler._build_quiz_payload("Q", False, {
+            'result_view': {'show_responses_at': "2026-08-17T09:00:00"},
+        }, get_zone("Europe/Stockholm"))
+        assert _rv(payload)['show_item_responses_at'] == "2026-08-17T07:00:00Z"
+
+    def test_none_clears_the_date(self):
+        payload = handler._build_quiz_payload("Q", False, {'due_at': None})
+        assert payload['due_at'] == ''

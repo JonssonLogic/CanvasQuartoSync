@@ -182,7 +182,7 @@ canvas:
   type: assignment
   published: true
   points: 10
-  due_at: 2024-05-10T23:59:00Z
+  due_at: "2024-05-10T23:59:00"   # course-local time; DST handled at sync
   submission_types: [online_upload]
   allowed_extensions: [py, ipynb]
 ---

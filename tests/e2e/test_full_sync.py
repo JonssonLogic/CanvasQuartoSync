@@ -26,6 +26,13 @@ def _find(items, predicate):
     return next((x for x in items if predicate(x)), None)
 
 
+def _utc(value):
+    """Normalise a timestamp Canvas returned so instants compare cleanly."""
+    from handlers.dates import parse_canvas_utc
+    parsed = parse_canvas_utc(value)
+    return parsed.strftime("%Y-%m-%dT%H:%M:%SZ") if parsed else None
+
+
 # ---------------------------------------------------------------------------
 # Modules
 # ---------------------------------------------------------------------------
@@ -169,6 +176,17 @@ class TestAssignments:
         assert a.unlock_at, "Truss assignment should have an unlock date"
         assert a.lock_at, "Truss assignment should have a lock date"
 
+    def test_truss_dates_converted_from_course_local(self, canvas_course):
+        """The fixture states local wall clock; Canvas must hold the right instant.
+
+        September is CEST (+02:00), so 23:59 local is 21:59Z. Getting this wrong
+        by an hour is exactly the DST bug the conversion exists to prevent.
+        """
+        a = _find(canvas_course.get_assignments(), lambda x: "Truss" in (x.name or ""))
+        assert _utc(a.unlock_at) == "2026-09-02T06:00:00Z"
+        assert _utc(a.due_at) == "2026-09-16T21:59:00Z"
+        assert _utc(a.lock_at) == "2026-09-23T21:59:00Z"
+
     def test_reflection_grading_and_omit(self, canvas_course):
         a = _find(canvas_course.get_assignments(), lambda x: "Reflection" in (x.name or ""))
         assert a is not None, "Reflection assignment not found"
@@ -224,6 +242,19 @@ class TestNewQuizzes:
     def test_calculation_quiz_exists(self, canvas_course):
         a = _find(canvas_course.get_assignments(), lambda x: "Beam Bending Calculations" in (x.name or ""))
         assert a is not None, "New Quiz 'Beam Bending Calculations' not found"
+
+    def test_calculation_quiz_unquoted_dates_synced(self, canvas_course):
+        """Regression: unquoted frontmatter dates on a New Quiz.
+
+        PyYAML makes these `datetime` objects, and the New Quizzes payload is
+        JSON, so they used to abort the sync outright. Reaching this assertion
+        at all means the payload serialised; the values prove the conversion
+        used CET (+01:00) for November, not the CEST the September fixtures get.
+        """
+        a = _find(canvas_course.get_assignments(), lambda x: "Beam Bending Calculations" in (x.name or ""))
+        assert a is not None
+        assert _utc(a.unlock_at) == "2026-11-02T07:00:00Z"
+        assert _utc(a.due_at) == "2026-11-16T22:59:00Z"
 
     def test_json_new_quiz_exists(self, canvas_course):
         a = _find(canvas_course.get_assignments(), lambda x: "Section Properties" in (x.name or ""))

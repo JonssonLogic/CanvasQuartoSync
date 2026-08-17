@@ -24,6 +24,10 @@ Three rules that always apply:
 3. **Stay in scope.** Do what was asked. Don't create extra files or restructure existing
    content as a side effect.
 
+Dates are written in **course-local time** - `due_at: "2026-03-15T23:59:00"` is the time
+students see, and daylight saving is handled at sync time. Don't add a `Z` or a `+02:00`
+offset unless you mean a specific UTC instant.
+
 ## Layout
 
 ```

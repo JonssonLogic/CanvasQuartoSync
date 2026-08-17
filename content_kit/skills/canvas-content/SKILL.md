@@ -122,7 +122,7 @@ canvas:
   type: assignment
   published: true
   points: 20
-  due_at: 2026-03-15T23:59:00Z
+  due_at: "2026-03-15T23:59:00"    # course-local time; see reference/frontmatter.md
   submission_types: [online_upload]
   allowed_extensions: [pdf, zip]
 ---

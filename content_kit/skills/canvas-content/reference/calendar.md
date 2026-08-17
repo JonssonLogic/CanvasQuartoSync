@@ -46,8 +46,9 @@ date between `start_date` and `end_date`:
 
 ## Behaviour worth knowing
 
-- **Times are treated as UTC.** There is no timezone field; a `10:15` start is sent as
-  `10:15Z`. Check with the developer before assuming local time is correct.
+- **Times are course-local.** A `10:15` start means 10:15 to students, converted to the
+  right instant at sync time. A recurring series that spans a daylight-saving change
+  keeps its local time on both sides - every occurrence is converted individually.
 - **Duplicates are skipped, not updated.** An event matching an existing one by title,
   date, start time, and location is left alone. Changing a *time* creates a second event
   rather than moving the first - the old one must be deleted in Canvas by hand.

@@ -6,6 +6,12 @@ canvas:
   points: 15
   allowed_attempts: 1
   calculator_type: scientific
+  # Deliberately UNQUOTED: PyYAML turns these into datetime objects, which used
+  # to abort the sync because the New Quizzes payload is JSON-serialised.
+  # November is CET, so these must become 07:00Z and 22:59Z - a different offset
+  # from the September dates in 02_Statics, which is the whole point.
+  unlock_at: 2026-11-02T08:00:00
+  due_at: 2026-11-16T23:59:00
 ---
 
 :::: {.question type="numeric_question" name="Max Bending Stress" points_possible="5.0"}

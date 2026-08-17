@@ -269,3 +269,66 @@ def test_example_content_is_clean():
     reports = validate_path(os.path.join(root, "Example"))
     problems = {os.path.basename(r.path): _errors(r) for r in reports if r.errors}
     assert problems == {}
+
+
+class TestDaylightSavingWarnings:
+    """Advisory only — a DST oddity never fails a file, it just gets flagged.
+
+    Requires a timezone in config.toml; the validator is offline, so a course
+    relying on the Canvas course timezone simply gets no check here.
+    """
+
+    def _course(self, tmp_path, timezone=None):
+        toml = 'course_id = 1\n'
+        if timezone:
+            toml += f'timezone = "{timezone}"\n'
+        (tmp_path / "config.toml").write_text(toml, encoding="utf-8")
+        from handlers.config import _config_cache
+        _config_cache.clear()
+
+    def test_nonexistent_time_is_flagged(self, tmp_path):
+        self._course(tmp_path, "Europe/Stockholm")
+        # Clocks jump 02:00 -> 03:00 on 2026-03-29, so 02:30 never happens.
+        path = _write(tmp_path, "01_Mod/01_A.qmd",
+                      '---\ncanvas:\n  type: assignment\n  due_at: "2026-03-29T02:30:00"\n---\n')
+        report = validate_file(path, str(tmp_path))
+        assert report.errors == []
+        assert "never happens" in _messages(report)
+
+    def test_ambiguous_time_is_flagged(self, tmp_path):
+        self._course(tmp_path, "Europe/Stockholm")
+        path = _write(tmp_path, "01_Mod/01_A.qmd",
+                      '---\ncanvas:\n  type: assignment\n  due_at: "2026-10-25T02:30:00"\n---\n')
+        report = validate_file(path, str(tmp_path))
+        assert report.errors == []
+        assert "happens twice" in _messages(report)
+
+    def test_ordinary_time_is_silent(self, tmp_path):
+        self._course(tmp_path, "Europe/Stockholm")
+        path = _write(tmp_path, "01_Mod/01_A.qmd",
+                      '---\ncanvas:\n  type: assignment\n  due_at: "2026-08-17T09:00:00"\n---\n')
+        report = validate_file(path, str(tmp_path))
+        assert report.errors == []
+        assert "daylight" not in _messages(report).lower()
+
+    def test_explicit_utc_is_never_ambiguous(self, tmp_path):
+        self._course(tmp_path, "Europe/Stockholm")
+        path = _write(tmp_path, "01_Mod/01_A.qmd",
+                      '---\ncanvas:\n  type: assignment\n  due_at: "2026-10-25T02:30:00Z"\n---\n')
+        report = validate_file(path, str(tmp_path))
+        assert "happens twice" not in _messages(report)
+
+    def test_no_configured_timezone_means_no_check(self, tmp_path):
+        self._course(tmp_path)
+        path = _write(tmp_path, "01_Mod/01_A.qmd",
+                      '---\ncanvas:\n  type: assignment\n  due_at: "2026-10-25T02:30:00"\n---\n')
+        report = validate_file(path, str(tmp_path))
+        assert report.errors == []
+        assert "happens twice" not in _messages(report)
+
+    def test_naive_dates_still_validate_clean(self, tmp_path):
+        """A local wall-clock time is a first-class value, not an error."""
+        self._course(tmp_path, "Europe/Stockholm")
+        path = _write(tmp_path, "01_Mod/01_A.qmd",
+                      '---\ncanvas:\n  type: assignment\n  due_at: 2026-11-17T09:00:00\n---\n')
+        assert validate_file(path, str(tmp_path)).errors == []

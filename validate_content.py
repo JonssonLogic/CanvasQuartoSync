@@ -251,7 +251,49 @@ def detect_kind(file_path, handlers=None):
 _ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?(Z|[+-]\d{2}:?\d{2})?)?$")
 
 
-def _check_value(report, dotted_name, key, value):
+def _configured_zone(content_root):
+    """The timezone declared in config.toml, or None.
+
+    The validator runs offline, so only the local declaration is visible - a
+    course that relies on the Canvas course timezone simply gets no DST check
+    here. That is deliberate: warning about every naive time would fire
+    constantly for the intended workflow.
+    """
+    if not content_root:
+        return None
+    try:
+        from handlers.config import load_config
+        from handlers.dates import get_zone
+        return get_zone(load_config(content_root).get("timezone"))
+    except Exception:
+        return None
+
+
+def _check_dst(report, dotted_name, value, tz):
+    """Warn about local times daylight saving makes non-existent or ambiguous.
+
+    Advisory: both still resolve to some instant, so this never fails a file.
+    """
+    if tz is None:
+        return
+    try:
+        from handlers.dates import dst_anomaly, naive_local
+        flag = dst_anomaly(naive_local(value), tz)
+    except Exception:
+        return
+    if flag == "gap":
+        report.warn(
+            f"canvas.{dotted_name}: {value} never happens - the clocks jump forward "
+            f"over that hour when daylight saving starts. Canvas will store a shifted time."
+        )
+    elif flag == "ambiguous":
+        report.warn(
+            f"canvas.{dotted_name}: {value} happens twice - the clocks go back that "
+            f"night. The earlier of the two is used."
+        )
+
+
+def _check_value(report, dotted_name, key, value, tz=None):
     """Validate one value against its Key spec."""
     if value is None:
         return
@@ -276,6 +318,7 @@ def _check_value(report, dotted_name, key, value):
         return
     if key.kind == "date":
         if isinstance(value, (datetime.date, datetime.datetime)):
+            _check_dst(report, dotted_name, value, tz)
             return
         if not isinstance(value, str) or not _ISO_RE.match(value.strip()):
             report.error(
@@ -283,6 +326,7 @@ def _check_value(report, dotted_name, key, value):
                 f"(e.g. 2026-03-15T23:59:00Z), got {value!r}"
             )
             return
+        _check_dst(report, dotted_name, value, tz)
 
     if key.choices:
         values = value if isinstance(value, list) else [value]
@@ -297,7 +341,7 @@ def _check_value(report, dotted_name, key, value):
         report.error(f"canvas.indent: must be between 0 and 5, got {value}")
 
 
-def _check_keys(report, meta, schema, prefix=""):
+def _check_keys(report, meta, schema, prefix="", tz=None):
     """Check every key in a canvas metadata block against a schema."""
     for name, value in meta.items():
         dotted = f"{prefix}{name}"
@@ -307,12 +351,12 @@ def _check_keys(report, meta, schema, prefix=""):
             hint = f" Did you mean '{suggestion[0]}'?" if suggestion else ""
             report.warn(f"canvas.{dotted}: unknown setting - it will be ignored.{hint}")
             continue
-        _check_value(report, dotted, key, value)
+        _check_value(report, dotted, key, value, tz=tz)
 
         if key.kind == "dict" and isinstance(value, dict):
             nested = PDF_KEYS if name == "pdf" else RESULT_VIEW_KEYS if name == "result_view" else None
             if nested:
-                _check_keys(report, value, nested, prefix=f"{dotted}.")
+                _check_keys(report, value, nested, prefix=f"{dotted}.", tz=tz)
 
 
 # ---------------------------------------------------------------------------
@@ -549,7 +593,7 @@ def validate_file(file_path, content_root=None, handlers=None):
 
     schema = CANVAS_SCHEMA.get(report.kind)
     if schema:
-        _check_keys(report, canvas_meta, schema)
+        _check_keys(report, canvas_meta, schema, tz=_configured_zone(content_root))
 
         if report.kind == "external_url" and not canvas_meta.get("url"):
             report.error("external_url needs 'canvas.url'.")

@@ -5,6 +5,7 @@
 - [1. Getting Started](#1-getting-started)
   - [Prerequisites](#prerequisites)
   - [Configuration](#configuration)
+  - [Dates and time zones](#dates-and-time-zones)
   - [Usage](#usage)
 - [2. File Organization & Naming Conventions](#2-file-organization--naming-conventions)
   - [Modules (Directories)](#modules-directories)
@@ -55,6 +56,43 @@ This system automates the synchronization of local course content to a Canvas co
 The **Course ID** must be specified in one of two ways (in order of priority):
 1.  **Command Line Argument**: `--course-id 12345`
 2.  **File**: Create a `course_id.txt` file in your content folder containing only the numeric ID.
+
+### Dates and time zones
+
+Write the time students should see, with no `Z` and no offset:
+
+```yaml
+due_at: "2026-11-17T09:00:00"     # 09:00 course-local, whatever the season
+```
+
+Such a time is read as **course-local wall clock** and converted to the correct UTC
+instant at sync time, so daylight saving is handled for you. This is the recommended
+form: a fixed `09:00Z` displays as 11:00 local in summer but 10:00 once the clocks go
+back, so a weekly deadline silently drifts an hour mid-semester. A hardcoded `+02:00`
+is worse — it is simply wrong for the half of the year Sweden is on `+01:00`.
+
+Values that **do** carry a `Z` or an offset are passed through untouched and keep
+meaning exactly the instant they state, so existing content is unaffected.
+
+The zone is taken from `config.toml` if set, otherwise from the Canvas course's own
+timezone setting:
+
+```toml
+timezone = "Europe/Stockholm"     # optional; IANA name
+```
+
+Setting it locally is worthwhile if you want the meaning of your files pinned in the
+repo rather than depending on a Canvas setting someone could change. If both are set
+and they disagree, the sync warns: times are still stored as the correct instant, but
+Canvas *displays* them in the course's zone, so students would see a different clock
+time than your files state.
+
+`validate_content.py` warns about the two local times daylight saving makes strange —
+an hour that never happens (clocks jump forward) and one that happens twice (clocks go
+back). Both still sync; move the time by an hour if the warning matters.
+
+> On Windows the `tzdata` package is required (it is in `requirements.txt`), because
+> Windows ships no system timezone database.
 
 ### Usage
 Run the script from the root of your project:
@@ -258,9 +296,9 @@ If `preprocess` is not set to `true`, you manage dual-format content yourself us
       type: assignment
       published: true                   # (optional)
       points: 10                       # (optional)
-      due_at: 2024-10-15T23:59:00Z      # (optional, ISO 8601)
-      unlock_at: 2024-10-01T08:00:00Z   # (optional)
-      lock_at: 2024-10-20T23:59:00Z     # (optional)
+      due_at: "2024-10-15T23:59:00"     # (optional, ISO 8601 — course-local time)
+      unlock_at: "2024-10-01T08:00:00"  # (optional)
+      lock_at: "2024-10-20T23:59:00"    # (optional)
       grading_type: points              # (optional: points, percentage, pass_fail, letter_grade, gpa_scale, not_graded)
       submission_types: [online_upload] # (optional: [online_upload, online_text_entry, online_url, media_recording, student_annotation, none, external_tool])
       allowed_extensions: [py, txt]     # (optional)
