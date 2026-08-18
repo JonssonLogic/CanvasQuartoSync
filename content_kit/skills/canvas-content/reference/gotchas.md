@@ -36,9 +36,15 @@ than leaving the existing value. If a due date should stay, it must stay in the 
   11:00 local in summer and 10:00 after the clocks change, so a weekly deadline drifts
   mid-semester.
 
-Two local times are genuinely odd and `check_content` warns about both: the hour that
-never happens when clocks jump forward, and the hour that happens twice when they go
-back. Move the time by an hour rather than leaving it.
+**A bare date is midnight.** `due_at: "2026-08-17"` puts the deadline at 00:00 on the
+17th - the start of the day, not the end. Write `"2026-08-17T23:59:00"` instead.
+`check_content` warns on `due_at` and `lock_at`, but not `unlock_at`, where midnight is
+usually intended.
+
+Two local times are genuinely odd: the hour that never happens when clocks jump
+forward, and the hour that happens twice when they go back. Move the time by an hour
+rather than leaving it. `check_content` only warns about these when `timezone` is set
+in `config.toml` - it runs offline and cannot read the course's Canvas setting.
 
 ## Titles and renaming
 

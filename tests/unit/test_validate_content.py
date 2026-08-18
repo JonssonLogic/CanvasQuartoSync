@@ -332,3 +332,37 @@ class TestDaylightSavingWarnings:
         path = _write(tmp_path, "01_Mod/01_A.qmd",
                       '---\ncanvas:\n  type: assignment\n  due_at: 2026-11-17T09:00:00\n---\n')
         assert validate_file(path, str(tmp_path)).errors == []
+
+
+class TestBareDateWarnings:
+    """A bare date means midnight, which is rarely what a deadline wants."""
+
+    def test_bare_due_date_is_flagged(self, tmp_path):
+        path = _write(tmp_path, "01_Mod/01_A.qmd",
+                      '---\ncanvas:\n  type: assignment\n  due_at: "2026-08-17"\n---\n')
+        report = validate_file(path, str(tmp_path))
+        assert report.errors == []
+        assert "midnight" in _messages(report)
+        assert "2026-08-17T23:59:00" in _messages(report)
+
+    def test_unquoted_bare_due_date_is_flagged(self, tmp_path):
+        """PyYAML makes this a datetime.date, not a string."""
+        path = _write(tmp_path, "01_Mod/01_A.qmd",
+                      '---\ncanvas:\n  type: assignment\n  due_at: 2026-08-17\n---\n')
+        assert "midnight" in _messages(validate_file(path, str(tmp_path)))
+
+    def test_bare_lock_date_is_flagged(self, tmp_path):
+        path = _write(tmp_path, "01_Mod/01_A.qmd",
+                      '---\ncanvas:\n  type: assignment\n  lock_at: "2026-08-17"\n---\n')
+        assert "midnight" in _messages(validate_file(path, str(tmp_path)))
+
+    def test_bare_unlock_date_is_not_flagged(self, tmp_path):
+        """'Available from the 17th' genuinely does mean midnight."""
+        path = _write(tmp_path, "01_Mod/01_A.qmd",
+                      '---\ncanvas:\n  type: assignment\n  unlock_at: "2026-08-17"\n---\n')
+        assert "midnight" not in _messages(validate_file(path, str(tmp_path)))
+
+    def test_due_date_with_a_time_is_not_flagged(self, tmp_path):
+        path = _write(tmp_path, "01_Mod/01_A.qmd",
+                      '---\ncanvas:\n  type: assignment\n  due_at: "2026-08-17T23:59:00"\n---\n')
+        assert "midnight" not in _messages(validate_file(path, str(tmp_path)))

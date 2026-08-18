@@ -269,6 +269,30 @@ def _configured_zone(content_root):
         return None
 
 
+# Keys where a bare date (meaning midnight) is very likely a mistake: a deadline
+# at 00:00 falls at the *start* of the day, not the end. `unlock_at` is left out -
+# "available from the 17th" genuinely does mean midnight.
+_END_OF_DAY_KEYS = {"due_at", "lock_at"}
+
+
+def _check_midnight(report, dotted_name, value):
+    """Warn when a deadline is written as a bare date, which means 00:00."""
+    if dotted_name not in _END_OF_DAY_KEYS:
+        return
+    if isinstance(value, datetime.datetime):
+        return
+    if isinstance(value, datetime.date):
+        bare = True
+    else:
+        bare = isinstance(value, str) and len(value.strip()) == 10
+    if bare:
+        report.warn(
+            f"canvas.{dotted_name}: {value} means midnight (00:00), so this falls at "
+            f"the START of that day. For an end-of-day deadline write "
+            f"'{str(value).strip()}T23:59:00'."
+        )
+
+
 def _check_dst(report, dotted_name, value, tz):
     """Warn about local times daylight saving makes non-existent or ambiguous.
 
@@ -318,6 +342,7 @@ def _check_value(report, dotted_name, key, value, tz=None):
         return
     if key.kind == "date":
         if isinstance(value, (datetime.date, datetime.datetime)):
+            _check_midnight(report, dotted_name, value)
             _check_dst(report, dotted_name, value, tz)
             return
         if not isinstance(value, str) or not _ISO_RE.match(value.strip()):
@@ -326,6 +351,7 @@ def _check_value(report, dotted_name, key, value, tz=None):
                 f"(e.g. 2026-03-15T23:59:00Z), got {value!r}"
             )
             return
+        _check_midnight(report, dotted_name, value)
         _check_dst(report, dotted_name, value, tz)
 
     if key.choices:

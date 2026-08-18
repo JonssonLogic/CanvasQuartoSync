@@ -181,13 +181,42 @@ Avoid hardcoding an offset unless you mean it: `+02:00` is simply wrong for the
 half of the year Sweden is on `+01:00`, and a fixed `...Z` deadline shifts by an
 hour when the clocks change. See `gotchas.md`.
 
-**Quote your dates.** Unquoted values still work, but quoting keeps YAML from
-reinterpreting them and reads consistently with the JSON quiz format.
+### Accepted spellings
+
+All of these are read as course-local time:
+
+| Written | Means |
+|---|---|
+| `"2026-08-17T09:00:00"` | 09:00:00 - **use this one** |
+| `"2026-08-17 09:00:00"` | same, space instead of `T` |
+| `"2026-08-17T09:00"` | 09:00:00, seconds default to zero |
+| `"2026-08-17"` | **midnight (00:00)** - see below |
+
+**A bare date means the START of that day.** `due_at: "2026-08-17"` is a deadline at
+00:00 on the 17th, which is almost never what is wanted - write
+`"2026-08-17T23:59:00"` for end of day. `check_content` warns about this on `due_at`
+and `lock_at`. It stays quiet for `unlock_at`, where "available from the 17th"
+genuinely does mean midnight.
+
+**Quoting is optional but recommended.** Unquoted values work fine; quoting just
+reads consistently with the JSON quiz format, where quotes are mandatory.
 
 **Removing a date key clears it in Canvas** - the local file is the source of
 truth, so an omitted `due_at` means "no due date", not "leave whatever is there".
 
-The timezone comes from `timezone` in `config.toml` if set, otherwise from the
-Canvas course's own setting. Run `check_content` and it will flag the two times
-daylight saving makes strange: an hour that never happens, and one that happens
-twice.
+### Where the timezone comes from
+
+`timezone` in `config.toml` if set, otherwise the Canvas course's own setting. Either
+way the sync converts correctly.
+
+The difference shows up in `check_content`, which runs **offline** and so can only see
+`config.toml`. Without a `timezone` there it cannot check local times at all, and the
+daylight-saving warnings below never fire. If you want those checks, set it:
+
+```toml
+timezone = "Europe/Stockholm"
+```
+
+With it set, `check_content` flags the two times daylight saving makes strange: an
+hour that never happens (clocks jump forward) and one that happens twice (clocks go
+back).
