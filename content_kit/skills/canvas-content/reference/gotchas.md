@@ -73,9 +73,27 @@ published state alone. Setting `published: false` on the front page simply won't
 
 ## `hide_in_gradebook` has strict rules
 
-Canvas requires `omit_from_final_grade: true` **and** points to be 0 or unset. With
-points assigned, the update is rejected outright. The sync sets `omit_from_final_grade`
-for you, but it cannot work around the points constraint.
+Canvas requires `omit_from_final_grade: true` **and** points to be 0 or unset. The sync
+sets `omit_from_final_grade` for you, but it cannot work around the points constraint:
+with points assigned it skips the setting, warns, and syncs everything else, so the item
+stays visible in the gradebook. Removing the key from a file puts the column back.
+
+On a **New Quiz**, "0 points" includes the questions - a New Quiz is worth whatever its
+items add up to, and each question defaults to **1 point** when you don't say otherwise.
+A hidden New Quiz therefore needs `points_possible="0"` on every single question, not
+just `points: 0` in the frontmatter. `check_content` catches this.
+
+Available on `assignment` and `new_quiz` only.
+
+## Classic quizzes don't take `hide_in_gradebook`
+
+Same 0-points rule as above, and a classic quiz gets its points from its questions -
+so qualifying would mean making every question worth 0, which defeats the purpose of a
+graded quiz. The key is rejected rather than silently doing nothing.
+
+Use `quiz_type: practice_quiz` instead: practice quizzes and ungraded surveys never
+reach the gradebook at all. For a graded classic quiz that shouldn't count,
+`omit_from_final_grade` keeps the column but drops it from the final grade.
 
 ## New Quizzes are assignments
 

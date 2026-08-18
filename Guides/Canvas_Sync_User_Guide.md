@@ -303,11 +303,32 @@ If `preprocess` is not set to `true`, you manage dual-format content yourself us
       submission_types: [online_upload] # (optional: [online_upload, online_text_entry, online_url, media_recording, student_annotation, none, external_tool])
       allowed_extensions: [py, txt]     # (optional)
       omit_from_final_grade: true       # (optional, Default: false) — do not count towards final grade
+      hide_in_gradebook: true           # (optional, Default: false) — no gradebook column at all; requires points 0/unset
       indent: 1                       # (optional)
       group_assignment: true            # (optional, Default: false) — group submission
       group_set: "Project Groups"       # (optional) — name of an existing Canvas group set
     ---
     ```
+
+#### Keeping an Assignment Out of the Gradebook
+
+Two settings, doing different things:
+
+*   **`omit_from_final_grade: true`** — the column stays, the score doesn't count
+    towards the final grade.
+*   **`hide_in_gradebook: true`** — no column at all. Canvas is strict here: the
+    assignment must be worth **0 points** and be omitted from the final grade. The sync
+    sets `omit_from_final_grade` for you, but it cannot get around the points rule — with
+    points assigned it skips the setting, warns, and syncs the rest, leaving the
+    assignment visible.
+
+Both are source of truth: remove the key and the next sync puts things back.
+
+> [!NOTE]
+> `hide_in_gradebook` works on assignments and New Quizzes. A **classic quiz** doesn't
+> take it — its points come from its questions, so it can only be worth 0 if every
+> question is, which defeats the purpose. Use `quiz_type: practice_quiz` for a quiz that
+> shouldn't reach the gradebook at all.
 
 #### Group Assignments
 
@@ -590,8 +611,8 @@ Both JSON and QMD quizzes can target either the **Classic** or **New** quiz engi
 | Time limit unit | **Minutes** | **Seconds** |
 | Numeric & Formula questions | Not supported | ✅ Supported (QMD only) |
 | `quiz_type` setting | ✅ (practice, graded, survey) | Not applicable |
-| `omit_from_final_grade` | Not applicable | ✅ Supported |
-| `hide_in_gradebook` | Not applicable | ✅ Supported |
+| `omit_from_final_grade` | ✅ Graded quiz types only | ✅ Supported |
+| `hide_in_gradebook` | ❌ Not offered — points come from the questions, so a real quiz can't be worth 0 | ✅ Supported |
 | `score_to_keep` | Not applicable | ✅ `highest`, `latest`, `average`, `first` |
 | `shuffle_questions` | Not applicable | ✅ Supported |
 | `calculator_type` | Not applicable | ✅ `none`, `basic`, `scientific` |
@@ -629,8 +650,8 @@ Settings shared by both formats and both engines (specified in `canvas` frontmat
 | `instructions` | String | New Quizzes only: text shown to students before the quiz starts |
 | `grading_type` | String | New Quizzes only: `points` (default), `percentage`, `pass_fail`, `letter_grade`, `gpa_scale`, `not_graded` |
 | `shuffle_questions` | Boolean | New Quizzes only |
-| `omit_from_final_grade` | Boolean | New Quizzes only — do not count towards final grade |
-| `hide_in_gradebook` | Boolean | New Quizzes only — hide from gradebook (requires `omit_from_final_grade` and `points` must be 0 or unset) |
+| `omit_from_final_grade` | Boolean | Do not count towards final grade. On Classic it needs `quiz_type: assignment` or `graded_survey` — other types never reach the gradebook |
+| `hide_in_gradebook` | Boolean | New Quizzes only — hide from gradebook (requires `omit_from_final_grade` and `points` must be 0 or unset). Not possible on Classic |
 | `score_to_keep` | String | New Quizzes only: `highest`, `latest`, `average`, `first` (default: `highest`) |
 | `cooling_period_seconds` | Integer | New Quizzes only: wait time (seconds) between attempts |
 | `calculator_type` | String | New Quizzes only: `none`, `basic`, `scientific` |

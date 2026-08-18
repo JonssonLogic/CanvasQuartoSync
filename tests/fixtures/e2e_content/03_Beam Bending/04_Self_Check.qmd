@@ -1,0 +1,38 @@
+---
+canvas:
+  type: new_quiz
+  title: "Beam Bending Self-Check"
+  published: true
+  points: 0
+  hide_in_gradebook: true
+  allowed_attempts: -1
+  result_view:
+    restricted: false
+    show_correct_answers: true
+---
+
+<!--
+Covers hide_in_gradebook on a New Quiz. Canvas only permits it when the backing
+assignment is worth 0 points, so every question here must be points_possible="0"
+too: items sync *after* the hide is applied, and non-zero items would push the
+assignment's points above 0 behind our back.
+-->
+
+:::: {.question name="Self Check Neutral Axis" points_possible="0"}
+
+In pure bending, where does the bending stress equal zero?
+
+- [x] At the neutral axis
+  - Correct — stress grows linearly with distance from it.
+- [ ] At the top surface
+- [ ] At the bottom surface
+
+::::
+
+:::: {.question type="true_false_question" name="Self Check Practice Only" points_possible="0"}
+
+This self-check is for practice and is not recorded in the gradebook.
+
+- [x] True
+
+::::

@@ -3,6 +3,7 @@ canvas:
   title: "Syllabus & Statics Quiz"
   quiz_type: assignment
   published: true
+  omit_from_final_grade: true
   shuffle_answers: true
   show_correct_answers: true
   allowed_attempts: -1

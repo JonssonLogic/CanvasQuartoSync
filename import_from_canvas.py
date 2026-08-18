@@ -661,6 +661,7 @@ def generate_assignment_qmd(title: str, body_md: str, assignment, tz=None) -> st
     allowed_extensions = getattr(assignment, 'allowed_extensions', [])
     grading_type = getattr(assignment, 'grading_type', '') or ''
     omit_from_final_grade = getattr(assignment, 'omit_from_final_grade', False)
+    hide_in_gradebook = getattr(assignment, 'hide_in_gradebook', False)
 
     # Build canvas section
     canvas_lines = [
@@ -683,6 +684,8 @@ def generate_assignment_qmd(title: str, body_md: str, assignment, tz=None) -> st
         canvas_lines.append(f'  grading_type: {grading_type}')
     if omit_from_final_grade:
         canvas_lines.append(f'  omit_from_final_grade: true')
+    if hide_in_gradebook:
+        canvas_lines.append(f'  hide_in_gradebook: true')
 
     canvas_section = '\n'.join(canvas_lines)
 

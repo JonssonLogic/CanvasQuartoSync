@@ -44,7 +44,8 @@ _course_web_url = None
 _HUMAN_CHECKS = [
     "Course PM (PDF) opens and looks correct (LaTeX, math, tables)",
     "New Quizzes render in the New Quizzes UI (Beam Bending Concepts / "
-    "Calculations / Section Properties); numeric & formula questions show values",
+    "Calculations / Section Properties / Self-Check); numeric & formula "
+    "questions show values",
     "Overall branding / layout looks right",
 ]
 

@@ -39,6 +39,7 @@ Putting `title:` at the top level of a quiz file does **not** work - it is ignor
 | `submission_types` | list | `[online_upload]` | `online_upload`, `online_text_entry`, `online_url`, `media_recording`, `student_annotation`, `none`, `external_tool`, `on_paper` |
 | `allowed_extensions` | list | `[]` | Only with `online_upload`, e.g. `[pdf, zip]` |
 | `omit_from_final_grade` | bool | `false` | Graded but excluded from the final grade |
+| `hide_in_gradebook` | bool | `false` | No gradebook column at all. Canvas requires `points: 0` (or unset); the sync sets `omit_from_final_grade` for you. Removing the key puts the column back |
 | `group_assignment` | bool | `false` | Marks this as group work. Without `group_set`, the sync **prompts interactively** and writes your answer back into this file |
 | `group_set` | string | unset | Name of an existing Canvas group set. Must already exist in the course |
 
@@ -92,6 +93,9 @@ The file body is ignored entirely; only frontmatter is read.
 | `one_question_at_a_time` | bool | `false` | Show one question per screen |
 | `cant_go_back` | bool | `false` | No effect unless `one_question_at_a_time` is true |
 | `access_code` | string | unset | Password required to start |
+| `omit_from_final_grade` | bool | `false` | Excluded from the final grade. Needs `quiz_type: assignment` or `graded_survey` - other types never reach the gradebook |
+
+A classic quiz cannot be hidden from the gradebook; see [gotchas](gotchas.md).
 
 ## new_quiz (New Quizzes engine)
 
@@ -112,7 +116,7 @@ Classic-only and do nothing here.
 | `cooling_period_seconds` | int | unset | Enforced wait between attempts |
 | `grading_type` | string | `points` | Same values as assignments. Leave at `points` unless you have a reason - it is what makes autograding work |
 | `omit_from_final_grade` | bool | `false` | Excluded from the final grade |
-| `hide_in_gradebook` | bool | `false` | Hidden from the gradebook. Canvas requires `omit_from_final_grade: true` **and** points to be 0 or unset, or it rejects the update |
+| `hide_in_gradebook` | bool | `false` | Hidden from the gradebook. Canvas requires `omit_from_final_grade: true` **and** points to be 0 - which on a New Quiz includes every question needing `points_possible="0"`. See [gotchas](gotchas.md) |
 | `result_view` | block | unset | What students see after submitting; nested settings below |
 
 Nested under `result_view:` - `restricted` is the master switch; when it is `false`

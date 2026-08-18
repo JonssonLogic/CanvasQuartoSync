@@ -9,6 +9,7 @@ from handlers.base_handler import BaseHandler
 from handlers.content_utils import process_content, safe_delete_file, safe_delete_dir, get_mapped_id, save_mapped_id, parse_module_name
 from handlers.dates import resolve_timezone, to_canvas_iso
 from handlers.drift_detector import check_drift, store_canvas_hash
+from handlers.gradebook import resolve_gradebook_settings, needs_unhide
 from handlers.log import logger
 
 class AssignmentHandler(BaseHandler):
@@ -104,6 +105,15 @@ class AssignmentHandler(BaseHandler):
                 'omit_from_final_grade': omit_from_final_grade
             }
 
+            # Gradebook visibility. The default above keeps omit_from_final_grade
+            # source-of-truth (dropping the key turns it back off); the resolver
+            # overrides it when the file asks for it, or when hide_in_gradebook
+            # forces it on. See handlers/gradebook.py for what Canvas allows.
+            # Un-hiding needs the object we're about to edit, so it is merged in
+            # at each update site below.
+            assignment_args.update(resolve_gradebook_settings(
+                canvas_meta, points, label=filename))
+
             if group_category_id:
                 assignment_args['group_category_id'] = group_category_id
 
@@ -117,6 +127,8 @@ class AssignmentHandler(BaseHandler):
 
                 logger.info("    [yellow]Updating assignment:[/yellow] %s", title)
                 logger.debug("    Matched by cached ID: %s", assign_obj.id)
+                if needs_unhide(canvas_meta, getattr(assign_obj, 'hide_in_gradebook', False)):
+                    assignment_args['hide_in_gradebook'] = False
                 assign_obj.edit(assignment=assignment_args)
             else:
                 # Double check Title Search
@@ -130,6 +142,8 @@ class AssignmentHandler(BaseHandler):
                 if existing_item:
                     logger.info("    [yellow]Updating assignment:[/yellow] %s", title)
                     logger.debug("    Matched by title search (ID: %s)", existing_item.id)
+                    if needs_unhide(canvas_meta, getattr(existing_item, 'hide_in_gradebook', False)):
+                        assignment_args['hide_in_gradebook'] = False
                     existing_item.edit(assignment=assignment_args)
                     assign_obj = existing_item
                 else:

@@ -8,10 +8,11 @@ themed course (MECH201, Mechanics of Materials) that exercises:
   - Pages (markdown + HTML images, inline/display LaTeX, callouts, code,
     tables, cross-links, an unpublished + indented page)
   - Assignments (upload + text entry; due/unlock/lock dates; grading types;
-    omit_from_final_grade; a group-set assignment)
-  - Classic Quizzes (QMD with settings + essay; JSON with short-answer + essay)
+    omit_from_final_grade; hide_in_gradebook; a group-set assignment)
+  - Classic Quizzes (QMD with settings + essay + omit_from_final_grade on the
+    backing assignment; JSON with short-answer + essay)
   - New Quizzes (MC/multi/TF + result-view settings + omit_from_final_grade;
-    numeric + formula; JSON)
+    numeric + formula; JSON; a 0-point self-check with hide_in_gradebook)
   - SubHeaders, External links (indented, new_tab)
   - Study guide (preprocess, front_page, dual PDF output)
   - A solo file asset (CSV) uploaded as a module item
@@ -193,6 +194,12 @@ class TestAssignments:
         assert a.grading_type == "pass_fail"
         assert getattr(a, "omit_from_final_grade", False) is True
 
+    def test_reflection_hidden_from_gradebook(self, canvas_course):
+        """0 points + omitted, so Canvas accepts hiding it outright."""
+        a = _find(canvas_course.get_assignments(), lambda x: "Reflection" in (x.name or ""))
+        assert a is not None
+        assert getattr(a, "hide_in_gradebook", False) is True
+
     def test_group_project_uses_group_set(self, canvas_course):
         a = _find(canvas_course.get_assignments(), lambda x: "Group Design Project" in (x.name or ""))
         assert a is not None, "Group Design Project assignment not found"
@@ -211,6 +218,15 @@ class TestClassicQuizzes:
         assert len(list(q.get_questions())) == 4
         assert q.time_limit == 20
         assert q.allowed_attempts == -1
+
+    def test_syllabus_quiz_omit_from_final_grade(self, canvas_course):
+        """Classic quizzes keep this on their backing assignment, not the quiz."""
+        q = _find(canvas_course.get_quizzes(), lambda x: "Syllabus" in (x.title or ""))
+        assert q is not None
+        assignment_id = getattr(q, "assignment_id", None)
+        assert assignment_id, "A graded classic quiz should have a backing assignment"
+        a = canvas_course.get_assignment(assignment_id)
+        assert getattr(a, "omit_from_final_grade", False) is True
 
     def test_syllabus_quiz_has_essay_question(self, canvas_course):
         q = _find(canvas_course.get_quizzes(), lambda x: "Syllabus" in (x.title or ""))
@@ -260,6 +276,24 @@ class TestNewQuizzes:
         a = _find(canvas_course.get_assignments(), lambda x: "Section Properties" in (x.name or ""))
         assert a is not None, "New Quiz 'Section Properties (JSON New Quiz)' not found"
 
+    def test_self_check_hidden_from_gradebook(self, canvas_course):
+        """0-point New Quiz: Canvas accepts hiding its backing assignment."""
+        a = _find(canvas_course.get_assignments(), lambda x: "Self-Check" in (x.name or ""))
+        assert a is not None, "New Quiz 'Beam Bending Self-Check' not found"
+        assert getattr(a, "hide_in_gradebook", False) is True
+
+    def test_self_check_omit_auto_enabled(self, canvas_course):
+        """The file never says omit_from_final_grade; Canvas requires it with hide."""
+        a = _find(canvas_course.get_assignments(), lambda x: "Self-Check" in (x.name or ""))
+        assert a is not None
+        assert getattr(a, "omit_from_final_grade", False) is True
+
+    def test_self_check_stays_at_zero_points(self, canvas_course):
+        """Non-zero items would push points up and invalidate the hide."""
+        a = _find(canvas_course.get_assignments(), lambda x: "Self-Check" in (x.name or ""))
+        assert a is not None
+        assert (a.points_possible or 0) == 0
+
 
 # ---------------------------------------------------------------------------
 # Module items: counts, types, indent, ordering
@@ -276,7 +310,7 @@ class TestModuleItems:
 
     def test_beam_bending_item_count(self, synced_modules):
         items = list(synced_modules["Beam Bending"].get_module_items())
-        assert len(items) == 3, f"Expected 3 items, got {len(items)}: {[i.title for i in items]}"
+        assert len(items) == 4, f"Expected 4 items, got {len(items)}: {[i.title for i in items]}"
 
     def test_items_ordered_by_prefix(self, synced_modules):
         """Introduction items should follow NN_ filename order."""

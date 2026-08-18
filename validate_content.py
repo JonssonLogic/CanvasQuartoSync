@@ -111,6 +111,7 @@ CANVAS_SCHEMA = {
         "submission_types": Key("list", SUBMISSION_TYPES),
         "allowed_extensions": Key("list"),
         "omit_from_final_grade": Key("bool"),
+        "hide_in_gradebook": Key("bool"),
         "group_assignment": Key("bool"),
         "group_set": Key("str"),
     },
@@ -134,6 +135,7 @@ CANVAS_SCHEMA = {
         "description": Key("str"),
         "description_file": Key("str"),
         "show_correct_answers": Key("bool"),
+        "omit_from_final_grade": Key("bool"),
     },
     "new_quiz": {
         **_QUIZ_COMMON,
@@ -154,6 +156,21 @@ CANVAS_SCHEMA = {
 # Content types whose title comes from ``canvas.title`` rather than the
 # top-level frontmatter ``title:``.
 _CANVAS_TITLE_TYPES = ("quiz", "new_quiz")
+
+# Settings a type genuinely does not support, but that an author would
+# reasonably reach for. Saying why - and what to use instead - is worth more
+# than the generic "unknown setting" warning.
+UNSUPPORTED_KEYS = {
+    "quiz": {
+        "hide_in_gradebook": (
+            "not available on classic quizzes. Canvas only allows hiding something "
+            "worth 0 points, and a classic quiz takes its points from its questions - "
+            "so it would only qualify with every question worth 0. Use "
+            "'quiz_type: practice_quiz' for a quiz that should stay out of the "
+            "gradebook entirely, or switch to 'type: new_quiz'."
+        ),
+    },
+}
 
 QUESTION_TYPES = (
     "multiple_choice_question", "true_false_question", "short_answer_question",
@@ -373,6 +390,12 @@ def _check_keys(report, meta, schema, prefix="", tz=None):
         dotted = f"{prefix}{name}"
         key = schema.get(name)
         if key is None:
+            # A known-but-unsupported setting gets its own explanation instead of
+            # the generic warning, and only one message either way.
+            unsupported = {} if prefix else UNSUPPORTED_KEYS.get(report.kind, {})
+            if name in unsupported:
+                report.error(f"canvas.{dotted}: {unsupported[name]}")
+                continue
             suggestion = difflib.get_close_matches(name, list(schema), n=1)
             hint = f" Did you mean '{suggestion[0]}'?" if suggestion else ""
             report.warn(f"canvas.{dotted}: unknown setting - it will be ignored.{hint}")
@@ -497,6 +520,20 @@ def _check_quiz(report, file_path, kind, canvas_meta, raw_text=None):
     if not questions:
         report.error("quiz has no questions.")
         return
+
+    if kind == "new_quiz" and canvas_meta.get("hide_in_gradebook"):
+        # A New Quiz's gradebook points come from its items, not just the
+        # `points` key - and questions default to 1 point each. The hide is
+        # applied while the quiz is still empty, so Canvas accepts it and the
+        # items push the points up afterwards, leaving a state it would have
+        # refused outright.
+        item_points = sum(float(q.get("points_possible") or 0) for q in questions)
+        if item_points:
+            report.error(
+                f"hide_in_gradebook needs the quiz to be worth 0, but its questions "
+                f"total {item_points:g} points (each defaults to 1). Add "
+                f"points_possible=\"0\" to every question, or drop hide_in_gradebook."
+            )
 
     for i, q in enumerate(questions, start=1):
         label = q.get("question_name") or f"question {i}"
@@ -639,8 +676,16 @@ def validate_file(file_path, content_root=None, handlers=None):
 
         if canvas_meta.get("hide_in_gradebook") and canvas_meta.get("points"):
             report.error(
-                "hide_in_gradebook requires points to be 0 or unset - Canvas will "
-                "reject the update otherwise."
+                "hide_in_gradebook requires points to be 0 or unset - Canvas rejects "
+                "it otherwise, so the sync will skip the setting and leave this "
+                "visible in the gradebook."
+            )
+        if (report.kind == "quiz" and "omit_from_final_grade" in canvas_meta
+                and canvas_meta.get("quiz_type") not in ("assignment", "graded_survey")):
+            report.warn(
+                "omit_from_final_grade only applies to graded quizzes - practice "
+                "quizzes and ungraded surveys never reach the gradebook, so there is "
+                "nothing to omit. Set quiz_type: assignment or graded_survey."
             )
         if canvas_meta.get("cant_go_back") and not canvas_meta.get("one_question_at_a_time"):
             report.warn("cant_go_back has no effect without one_question_at_a_time: true.")

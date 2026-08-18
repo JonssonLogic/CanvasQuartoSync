@@ -10,6 +10,7 @@ canvas:
   grading_type: pass_fail
   submission_types: [online_text_entry]
   omit_from_final_grade: true
+  hide_in_gradebook: true
 ---
 
 # Weekly Reflection
@@ -17,5 +18,5 @@ canvas:
 Write a short reflection (200–300 words) on what you found most challenging in
 this week's material on stress and strain.
 
-This assignment is graded **complete/incomplete** and is **omitted from the
-final grade**.
+This assignment is graded **complete/incomplete**, is **omitted from the final
+grade**, and is **hidden from the gradebook** entirely.

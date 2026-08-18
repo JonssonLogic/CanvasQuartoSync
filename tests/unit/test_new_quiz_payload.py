@@ -311,14 +311,26 @@ class TestResultViewSettings:
 # Backing assignment settings (_update_backing_assignment)
 # ---------------------------------------------------------------------------
 
+def _backing(hidden_on_canvas=False):
+    """A mock course whose assignment reports a known hide_in_gradebook state.
+
+    Setting the attribute explicitly matters: on a bare MagicMock it would
+    auto-create as a truthy Mock, and the handler would read that as "Canvas has
+    this hidden" and fire an un-hide on every single call.
+    """
+    from unittest.mock import MagicMock
+    mock_course = MagicMock()
+    mock_assignment = MagicMock()
+    mock_assignment.hide_in_gradebook = hidden_on_canvas
+    mock_course.get_assignment.return_value = mock_assignment
+    return mock_course, mock_assignment
+
+
 class TestBackingAssignmentSettings:
 
     def test_grading_type_defaults_to_points(self):
         """grading_type defaults to 'points' for autograding support."""
-        from unittest.mock import MagicMock
-        mock_course = MagicMock()
-        mock_assignment = MagicMock()
-        mock_course.get_assignment.return_value = mock_assignment
+        mock_course, mock_assignment = _backing()
 
         handler._update_backing_assignment(mock_course, '123', {})
 
@@ -327,10 +339,7 @@ class TestBackingAssignmentSettings:
 
     def test_grading_type_custom_value(self):
         """User-specified grading_type overrides the default."""
-        from unittest.mock import MagicMock
-        mock_course = MagicMock()
-        mock_assignment = MagicMock()
-        mock_course.get_assignment.return_value = mock_assignment
+        mock_course, mock_assignment = _backing()
 
         handler._update_backing_assignment(mock_course, '123', {'grading_type': 'percentage'})
 
@@ -338,10 +347,7 @@ class TestBackingAssignmentSettings:
 
     def test_omit_from_final_grade(self):
         """omit_from_final_grade is applied to the backing assignment."""
-        from unittest.mock import MagicMock
-        mock_course = MagicMock()
-        mock_assignment = MagicMock()
-        mock_course.get_assignment.return_value = mock_assignment
+        mock_course, mock_assignment = _backing()
 
         handler._update_backing_assignment(mock_course, '123', {'omit_from_final_grade': True})
 
@@ -352,10 +358,7 @@ class TestBackingAssignmentSettings:
 
     def test_hide_in_gradebook_auto_enables_omit(self):
         """hide_in_gradebook: true auto-enables omit_from_final_grade."""
-        from unittest.mock import MagicMock
-        mock_course = MagicMock()
-        mock_assignment = MagicMock()
-        mock_course.get_assignment.return_value = mock_assignment
+        mock_course, mock_assignment = _backing()
 
         handler._update_backing_assignment(mock_course, '456', {'hide_in_gradebook': True})
 
@@ -367,10 +370,7 @@ class TestBackingAssignmentSettings:
 
     def test_hide_in_gradebook_false_not_sent(self):
         """hide_in_gradebook: false is NOT sent — Canvas rejects it."""
-        from unittest.mock import MagicMock
-        mock_course = MagicMock()
-        mock_assignment = MagicMock()
-        mock_course.get_assignment.return_value = mock_assignment
+        mock_course, mock_assignment = _backing()
 
         handler._update_backing_assignment(mock_course, '456', {'hide_in_gradebook': False})
 
@@ -380,10 +380,7 @@ class TestBackingAssignmentSettings:
 
     def test_both_settings_combined(self):
         """Both settings sent in a single edit call."""
-        from unittest.mock import MagicMock
-        mock_course = MagicMock()
-        mock_assignment = MagicMock()
-        mock_course.get_assignment.return_value = mock_assignment
+        mock_course, mock_assignment = _backing()
 
         handler._update_backing_assignment(mock_course, '789', {
             'omit_from_final_grade': True,
@@ -396,11 +393,12 @@ class TestBackingAssignmentSettings:
         assert settings['hide_in_gradebook'] is True
 
     def test_grading_type_always_triggers_api_call(self):
-        """grading_type is always sent, so API call always happens."""
-        from unittest.mock import MagicMock
-        mock_course = MagicMock()
-        mock_assignment = MagicMock()
-        mock_course.get_assignment.return_value = mock_assignment
+        """grading_type is always sent, so API call always happens.
+
+        Load-bearing: that call is also what repairs a backing assignment a
+        previous failed sync left in a state Canvas won't accept quiz updates for.
+        """
+        mock_course, mock_assignment = _backing()
 
         handler._update_backing_assignment(mock_course, '123', {'points': 10})
 
@@ -409,10 +407,7 @@ class TestBackingAssignmentSettings:
 
     def test_unrelated_meta_ignored(self):
         """Only assignment-level keys are picked up; quiz keys are ignored."""
-        from unittest.mock import MagicMock
-        mock_course = MagicMock()
-        mock_assignment = MagicMock()
-        mock_course.get_assignment.return_value = mock_assignment
+        mock_course, mock_assignment = _backing()
 
         handler._update_backing_assignment(mock_course, '123', {
             'shuffle_answers': True,
@@ -423,6 +418,69 @@ class TestBackingAssignmentSettings:
         assert settings['grading_type'] == 'points'
         assert settings['omit_from_final_grade'] is False
         assert 'shuffle_answers' not in settings
+
+    def test_hide_with_points_is_dropped(self):
+        """Points > 0: Canvas rejects the request, so the flag is left out.
+
+        Previously it was sent anyway and Canvas refused the whole call, taking
+        grading_type and omit_from_final_grade down with it.
+        """
+        mock_course, mock_assignment = _backing()
+
+        handler._update_backing_assignment(
+            mock_course, '123', {'hide_in_gradebook': True, 'points': 10})
+
+        mock_assignment.edit.assert_called_once_with(assignment={'grading_type': 'points'})
+
+    def test_hide_with_points_keeps_explicit_omit(self):
+        mock_course, mock_assignment = _backing()
+
+        handler._update_backing_assignment(mock_course, '123', {
+            'hide_in_gradebook': True,
+            'omit_from_final_grade': True,
+            'points': 10,
+        })
+
+        mock_assignment.edit.assert_called_once_with(assignment={
+            'grading_type': 'points', 'omit_from_final_grade': True})
+
+
+class TestBackingAssignmentUnhide:
+    """Dropping hide_in_gradebook from a file puts the column back."""
+
+    def test_unhides_when_canvas_has_it_hidden(self):
+        mock_course, mock_assignment = _backing(hidden_on_canvas=True)
+
+        handler._update_backing_assignment(mock_course, '123', {})
+
+        mock_assignment.edit.assert_called_once_with(assignment={
+            'grading_type': 'points', 'hide_in_gradebook': False})
+
+    def test_unhide_rides_along_with_the_other_settings(self):
+        """Canvas accepts an explicit false, so it needs no request of its own."""
+        mock_course, mock_assignment = _backing(hidden_on_canvas=True)
+
+        handler._update_backing_assignment(mock_course, '123', {'omit_from_final_grade': True})
+
+        mock_assignment.edit.assert_called_once_with(assignment={
+            'grading_type': 'points',
+            'omit_from_final_grade': True,
+            'hide_in_gradebook': False,
+        })
+
+    def test_no_unhide_when_still_requested(self):
+        mock_course, mock_assignment = _backing(hidden_on_canvas=True)
+
+        handler._update_backing_assignment(mock_course, '123', {'hide_in_gradebook': True})
+
+        assert mock_assignment.edit.call_args[1]['assignment']['hide_in_gradebook'] is True
+
+    def test_no_unhide_when_not_hidden(self):
+        mock_course, mock_assignment = _backing(hidden_on_canvas=False)
+
+        handler._update_backing_assignment(mock_course, '123', {})
+
+        mock_assignment.edit.assert_called_once_with(assignment={'grading_type': 'points'})
 
 
 # ---------------------------------------------------------------------------

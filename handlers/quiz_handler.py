@@ -327,6 +327,10 @@ class QuizHandler(BaseHandler):
                 except Exception as e:
                     logger.warning("    Final save failed: %s", e)
 
+            # 3c. Assignment-level settings, last: Canvas recomputes the backing
+            # assignment's points from the questions during the save above.
+            self._update_backing_assignment(course, quiz_obj, canvas_meta)
+
         # 4. Add to Module
         if module:
             return self.add_to_module(module, {
@@ -336,6 +340,51 @@ class QuizHandler(BaseHandler):
                 'published': published
             }, indent=indent)
 
+
+    def _update_backing_assignment(self, course, quiz_obj, canvas_meta):
+        """Apply omit_from_final_grade to the quiz's backing assignment.
+
+        Canvas keeps "do not count towards the final grade" on the assignment, not
+        the quiz, and the classic Quizzes API has no field for it — so it goes
+        through the Assignments API, the same way New Quizzes do it.
+
+        Only graded quizzes (``quiz_type: assignment`` or ``graded_survey``) have a
+        backing assignment; practice quizzes and ungraded surveys never reach the
+        gradebook at all, so there is nothing to omit. Canvas's own quiz→assignment
+        sync leaves this field alone, so what we set here survives later quiz saves.
+
+        ``hide_in_gradebook`` is deliberately *not* offered here. Canvas would
+        accept it on a quiz worth 0 points, but a classic quiz takes its points
+        from its questions, so a quiz with real content would need every question
+        worth 0 to qualify. validate_content.py explains that to authors.
+        """
+        assignment_id = getattr(quiz_obj, 'assignment_id', None)
+        if not assignment_id:
+            # On a first sync the local object predates Canvas creating the
+            # assignment, so re-read the quiz before concluding there is none.
+            try:
+                assignment_id = getattr(course.get_quiz(quiz_obj.id), 'assignment_id', None)
+            except Exception as e:
+                logger.debug("    Could not re-read quiz for its backing assignment: %s", e)
+
+        if not assignment_id:
+            if 'omit_from_final_grade' in canvas_meta:
+                logger.warning(
+                    "    [yellow]omit_from_final_grade needs a graded quiz.[/yellow] "
+                    "This quiz has no gradebook entry to omit, so the setting was ignored "
+                    "(set quiz_type: assignment or graded_survey).")
+            return
+
+        # Sent unconditionally so that dropping the key turns it back off, the
+        # same source-of-truth rule the rest of the sync follows.
+        try:
+            assignment = course.get_assignment(int(assignment_id))
+            assignment.edit(assignment={
+                'omit_from_final_grade': bool(canvas_meta.get('omit_from_final_grade', False))
+            })
+            logger.debug("    Updated backing assignment: omit_from_final_grade")
+        except Exception as e:
+            logger.warning("    Failed to update backing assignment settings: %s", e)
 
     def _render_qmd_questions(self, questions_data, base_path, course, content_root):
         """

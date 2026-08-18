@@ -228,5 +228,6 @@ answers, per-answer feedback, numeric, or formula questions - use `.qmd` for tho
 | `time_limit` unit | minutes | **seconds** |
 | Numeric / formula questions | not supported | supported |
 | `quiz_type`, `description_file`, `show_correct_answers` | supported | ignored |
-| `points`, `shuffle_questions`, `score_to_keep`, `result_view`, `hide_in_gradebook`, `omit_from_final_grade`, `calculator_type`, `cooling_period_seconds` | ignored | supported |
+| `points`, `shuffle_questions`, `score_to_keep`, `result_view`, `hide_in_gradebook`, `calculator_type`, `cooling_period_seconds` | ignored | supported |
+| `omit_from_final_grade` | graded quiz types only | supported |
 | Updating after students have submitted | needs a manual "Save It Now" click in Canvas | updates directly |

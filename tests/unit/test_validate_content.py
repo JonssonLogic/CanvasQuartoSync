@@ -128,6 +128,68 @@ class TestFrontmatter:
                       ":::: {.question name=\"A\"}\nT\n\n- [x] Yes\n::::\n")
         assert "hide_in_gradebook" in _errors(validate_file(path, str(tmp_path)))
 
+    def test_assignment_hide_in_gradebook_with_points_is_an_error(self, tmp_path):
+        path = _write(tmp_path, "01_A.qmd",
+                      "---\ntitle: A\ncanvas:\n  type: assignment\n  points: 5\n"
+                      "  hide_in_gradebook: true\n---\n")
+        assert "hide_in_gradebook" in _errors(validate_file(path, str(tmp_path)))
+
+    def test_assignment_hide_in_gradebook_with_zero_points_is_fine(self, tmp_path):
+        path = _write(tmp_path, "01_A.qmd",
+                      "---\ntitle: A\ncanvas:\n  type: assignment\n  points: 0\n"
+                      "  omit_from_final_grade: true\n  hide_in_gradebook: true\n---\n")
+        assert not validate_file(path, str(tmp_path)).issues
+
+    def test_classic_quiz_hide_in_gradebook_is_an_error(self, tmp_path):
+        """Not supported there, and the message has to say what to use instead."""
+        path = _write(tmp_path, "01_Q.qmd",
+                      "---\ncanvas:\n  type: quiz\n  title: Q\n  hide_in_gradebook: true\n---\n"
+                      ":::: {.question name=\"A\"}\nT\n\n- [x] Yes\n::::\n")
+        report = validate_file(path, str(tmp_path))
+        assert "practice_quiz" in _errors(report)
+        # Exactly one message: the generic "unknown setting" warning must not
+        # fire alongside the specific explanation.
+        assert len([i for i in report.issues if "hide_in_gradebook" in i.message]) == 1
+
+    def test_classic_quiz_omit_on_practice_quiz_warns(self, tmp_path):
+        path = _write(tmp_path, "01_Q.qmd",
+                      "---\ncanvas:\n  type: quiz\n  title: Q\n"
+                      "  omit_from_final_grade: true\n---\n"
+                      ":::: {.question name=\"A\"}\nT\n\n- [x] Yes\n::::\n")
+        report = validate_file(path, str(tmp_path))
+        assert "omit_from_final_grade" in _messages(report)
+        assert not report.errors
+
+    def test_classic_quiz_omit_on_graded_quiz_is_fine(self, tmp_path):
+        path = _write(tmp_path, "01_Q.qmd",
+                      "---\ncanvas:\n  type: quiz\n  title: Q\n  quiz_type: assignment\n"
+                      "  omit_from_final_grade: true\n---\n"
+                      ":::: {.question name=\"A\"}\nT\n\n- [x] Yes\n::::\n")
+        assert not validate_file(path, str(tmp_path)).issues
+
+    def test_new_quiz_hide_with_scoring_questions_is_an_error(self, tmp_path):
+        """Item points count too — and they default to 1 when unstated."""
+        path = _write(tmp_path, "01_Q.qmd",
+                      "---\ncanvas:\n  type: new_quiz\n  title: Q\n"
+                      "  hide_in_gradebook: true\n---\n"
+                      ":::: {.question name=\"A\"}\nT\n\n- [x] Yes\n::::\n")
+        errors = _errors(validate_file(path, str(tmp_path)))
+        assert "total 1 points" in errors, errors
+
+    def test_new_quiz_hide_with_zero_point_questions_is_fine(self, tmp_path):
+        path = _write(tmp_path, "01_Q.qmd",
+                      "---\ncanvas:\n  type: new_quiz\n  title: Q\n  points: 0\n"
+                      "  hide_in_gradebook: true\n---\n"
+                      ":::: {.question name=\"A\" points_possible=\"0\"}\n"
+                      "T\n\n- [x] Yes\n::::\n")
+        assert not validate_file(path, str(tmp_path)).issues
+
+    def test_new_quiz_without_hide_ignores_item_points(self, tmp_path):
+        path = _write(tmp_path, "01_Q.qmd",
+                      "---\ncanvas:\n  type: new_quiz\n  title: Q\n---\n"
+                      ":::: {.question name=\"A\"}\nT\n\n- [x] Yes\n::::\n")
+        assert not validate_file(path, str(tmp_path)).issues
+
     def test_nested_result_view_keys_checked(self, tmp_path):
         path = _write(tmp_path, "01_Q.qmd",
                       "---\ncanvas:\n  type: new_quiz\n  title: Q\n  result_view:\n"
