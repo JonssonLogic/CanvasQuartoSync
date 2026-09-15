@@ -157,9 +157,15 @@ export default function MarkdownRenderer({ content, imageMap, onCommentClick }: 
             <mark className="comment-highlight" data-comment-id={commentId}
               data-comment-last={props['data-comment-last']}
               onClick={(e) => {
+                // Inside a link a left click stays the link's; right-click opens the comment
+                if ((e.currentTarget as HTMLElement).closest('a')) return;
                 e.stopPropagation();
-                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                onCommentClick(commentId, rect);
+                onCommentClick(commentId, (e.currentTarget as HTMLElement).getBoundingClientRect());
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onCommentClick(commentId, (e.currentTarget as HTMLElement).getBoundingClientRect());
               }}>
               {displayContent}
             </mark>

@@ -6,6 +6,8 @@ import RawSourceView from './components/RawSourceView';
 import CommentInput from './components/CommentInput';
 import CommentPopup from './components/CommentPopup';
 import CommentPanel from './components/CommentPanel';
+import CommentContextMenu from './components/CommentContextMenu';
+import type { Comment } from './types/comments';
 import { preprocessQmd } from './preprocessing/qmdPreprocess';
 import { findRenderedTextInSource } from './preprocessing/commentParser';
 import './styles/markdown.css';
@@ -311,6 +313,28 @@ export default function App() {
   const cancelCommentInput = useCallback(() => setCommentInput(null), []);
   const closeCommentPopup = useCallback(() => setCommentPopup(null), []);
 
+  // Right-click menu on a comment panel entry
+  const [panelMenu, setPanelMenu] = useState<{
+    comment: Comment;
+    position: { top: number; left: number };
+  } | null>(null);
+  const closePanelMenu = useCallback(() => setPanelMenu(null), []);
+
+  const handleEntryContextMenu = useCallback((comment: Comment, x: number, y: number) => {
+    const root = rootRef.current;
+    if (!root) return;
+    const rootRect = root.getBoundingClientRect();
+    setCommentPopup(null);
+    setPanelMenu({
+      comment,
+      position: {
+        top: y - rootRect.top,
+        // Keep the menu (~170px) inside the panel's right edge
+        left: Math.max(8, Math.min(x - rootRect.left, root.clientWidth - 178)),
+      },
+    });
+  }, []);
+
   // Handle clicking a comment highlight in the rendered view
   const handleCommentClick = useCallback((commentId: string, rect: DOMRect) => {
     setCommentPopup({ commentId, position: positionBelow(rect, false) });
@@ -393,9 +417,23 @@ export default function App() {
             comments={comments}
             onScrollTo={handleScrollToComment}
             onDelete={deleteComment}
+            onEntryContextMenu={handleEntryContextMenu}
           />
         )}
       </div>
+
+      {panelMenu && (
+        <CommentContextMenu
+          position={panelMenu.position}
+          onClose={closePanelMenu}
+          items={[
+            ...(panelMenu.comment.orphaned
+              ? []
+              : [{ label: 'Go to comment', onSelect: () => handleScrollToComment(panelMenu.comment.id) }]),
+            { label: 'Delete comment', danger: true, onSelect: () => deleteComment(panelMenu.comment.id) },
+          ]}
+        />
+      )}
 
       {/* "+ Comment" button (floating near selection) */}
       {addCommentBtn && showComments && !showRawSource && (

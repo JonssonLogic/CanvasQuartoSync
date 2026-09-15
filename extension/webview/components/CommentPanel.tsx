@@ -4,9 +4,16 @@ interface Props {
   comments: Comment[];
   onScrollTo: (commentId: string) => void;
   onDelete: (id: string) => void;
+  /** Right-click on an entry, with the pointer's viewport coordinates */
+  onEntryContextMenu: (comment: Comment, x: number, y: number) => void;
 }
 
-export default function CommentPanel({ comments, onScrollTo, onDelete }: Props) {
+export default function CommentPanel({ comments, onScrollTo, onDelete, onEntryContextMenu }: Props) {
+  const contextMenu = (c: Comment) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    onEntryContextMenu(c, e.clientX, e.clientY);
+  };
+
   if (comments.length === 0) {
     return (
       <aside className="comment-panel">
@@ -30,6 +37,7 @@ export default function CommentPanel({ comments, onScrollTo, onDelete }: Props) 
             key={c.id}
             className="comment-panel-entry"
             onClick={() => onScrollTo(c.id)}
+            onContextMenu={contextMenu(c)}
           >
             <div className="comment-panel-target">
               &ldquo;{c.targetText.length > 50 ? c.targetText.slice(0, 50) + '...' : c.targetText}&rdquo;
@@ -45,7 +53,7 @@ export default function CommentPanel({ comments, onScrollTo, onDelete }: Props) 
           <>
             <div className="comment-panel-orphaned-header">Orphaned</div>
             {orphaned.map(c => (
-              <div key={c.id} className="comment-panel-entry comment-panel-entry-orphaned">
+              <div key={c.id} className="comment-panel-entry comment-panel-entry-orphaned" onContextMenu={contextMenu(c)}>
                 <div className="comment-panel-target">
                   &ldquo;{c.targetText.length > 50 ? c.targetText.slice(0, 50) + '...' : c.targetText}&rdquo;
                 </div>

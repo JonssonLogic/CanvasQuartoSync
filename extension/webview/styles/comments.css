@@ -239,6 +239,47 @@
   font-size: 0.7rem;
 }
 
+/* ─── Right-click menu ────────────────────────────────────────────── */
+
+.comment-context-menu {
+  position: absolute;
+  z-index: 300;
+  min-width: 170px;
+  padding: 4px 0;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  font-family: var(--font-heading);
+  font-size: 0.8rem;
+}
+
+.comment-context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 14px;
+  border: none;
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.comment-context-menu-item:hover,
+.comment-context-menu-item:focus-visible {
+  background: var(--color-surface);
+  outline: none;
+}
+
+.comment-context-menu-danger {
+  color: var(--color-accent);
+}
+
+.comment-context-menu-danger:hover {
+  background: var(--color-accent-soft);
+}
+
 /* ─── Comment panel sidebar ───────────────────────────────────────── */
 
 .comment-panel {
