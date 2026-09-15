@@ -352,7 +352,17 @@ export function anchorComments(
   const sections = buildSectionMap(cleanContent);
 
   return comments.map((comment) => {
-    const resolved = { ...comment, orphaned: false, _offset: undefined as number | undefined };
+    const resolved = {
+      ...comment,
+      orphaned: false,
+      _offset: undefined as number | undefined,
+      _end: undefined as number | undefined,
+    };
+    const exact = (offset: number) => {
+      resolved._offset = offset;
+      resolved._end = offset + comment.targetText.length;
+      return resolved;
+    };
 
     // Layer 1: Full path — section → paragraph (by index) → target
     const section = sections.find((s) => s.path === comment.section);
@@ -360,10 +370,7 @@ export function anchorComments(
       const para = section.paragraphs[comment.paragraph - 1];
       if (para) {
         const absIdx = findTargetInPara(cleanContent, para, comment.targetText, comment.targetOffsetInPara);
-        if (absIdx !== -1) {
-          resolved._offset = absIdx;
-          return resolved;
-        }
+        if (absIdx !== -1) return exact(absIdx);
       }
 
       // Layer 1.5: Paragraph fingerprint (paraStart) — handles shifted paragraph indices
@@ -374,28 +381,19 @@ export function anchorComments(
         );
         if (fingerprintPara) {
           const absIdx = findTargetInPara(cleanContent, fingerprintPara, comment.targetText, comment.targetOffsetInPara);
-          if (absIdx !== -1) {
-            resolved._offset = absIdx;
-            return resolved;
-          }
+          if (absIdx !== -1) return exact(absIdx);
         }
       }
 
       // Layer 2: Section + target (paragraph index may be wrong)
       const sectionContent = cleanContent.slice(section.start, section.end);
       const targetIdx = sectionContent.indexOf(comment.targetText);
-      if (targetIdx !== -1) {
-        resolved._offset = section.start + targetIdx;
-        return resolved;
-      }
+      if (targetIdx !== -1) return exact(section.start + targetIdx);
     }
 
     // Layer 3: Global target + context
     const globalMatches = findAllOccurrences(cleanContent, comment.targetText);
-    if (globalMatches.length === 1) {
-      resolved._offset = globalMatches[0];
-      return resolved;
-    }
+    if (globalMatches.length === 1) return exact(globalMatches[0]);
     if (globalMatches.length > 1) {
       // Use context to disambiguate
       const contextStr = comment.contextBefore + comment.targetText + comment.contextAfter;
@@ -404,12 +402,22 @@ export function anchorComments(
         const end = Math.min(cleanContent.length, offset + comment.targetText.length + comment.contextAfter.length + 10);
         const window = cleanContent.slice(start, end);
         if (window.includes(contextStr) || window.includes(comment.contextBefore.slice(-30) + comment.targetText)) {
-          resolved._offset = offset;
-          return resolved;
+          return exact(offset);
         }
       }
       // Fallback: take first match
-      resolved._offset = globalMatches[0];
+      return exact(globalMatches[0]);
+    }
+
+    // Layer 3.25: Target saved as rendered text, e.g. "Across the layers," for
+    // `**Across the layers**,` or a selection spanning table cells. Match it
+    // against the source with markdown syntax projected out.
+    const para = section?.paragraphs[comment.paragraph - 1];
+    const approx = para ? para.start + (comment.targetOffsetInPara ?? 0) : section?.start ?? -1;
+    const span = findRenderedTextInSource(comment.targetText, cleanContent, approx);
+    if (span) {
+      resolved._offset = span.start;
+      resolved._end = span.end;
       return resolved;
     }
 
@@ -518,36 +526,281 @@ function findAllOccurrences(text: string, search: string): number[] {
   return results;
 }
 
+// ─── Source Projection ───────────────────────────────────────────────
+//
+// A selection in the rendered view rarely matches the markdown source
+// verbatim: `**Across the layers**,` renders as "Across the layers,", and a
+// selection across table cells skips `](url) |`. The projection is the source
+// with markdown syntax removed and whitespace collapsed, keeping for every
+// projected character its offset in the source. Rendered text is matched
+// against the projection, and highlights are injected only around the
+// visible runs of a source span so no <mark> ever straddles syntax.
+
+const SYNTAX = 0;   // not rendered as text: `**`, `[`, `](url)`, tags, attrs
+const VISIBLE = 1;  // rendered as text
+const SEPARATOR = 2; // not rendered, but separates words: `|`, list markers, fence lines
+
+export interface SourceProjection {
+  /** Source with syntax removed and whitespace collapsed to single spaces */
+  text: string;
+  /** text[i] comes from content[map[i]] */
+  map: number[];
+  kind: Uint8Array;
+  /** 1 where a <mark> can't be injected (inside code blocks, display math) */
+  noInject: Uint8Array;
+  /** For characters of an atomic inline (code span, inline math): the atom's [start, end) */
+  atomStart: Int32Array;
+  atomEnd: Int32Array;
+}
+
+let projectionCache: { content: string; projection: SourceProjection } | null = null;
+
+export function buildSourceProjection(content: string): SourceProjection {
+  if (projectionCache?.content === content) return projectionCache.projection;
+
+  const n = content.length;
+  const kind = new Uint8Array(n).fill(VISIBLE);
+  const noInject = new Uint8Array(n);
+  const atomStart = new Int32Array(n).fill(-1);
+  const atomEnd = new Int32Array(n).fill(-1);
+  // Classified by an earlier pass; later passes leave these alone
+  const locked = new Uint8Array(n);
+
+  const set = (s: number, e: number, k: number) => {
+    for (let i = s; i < e; i++) if (!locked[i]) kind[i] = k;
+  };
+  const lock = (s: number, e: number) => locked.fill(1, s, e);
+  const each = (re: RegExp, fn: (m: RegExpExecArray, s: number, e: number) => void) => {
+    let m;
+    while ((m = re.exec(content)) !== null) {
+      if (m[0].length === 0) { re.lastIndex++; continue; }
+      if (locked[m.index]) continue;
+      fn(m, m.index, m.index + m[0].length);
+    }
+  };
+
+  // Never rendered: front matter, HTML comments, shortcodes
+  each(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(?=\r?\n|$)/g, (_, s, e) => { set(s, e, SEPARATOR); lock(s, e); });
+  each(/<!--[\s\S]*?-->/g, (_, s, e) => { set(s, e, SEPARATOR); lock(s, e); });
+  each(/\{\{<[\s\S]*?>\}\}/g, (_, s, e) => { set(s, e, SEPARATOR); lock(s, e); });
+
+  // Fenced code: executable chunks are stripped from the preview; other code
+  // is shown but can't hold a <mark> (it would render as literal text)
+  each(/^([ \t]*)(`{3,}|~{3,})([^\n]*)\n([\s\S]*?)^[ \t]*\2[ \t]*$/gm, (m, s, e) => {
+    if (m[3].trim().startsWith('{')) {
+      set(s, e, SEPARATOR);
+    } else {
+      const bodyStart = s + m[1].length + m[2].length + m[3].length + 1;
+      const bodyEnd = bodyStart + m[4].length;
+      set(s, bodyStart, SEPARATOR);
+      set(bodyEnd, e, SEPARATOR);
+      noInject.fill(1, bodyStart, bodyEnd);
+    }
+    lock(s, e);
+  });
+
+  // Code spans: backticks are syntax, the span is highlighted as a whole
+  each(/(`+)[^`\n]+?\1/g, (m, s, e) => {
+    set(s, s + m[1].length, SYNTAX);
+    set(e - m[1].length, e, SYNTAX);
+    atomStart.fill(s, s, e);
+    atomEnd.fill(e, s, e);
+    lock(s, e);
+  });
+
+  // Math stays in its $…$ source form (selections are converted back to LaTeX)
+  each(/\$\$[\s\S]+?\$\$/g, (_, s, e) => { noInject.fill(1, s, e); lock(s, e); });
+  // Pandoc rules: no space after the opening $, none before the closing $, no digit after it
+  each(/(?<![\\$])\$(?![$\s])(?:[^$\n]*?[^$\s\\])?\$(?![$\d])/g, (_, s, e) => {
+    atomStart.fill(s, s, e);
+    atomEnd.fill(e, s, e);
+    lock(s, e);
+  });
+
+  // Block syntax at line starts
+  each(/^[ \t]*:::.*$/gm, (_, s, e) => set(s, e, SEPARATOR));
+  each(/^[ \t]*\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)+\|?[ \t]*$/gm, (_, s, e) => set(s, e, SEPARATOR));
+  each(/^:[ \t]+\{[^}\n]*\}[ \t]*$/gm, (_, s, e) => set(s, e, SEPARATOR));
+  each(/^(?:[ \t]*>[ \t]?)*[ \t]*(?:#{1,6}[ \t]+|[-*+][ \t]+|\d+[.)][ \t]+|:[ \t]+)?/gm, (_, s, e) => set(s, e, SEPARATOR));
+
+  // Table cell separators
+  each(/^[ \t]*\|.*$/gm, (_, s, e) => {
+    for (let i = s; i < e; i++) {
+      if (content[i] === '|' && content[i - 1] !== '\\') set(i, i + 1, SEPARATOR);
+    }
+  });
+
+  // Links and images: `[`/`![` and `](url){attrs}` are syntax, the text is shown
+  each(/(!?\[)((?:[^[\]\n]|\[[^\]\n]*\])*)(\]\([^)\n]*\)(?:\{[^}\n]*\})?)/g, (m, s, e) => {
+    set(s, s + m[1].length, SYNTAX);
+    set(s + m[1].length + m[2].length, e, SYNTAX);
+  });
+
+  // Inline HTML tags and Pandoc attribute blocks
+  each(/<\/?[a-zA-Z][^<>\n]*>/g, (_, s, e) => set(s, e, SYNTAX));
+  each(/\{[#.][^}\n]*\}|(?<=[\])])\{[^}\n]*\}/g, (_, s, e) => set(s, e, SYNTAX));
+
+  // Backslash escapes: the backslash is syntax, the escaped character is text
+  each(/\\[!-/:-@[-`{-~]/g, (_, s) => { set(s, s + 1, SYNTAX); lock(s + 1, s + 2); });
+
+  // Emphasis and strikethrough; `_` only at word boundaries (snake_case is text)
+  each(/\*+|~~/g, (_, s, e) => set(s, e, SYNTAX));
+  each(/_+/g, (_, s, e) => {
+    const wordChar = /[\p{L}\p{N}]/u;
+    if (!wordChar.test(content[s - 1] ?? ' ') || !wordChar.test(content[e] ?? ' ')) set(s, e, SYNTAX);
+  });
+
+  const chars: string[] = [];
+  const map: number[] = [];
+  let pendingSpace = false;
+  for (let i = 0; i < n; i++) {
+    const k = kind[i];
+    if (k === SYNTAX) continue;
+    if (k === SEPARATOR || /\s/.test(content[i])) {
+      if (chars.length) pendingSpace = true;
+      continue;
+    }
+    if (pendingSpace) {
+      chars.push(' ');
+      map.push(i);
+      pendingSpace = false;
+    }
+    chars.push(content[i]);
+    map.push(i);
+  }
+
+  const projection = { text: chars.join(''), map, kind, noInject, atomStart, atomEnd };
+  projectionCache = { content, projection };
+  return projection;
+}
+
+/**
+ * Find rendered text (as selected in the preview) in the markdown source.
+ * Returns the source span [start, end), widened to whole code spans / inline
+ * math, using the occurrence nearest `approxOffset` when there are several.
+ */
+export function findRenderedTextInSource(
+  text: string,
+  content: string,
+  approxOffset = -1
+): { start: number; end: number } | null {
+  const needle = text.replace(/\s+/g, ' ').trim();
+  if (!needle) return null;
+  const p = buildSourceProjection(content);
+
+  let best: { start: number; end: number } | null = null;
+  let bestDist = Infinity;
+  let pos = 0;
+  while (true) {
+    const idx = p.text.indexOf(needle, pos);
+    if (idx === -1) break;
+    let start = p.map[idx];
+    let end = p.map[idx + needle.length - 1] + 1;
+    if (p.atomStart[start] !== -1) start = p.atomStart[start];
+    if (p.atomEnd[end - 1] !== -1) end = p.atomEnd[end - 1];
+    const dist = approxOffset < 0 ? 0 : Math.abs(start - approxOffset);
+    if (dist < bestDist) {
+      best = { start, end };
+      bestDist = dist;
+      if (approxOffset < 0) break;
+    }
+    pos = idx + 1;
+  }
+  return best;
+}
+
+/** The visible runs of a source span, each safe to wrap in its own <mark>. */
+function highlightSegments(
+  p: SourceProjection,
+  content: string,
+  start: number,
+  end: number
+): [number, number][] {
+  const segments: [number, number][] = [];
+  let segStart = -1;
+  let segEnd = -1;
+  const flush = () => {
+    if (segStart !== -1) {
+      while (segStart < segEnd && /\s/.test(content[segStart])) segStart++;
+      while (segEnd > segStart && /\s/.test(content[segEnd - 1])) segEnd--;
+      if (segEnd > segStart) segments.push([segStart, segEnd]);
+    }
+    segStart = -1;
+  };
+
+  let i = start;
+  while (i < end) {
+    if (p.atomStart[i] !== -1) {
+      // Code span / inline math: take it whole
+      if (segStart === -1) segStart = p.atomStart[i];
+      segEnd = p.atomEnd[i];
+      i = segEnd;
+      continue;
+    }
+    const ch = content[i];
+    if (p.kind[i] !== VISIBLE || p.noInject[i] || ch === '\n' || ch === '\r') {
+      flush();
+    } else {
+      if (segStart === -1) segStart = i;
+      segEnd = i + 1;
+    }
+    i++;
+  }
+  flush();
+  return segments;
+}
+
 // ─── Highlight Injection ─────────────────────────────────────────────
 
 /**
  * Inject <mark> tags into clean markdown content for each anchored comment.
- * Comments must have been processed by `anchorComments` first.
+ * Comments must have been processed by `anchorComments` first. A comment whose
+ * target spans markdown syntax gets one <mark> per visible run; the last one
+ * carries `data-comment-last` for the indicator dot.
  */
 export function injectCommentHighlights(
   cleanContent: string,
   comments: Comment[]
 ): string {
-  // Filter to non-orphaned comments with resolved offsets, sort by offset descending
-  // (inject from end to start so offsets remain valid)
+  const p = buildSourceProjection(cleanContent);
   const anchored = comments
     .filter((c) => !c.orphaned && c._offset !== undefined)
-    .sort((a, b) => (b._offset ?? 0) - (a._offset ?? 0));
+    .sort((a, b) => a._offset! - b._offset!);
 
-  let result = cleanContent;
+  const inserts: { pos: number; close: boolean; text: string }[] = [];
+  let taken = 0; // end of the last highlighted span — overlapping marks would nest wrongly
 
   for (const c of anchored) {
-    const offset = c._offset!;
-    const end = offset + c.targetText.length;
+    const start = c._offset!;
+    let end = c._end;
+    if (end === undefined) {
+      // Offset without a known span (normalized fallback): only highlight an exact match
+      if (cleanContent.slice(start, start + c.targetText.length) !== c.targetText) continue;
+      end = start + c.targetText.length;
+    }
+    if (end > cleanContent.length || end <= start) continue;
 
-    // Verify the text at this offset still matches
-    if (result.slice(offset, end) !== c.targetText) continue;
+    const segments = highlightSegments(p, cleanContent, start, end);
+    if (segments.length === 0 || segments[0][0] < taken) continue;
+    taken = segments[segments.length - 1][1];
 
-    const before = result.slice(0, offset);
-    const after = result.slice(end);
-    const tag = `<mark class="comment-highlight" data-comment-id="${c.id}">${c.targetText}</mark>`;
-    result = before + tag + after;
+    segments.forEach(([s, e], i) => {
+      const last = i === segments.length - 1 ? ' data-comment-last="true"' : '';
+      inserts.push({ pos: s, close: false, text: `<mark class="comment-highlight" data-comment-id="${c.id}"${last}>` });
+      inserts.push({ pos: e, close: true, text: '</mark>' });
+    });
   }
+
+  // At a shared position, close the previous mark before opening the next
+  inserts.sort((a, b) => a.pos - b.pos || Number(b.close) - Number(a.close));
+
+  let result = '';
+  let prev = 0;
+  for (const ins of inserts) {
+    result += cleanContent.slice(prev, ins.pos) + ins.text;
+    prev = ins.pos;
+  }
+  result += cleanContent.slice(prev);
 
   return result;
 }

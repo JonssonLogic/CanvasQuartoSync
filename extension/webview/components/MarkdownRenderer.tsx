@@ -152,14 +152,16 @@ export default function MarkdownRenderer({ content, imageMap, onCommentClick }: 
             ? <span dangerouslySetInnerHTML={{ __html: renderInlineMath(textContent) }} />
             : children;
           return (
+            // The indicator dot is a CSS ::after on the last segment, so it stays out of
+            // text selections and can't wrap onto its own line
             <mark className="comment-highlight" data-comment-id={commentId}
+              data-comment-last={props['data-comment-last']}
               onClick={(e) => {
                 e.stopPropagation();
                 const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                 onCommentClick(commentId, rect);
               }}>
               {displayContent}
-              <span className="comment-indicator" />
             </mark>
           );
         }

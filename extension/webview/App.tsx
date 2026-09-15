@@ -7,6 +7,7 @@ import CommentInput from './components/CommentInput';
 import CommentPopup from './components/CommentPopup';
 import CommentPanel from './components/CommentPanel';
 import { preprocessQmd } from './preprocessing/qmdPreprocess';
+import { findRenderedTextInSource } from './preprocessing/commentParser';
 import './styles/markdown.css';
 import './styles/comments.css';
 
@@ -77,16 +78,6 @@ function extractSourceTextFromRange(range: Range): string {
   }
 }
 
-/** Try to find text in markdown source — exact first, then whitespace-normalized. */
-function findInContent(text: string, content: string): number {
-  if (!text) return -1;
-  const direct = content.indexOf(text);
-  if (direct !== -1) return direct;
-  const norm = text.replace(/\s+/g, ' ').trim();
-  const normContent = content.replace(/\s+/g, ' ');
-  return normContent.indexOf(norm);
-}
-
 /**
  * Find an approximate source offset by walking up the DOM to the nearest block
  * element and matching its first plain-text words (skipping KaTeX MathML).
@@ -120,7 +111,7 @@ function findOffsetFromDOMRange(range: Range, cleanContent: string): number {
 
   const probe = parts.join('').trim().slice(0, 30);
   if (probe.length < 3) return -1;
-  return cleanContent.indexOf(probe);
+  return findRenderedTextInSource(probe, cleanContent)?.start ?? -1;
 }
 
 /**
@@ -156,44 +147,6 @@ function estimateSelectionOffsetInBlock(range: Range): number {
     node = walker.nextNode();
   }
   return count;
-}
-
-/**
- * Return true if `offset` falls inside an inline math expression ($...$) in `content`.
- * Counts unescaped single-$ delimiters before the offset; odd count means we're inside math.
- * $$ pairs are skipped (display math) so they don't affect the inline count.
- */
-function isOffsetInsideInlineMath(content: string, offset: number): boolean {
-  let count = 0;
-  let i = 0;
-  while (i < offset) {
-    if (content[i] === '$') {
-      if (content[i + 1] === '$') {
-        i += 2; // skip display math delimiter pair — doesn't affect inline count
-        continue;
-      }
-      if (i === 0 || content[i - 1] !== '\\') {
-        count++;
-      }
-    }
-    i++;
-  }
-  return count % 2 === 1;
-}
-
-/** Among all occurrences of `text` in `content`, return the index nearest to `approxOffset`. */
-function findClosestOccurrence(text: string, content: string, approxOffset: number): number {
-  let pos = 0;
-  let bestIdx = -1;
-  let bestDist = Infinity;
-  while (true) {
-    const idx = content.indexOf(text, pos);
-    if (idx === -1) break;
-    const dist = Math.abs(idx - approxOffset);
-    if (dist < bestDist) { bestDist = dist; bestIdx = idx; }
-    pos = idx + 1;
-  }
-  return bestIdx;
 }
 
 // ── App Component ────────────────────────────────────────────────────
@@ -297,48 +250,43 @@ export default function App() {
     if (!addCommentBtn) return;
     const { targetText, position } = addCommentBtn;
 
+    const range = savedRangeRef.current;
     let offset = -1;
     let resolvedTarget = targetText;
 
-    // Strategy 1: exact + whitespace-normalized match, with DOM disambiguation for
-    // repeated targets (findInContent always returns the first hit, but the user may
-    // have selected a later occurrence in the same paragraph).
-    // If the hit lands inside a $...$ expression, discard it — Strategy 2 will extract
-    // the full LaTeX source form and find the correct $...$ boundary.
-    offset = findInContent(targetText, cleanContent);
-    if (offset !== -1 && savedRangeRef.current) {
-      const blockOffset = findOffsetFromDOMRange(savedRangeRef.current, cleanContent);
-      if (blockOffset !== -1) {
-        const approxOffset = blockOffset + estimateSelectionOffsetInBlock(savedRangeRef.current);
-        const closest = findClosestOccurrence(targetText, cleanContent, approxOffset);
-        if (closest !== -1) offset = closest;
-      }
-    }
-    if (offset !== -1 && isOffsetInsideInlineMath(cleanContent, offset)) {
-      offset = -1; // let Strategy 2 expand to the full $...$ expression
+    // Where in the source the selection roughly is, to pick between repeated occurrences
+    let approxOffset = -1;
+    if (range) {
+      const blockOffset = findOffsetFromDOMRange(range, cleanContent);
+      if (blockOffset !== -1) approxOffset = blockOffset + estimateSelectionOffsetInBlock(range);
     }
 
-    // Strategy 2: replace KaTeX rendering with LaTeX source, strip images
-    if (offset === -1 && savedRangeRef.current) {
-      const sourceText = extractSourceTextFromRange(savedRangeRef.current);
-      if (sourceText && sourceText !== targetText) {
-        offset = findInContent(sourceText, cleanContent);
-        if (offset !== -1) resolvedTarget = sourceText;
-      }
+    // Strategy 1: match the rendered text against the source with markdown syntax
+    // projected out, so selections across **bold**, links and table cells resolve
+    // to their real source span. Try the LaTeX form first when the selection
+    // touches KaTeX (it only differs from the plain text then).
+    const candidates: string[] = [];
+    if (range) {
+      const sourceText = extractSourceTextFromRange(range);
+      if (sourceText && sourceText !== targetText) candidates.push(sourceText);
     }
+    candidates.push(targetText);
+    // Strategy 2: first non-empty line only (a multi-block selection can't be one span)
+    const firstLine = targetText.split('\n').find(l => l.trim())?.trim() ?? '';
+    if (firstLine && firstLine !== targetText) candidates.push(firstLine);
 
-    // Strategy 3: first non-empty line only (handles multi-item lists, table rows)
-    if (offset === -1) {
-      const firstLine = targetText.split('\n').find(l => l.trim())?.trim() ?? '';
-      if (firstLine && firstLine !== targetText) {
-        offset = findInContent(firstLine, cleanContent);
-        if (offset !== -1) resolvedTarget = firstLine;
+    for (const candidate of candidates) {
+      const span = findRenderedTextInSource(candidate, cleanContent, approxOffset);
+      if (span) {
+        offset = span.start;
+        resolvedTarget = cleanContent.slice(span.start, span.end);
+        break;
       }
     }
 
-    // Strategy 4: DOM position fallback — anchor to surrounding paragraph
-    if (offset === -1 && savedRangeRef.current) {
-      offset = findOffsetFromDOMRange(savedRangeRef.current, cleanContent);
+    // Strategy 3: DOM position fallback — anchor to surrounding paragraph
+    if (offset === -1 && range) {
+      offset = findOffsetFromDOMRange(range, cleanContent);
       if (offset !== -1) resolvedTarget = targetText.slice(0, 60).trim();
     }
 
@@ -370,13 +318,14 @@ export default function App() {
 
   // Scroll to a comment from the panel
   const handleScrollToComment = useCallback((commentId: string) => {
-    const el = document.querySelector(`[data-comment-id="${commentId}"]`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // Flash the highlight
+    // A highlight spanning markdown syntax is split into several <mark> segments
+    const segments = document.querySelectorAll(`[data-comment-id="${commentId}"]`);
+    if (segments.length === 0) return;
+    segments[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    segments.forEach(el => {
       el.classList.add('comment-highlight-flash');
       setTimeout(() => el.classList.remove('comment-highlight-flash'), 1500);
-    }
+    });
   }, []);
 
   const activeComment = commentPopup

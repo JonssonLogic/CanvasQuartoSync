@@ -15,4 +15,7 @@ export interface Comment {
   orphaned?: boolean;
   /** Resolved character offset in clean content (set by anchorComments) */
   _offset?: number;
+  /** End of the resolved source span; differs from _offset + targetText.length
+   *  when the target was stored as rendered text (set by anchorComments) */
+  _end?: number;
 }

@@ -46,6 +46,7 @@
 /* ─── Comment highlights ──────────────────────────────────────────── */
 
 .comment-highlight {
+  color: inherit; /* keep link and heading colours */
   background: rgba(255, 220, 80, 0.3);
   border-bottom: 2px solid rgba(220, 180, 40, 0.6);
   border-radius: 2px;
@@ -67,15 +68,13 @@
   25%, 75% { background: rgba(255, 180, 0, 0.6); }
 }
 
-.comment-indicator {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  background: var(--color-accent);
-  border-radius: 50%;
-  margin-left: 2px;
+.comment-highlight[data-comment-last]::after {
+  content: '\2022';
+  color: var(--color-accent);
+  font-size: 1.1em;
+  line-height: 0;
   vertical-align: super;
-  font-size: 0;
+  margin-left: 1px;
 }
 
 /* ─── Add Comment button ──────────────────────────────────────────── */
