@@ -361,6 +361,11 @@ body {
 /* ─── Footnotes ─────────────────────────────────────────────────── */
 .markdown-body .footnotes { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--color-border); font-size: 0.85rem; color: var(--color-text-secondary); }
 
+/* ─── Definition lists ──────────────────────────────────────────── */
+.markdown-body dl { margin-bottom: 1.25rem; }
+.markdown-body dt { font-family: var(--font-heading); font-weight: 700; margin-top: 0.75rem; }
+.markdown-body dd { margin-left: 1.5rem; padding-left: 0.75rem; border-left: 2px solid var(--color-border); color: var(--color-text-secondary); }
+
 /* ─── Bibliography ──────────────────────────────────────────────── */
 .markdown-body .citation-link { color: var(--brand-primary); text-decoration: none; font-weight: 500; }
 .markdown-body .citation-link:hover { text-decoration: underline; }
@@ -390,3 +395,65 @@ body {
   font-weight: bold;
   color: var(--brand-heading);
 }
+
+/* ─── Raw source view (from MDViewer; always dark) ─────────────── */
+.raw-source-view {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: 1.5rem 2rem 5rem;
+}
+
+.raw-source-pre {
+  background: #282c34;
+  color: #abb2bf;
+  border-radius: var(--radius);
+  padding: 0.75rem 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  line-height: 1.7;
+  tab-size: 4;
+}
+
+.raw-source-table { border-collapse: collapse; width: 100%; }
+.raw-source-table tr:hover { background: rgba(255,255,255,0.03); }
+
+td.raw-line-number {
+  width: 3.5rem;
+  min-width: 3.5rem;
+  padding: 0 1rem 0 1.25rem;
+  text-align: right;
+  color: #5c6370;
+  user-select: none;
+  vertical-align: top;
+  white-space: nowrap;
+  border-right: 1px solid rgba(255,255,255,0.08);
+}
+
+td.raw-line-content {
+  padding: 0 1.25rem;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: #abb2bf;
+  vertical-align: top;
+}
+
+.syn-heading       { color: #e06c75; font-weight: 700; }
+.syn-yaml-fence    { color: #c678dd; }
+.syn-yaml-key      { color: #e06c75; }
+.syn-yaml-val      { color: #98c379; }
+.syn-code-fence    { color: #c678dd; }
+.syn-code-lang     { color: #e5c07b; font-weight: 600; }
+.syn-bold          { color: #d19a66; font-weight: 700; }
+.syn-italic        { color: #d19a66; font-style: italic; }
+.syn-link-text     { color: #61afef; }
+.syn-link-url      { color: #56b6c2; }
+.syn-image         { color: #c678dd; }
+.syn-table-pipe    { color: #636d83; }
+.syn-html          { color: #e06c75; }
+.syn-comment       { color: #5c6370; font-style: italic; }
+.syn-callout       { color: #c678dd; font-weight: 600; }
+.syn-inline-code   { color: #98c379; }
+.syn-math          { color: #56b6c2; }
+.syn-shortcode     { color: #e5c07b; }
+.syn-citation      { color: #61afef; font-weight: 500; }

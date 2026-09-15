@@ -73,9 +73,9 @@ export function openPreviewPanel(
       }
       // Save comments back to the .qmd file
       if (msg.type === 'saveComment' && msg.content && currentFilePath) {
-        const uri = vscode.Uri.file(currentFilePath);
-        const encoder = new TextEncoder();
-        vscode.workspace.fs.writeFile(uri, encoder.encode(msg.content));
+        saveCommentContent(currentFilePath, msg.content).catch((err) => {
+          vscode.window.showErrorMessage(`Could not save comment: ${err}`);
+        });
       }
     },
     undefined,
@@ -130,6 +130,23 @@ export function openPreviewPanel(
     editDisposable.dispose();
     if (editTimer) clearTimeout(editTimer);
   });
+}
+
+// Write through the TextDocument rather than to disk: a disk write under an
+// editor with unsaved changes never reaches the buffer, so the next preview
+// update (read from the buffer) would drop the comment again.
+async function saveCommentContent(filePath: string, content: string): Promise<void> {
+  const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+  if (doc.getText() === content) return;
+
+  const wasDirty = doc.isDirty;
+  const edit = new vscode.WorkspaceEdit();
+  edit.replace(doc.uri, new vscode.Range(0, 0, doc.lineCount, 0), content);
+  if (!(await vscode.workspace.applyEdit(edit))) {
+    throw new Error('the edit was rejected');
+  }
+  // Leave the user's own unsaved edits for them to save
+  if (!wasDirty) await doc.save();
 }
 
 function sendContent(

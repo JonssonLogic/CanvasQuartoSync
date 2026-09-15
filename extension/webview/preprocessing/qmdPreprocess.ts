@@ -3,7 +3,19 @@
  * Strips YAML, converts fenced divs, tabsets, shortcodes, cross-refs, bib.
  */
 
+import katex from 'katex';
 import { processCitations, generateBibliography, type BibEntry } from './bibParser';
+
+/** Render inline math ($...$) in a plain text string to KaTeX HTML. */
+function renderInlineMath(text: string): string {
+  return text.replace(/\$(?!\$)([^$\n]+)\$(?!\$)/g, (_, math) => {
+    try {
+      return katex.renderToString(math, { throwOnError: false });
+    } catch {
+      return `$${math}$`;
+    }
+  });
+}
 
 interface ParsedAttrs {
   attrs: Record<string, string>;
@@ -96,7 +108,7 @@ export function preprocessQmd(content: string, bibEntries?: BibEntry[]): string 
       const effectiveAlt = figCaption ? '' : imgAlt;
       let html = `<img src="${src}" alt="${effectiveAlt}"${buildHtmlAttrs(parsed)} />`;
       if (figCaption) {
-        html = `\n<figure>${html}<figcaption>${figCaption}</figcaption></figure>\n`;
+        html = `\n<figure>${html}<figcaption>${renderInlineMath(figCaption)}</figcaption></figure>\n`;
       }
       return html;
     }
@@ -205,7 +217,7 @@ export function preprocessQmd(content: string, bibEntries?: BibEntry[]): string 
   result = result.replace(
     /^!\[([^\]]*@[^\]]*)\]\(([^)]+)\)\s*$/gm,
     (_match, alt: string, src: string) => {
-      return `\n<figure><img src="${src}" alt="" /><figcaption>${alt}</figcaption></figure>\n`;
+      return `\n<figure><img src="${src}" alt="" /><figcaption>${renderInlineMath(alt)}</figcaption></figure>\n`;
     }
   );
 

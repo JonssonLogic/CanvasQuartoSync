@@ -1,11 +1,12 @@
-import React, { useMemo, useEffect, useState, useCallback, useRef } from 'react';
+import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import { useFileContent } from './hooks/useFileContent';
 import { useComments } from './hooks/useComments';
 import MarkdownRenderer, { setVsCodeApi } from './components/MarkdownRenderer';
+import RawSourceView from './components/RawSourceView';
 import CommentInput from './components/CommentInput';
+import CommentPopup from './components/CommentPopup';
+import CommentPanel from './components/CommentPanel';
 import { preprocessQmd } from './preprocessing/qmdPreprocess';
-import { extractComments } from './preprocessing/commentParser';
-import type { Comment } from './preprocessing/commentParser';
 import './styles/markdown.css';
 import './styles/comments.css';
 
@@ -13,143 +14,209 @@ declare function acquireVsCodeApi(): { postMessage(msg: any): void };
 const vscode = acquireVsCodeApi();
 setVsCodeApi(vscode);
 
-// ── DOM-based comment highlighting ───────────────────────────────────
-// After React renders, walk text nodes to find each comment's targetText
-// and wrap matches in <mark> elements with click handlers.
+// ── Comment selection helpers (ported from MDViewer's App.tsx) ────────
 
-function highlightCommentsInDom(
-  container: HTMLElement,
-  comments: Comment[],
-  onClick: (id: string, rect: DOMRect) => void
-) {
-  // Remove existing highlights first
-  container.querySelectorAll('mark.comment-highlight').forEach((mark) => {
-    const parent = mark.parentNode;
-    if (parent) {
-      parent.replaceChild(document.createTextNode(mark.textContent ?? ''), mark);
-      parent.normalize();
+/** Walk up the live DOM from `node` to find the nearest .katex ancestor, or null. */
+function findKatexAncestor(node: Node): Element | null {
+  let n: Node | null = node;
+  while (n) {
+    if (n.nodeType === Node.ELEMENT_NODE && (n as Element).classList?.contains('katex')) {
+      return n as Element;
     }
-  });
-
-  for (const comment of comments) {
-    if (!comment.targetText || comment.orphaned) continue;
-
-    const target = comment.targetText;
-    let found = false;
-
-    // Strategy 1: Find in a single text node (works for plain text)
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-    while (walker.nextNode()) {
-      const textNode = walker.currentNode as Text;
-      const text = textNode.textContent ?? '';
-      const idx = text.indexOf(target);
-      if (idx === -1) continue;
-
-      const before = text.slice(0, idx);
-      const match = text.slice(idx, idx + target.length);
-      const after = text.slice(idx + target.length);
-
-      const mark = document.createElement('mark');
-      mark.className = 'comment-highlight';
-      mark.dataset.commentId = comment.id;
-      mark.textContent = match;
-      mark.title = comment.body;
-      mark.addEventListener('click', (e) => {
-        e.stopPropagation();
-        onClick(comment.id, mark.getBoundingClientRect());
-      });
-
-      const parent = textNode.parentNode!;
-      if (after) parent.insertBefore(document.createTextNode(after), textNode.nextSibling);
-      parent.insertBefore(mark, textNode.nextSibling);
-      if (before) {
-        textNode.textContent = before;
-      } else {
-        parent.removeChild(textNode);
-      }
-      found = true;
-      break;
-    }
-
-  }
-}
-
-// ── KaTeX / non-text selection helpers ──────────────────────────────
-
-function findKatexAncestor(node: Node | null): Element | null {
-  let cur = node instanceof Element ? node : node?.parentElement ?? null;
-  while (cur) {
-    if (cur.classList?.contains('katex')) return cur;
-    cur = cur.parentElement;
+    n = n.parentNode;
   }
   return null;
 }
 
 /**
- * Given a DOM Range, return plain text suitable for searching in the markdown
- * source. KaTeX elements are replaced with their LaTeX source; images are dropped.
+ * Extract source-faithful text from a DOM range by replacing KaTeX with its
+ * original LaTeX source (from the MathML annotation) and stripping images.
  */
 function extractSourceTextFromRange(range: Range): string {
-  const frag = range.cloneContents();
-  // Replace each KaTeX root with its LaTeX annotation
-  frag.querySelectorAll('.katex').forEach((el) => {
-    const annotation = el.querySelector('annotation[encoding="application/x-tex"]');
-    const latex = annotation?.textContent?.trim() ?? '';
-    // Wrap in $ or $$ depending on whether it was a display equation
-    const isDisplay = el.closest('.katex-display') !== null;
-    const replacement = document.createTextNode(isDisplay ? `$$${latex}$$` : `$${latex}$`);
-    el.parentNode?.replaceChild(replacement, el);
-  });
-  // Drop images
-  frag.querySelectorAll('img').forEach((img) => img.remove());
-  return frag.textContent?.trim() ?? '';
+  try {
+    const fragment = range.cloneContents();
+    const katexEls = fragment.querySelectorAll('.katex');
+
+    if (katexEls.length === 0) {
+      // Selection is entirely within a .katex element — cloneContents() yields only
+      // a partial .katex-html subtree with no .katex root. Walk up the live DOM instead.
+      const liveKatex = findKatexAncestor(range.startContainer);
+      if (liveKatex) {
+        const annotation = liveKatex.querySelector('annotation[encoding="application/x-tex"]');
+        if (annotation?.textContent) {
+          const delim = liveKatex.parentElement?.classList.contains('katex-display') ? '$$' : '$';
+          return `${delim}${annotation.textContent}${delim}`;
+        }
+      }
+    } else {
+      katexEls.forEach(el => {
+        let annotation = el.querySelector('annotation[encoding="application/x-tex"]');
+        let isDisplay = el.parentElement?.classList.contains('katex-display') ?? false;
+
+        // If the annotation is absent, the selection started inside this .katex element
+        // (so .katex-mathml was excluded from the clone). Retrieve it from the live DOM.
+        if (!annotation) {
+          const liveKatex = findKatexAncestor(range.startContainer);
+          if (liveKatex) {
+            annotation = liveKatex.querySelector('annotation[encoding="application/x-tex"]');
+            isDisplay = liveKatex.parentElement?.classList.contains('katex-display') ?? false;
+          }
+        }
+
+        if (annotation?.textContent) {
+          const delim = isDisplay ? '$$' : '$';
+          el.replaceWith(`${delim}${annotation.textContent}${delim}`);
+        }
+      });
+    }
+
+    fragment.querySelectorAll('img').forEach(el => el.remove());
+    return (fragment.textContent ?? '').trim();
+  } catch {
+    return '';
+  }
+}
+
+/** Try to find text in markdown source — exact first, then whitespace-normalized. */
+function findInContent(text: string, content: string): number {
+  if (!text) return -1;
+  const direct = content.indexOf(text);
+  if (direct !== -1) return direct;
+  const norm = text.replace(/\s+/g, ' ').trim();
+  const normContent = content.replace(/\s+/g, ' ');
+  return normContent.indexOf(norm);
 }
 
 /**
- * Fallback: walk up to nearest block-level ancestor, take its first ~30 chars
- * of plain text (skipping math markup), and find that anchor in the source.
+ * Find an approximate source offset by walking up the DOM to the nearest block
+ * element and matching its first plain-text words (skipping KaTeX MathML).
  */
 function findOffsetFromDOMRange(range: Range, cleanContent: string): number {
-  const blockTags = new Set(['P', 'LI', 'TD', 'TH', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'DIV']);
-  let el: Element | null = range.startContainer instanceof Element
-    ? range.startContainer
-    : range.startContainer.parentElement;
+  const startNode = range.startContainer;
+  let el: Element | null = startNode.nodeType === Node.TEXT_NODE
+    ? startNode.parentElement
+    : startNode as Element;
+
+  const blockTags = new Set(['P', 'LI', 'TD', 'TH', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE']);
   while (el && !blockTags.has(el.tagName)) el = el.parentElement;
-  if (!el) return 0;
+  if (!el) return -1;
 
-  // Get plain text of the block, skipping .katex-mathml spans
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
-    acceptNode(node) {
-      return node.parentElement?.closest('.katex-mathml')
-        ? NodeFilter.FILTER_REJECT
-        : NodeFilter.FILTER_ACCEPT;
-    },
-  });
-  let blockText = '';
-  while (walker.nextNode()) blockText += (walker.currentNode as Text).textContent;
-  const anchor = blockText.trim().slice(0, 30);
-  if (!anchor) return 0;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const parts: string[] = [];
+  let node = walker.nextNode();
+  while (node) {
+    let p: Element | null = node.parentElement;
+    let skip = false;
+    while (p && p !== el) {
+      if (p.classList?.contains('katex-mathml')) { skip = true; break; }
+      p = p.parentElement;
+    }
+    if (!skip && node.textContent?.trim()) {
+      parts.push(node.textContent);
+      if (parts.join('').trim().length >= 30) break;
+    }
+    node = walker.nextNode();
+  }
 
-  const idx = cleanContent.indexOf(anchor);
-  return idx === -1 ? 0 : idx;
+  const probe = parts.join('').trim().slice(0, 30);
+  if (probe.length < 3) return -1;
+  return cleanContent.indexOf(probe);
+}
+
+/**
+ * Count visible text characters from the start of the nearest block element to
+ * range.startContainer[startOffset]. Used to rank duplicate-word occurrences by
+ * how close they are to the actual selection position.
+ */
+function estimateSelectionOffsetInBlock(range: Range): number {
+  const startNode = range.startContainer;
+  let blockEl: Element | null = startNode.nodeType === Node.TEXT_NODE
+    ? startNode.parentElement
+    : startNode as Element;
+
+  const blockTags = new Set(['P', 'LI', 'TD', 'TH', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE']);
+  while (blockEl && !blockTags.has(blockEl.tagName)) blockEl = blockEl.parentElement;
+  if (!blockEl) return 0;
+
+  const walker = document.createTreeWalker(blockEl, NodeFilter.SHOW_TEXT);
+  let count = 0;
+  let node = walker.nextNode();
+  while (node) {
+    if (node === startNode) {
+      count += range.startOffset;
+      break;
+    }
+    let p: Element | null = node.parentElement;
+    let skip = false;
+    while (p && p !== blockEl) {
+      if (p.classList?.contains('katex-mathml')) { skip = true; break; }
+      p = p.parentElement;
+    }
+    if (!skip) count += node.textContent?.length ?? 0;
+    node = walker.nextNode();
+  }
+  return count;
+}
+
+/**
+ * Return true if `offset` falls inside an inline math expression ($...$) in `content`.
+ * Counts unescaped single-$ delimiters before the offset; odd count means we're inside math.
+ * $$ pairs are skipped (display math) so they don't affect the inline count.
+ */
+function isOffsetInsideInlineMath(content: string, offset: number): boolean {
+  let count = 0;
+  let i = 0;
+  while (i < offset) {
+    if (content[i] === '$') {
+      if (content[i + 1] === '$') {
+        i += 2; // skip display math delimiter pair — doesn't affect inline count
+        continue;
+      }
+      if (i === 0 || content[i - 1] !== '\\') {
+        count++;
+      }
+    }
+    i++;
+  }
+  return count % 2 === 1;
+}
+
+/** Among all occurrences of `text` in `content`, return the index nearest to `approxOffset`. */
+function findClosestOccurrence(text: string, content: string, approxOffset: number): number {
+  let pos = 0;
+  let bestIdx = -1;
+  let bestDist = Infinity;
+  while (true) {
+    const idx = content.indexOf(text, pos);
+    if (idx === -1) break;
+    const dist = Math.abs(idx - approxOffset);
+    if (dist < bestDist) { bestDist = dist; bestIdx = idx; }
+    pos = idx + 1;
+  }
+  return bestIdx;
 }
 
 // ── App Component ────────────────────────────────────────────────────
 
 export default function App() {
   const fileContent = useFileContent();
-  const { comments, addComment, editComment, deleteComment } = useComments(
-    fileContent?.content ?? '', vscode
-  );
-  const contentRef = useRef<HTMLDivElement>(null);
+  const {
+    comments,
+    showComments,
+    cleanContent,
+    displayContent,
+    addComment,
+    editComment,
+    deleteComment,
+    toggleShowComments,
+  } = useComments(fileContent?.content ?? '', vscode);
+
+  const rootRef = useRef<HTMLDivElement>(null);
   const savedRangeRef = useRef<Range | null>(null);
 
-  // Strip comment block before preprocessing for display
-  const processed = useMemo(() => {
-    if (!fileContent) return '';
-    const { cleanContent } = extractComments(fileContent.content);
-    return preprocessQmd(cleanContent);
-  }, [fileContent?.content]);
+  // displayContent is the comment-stripped source, with <mark> highlights
+  // injected when comments are visible
+  const processed = useMemo(() => preprocessQmd(displayContent), [displayContent]);
 
   // Signal ready
   useEffect(() => {
@@ -160,171 +227,161 @@ export default function App() {
   // --- Raw source toggle ---
   const [showRawSource, setShowRawSource] = useState(false);
 
+  // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'u') {
-        e.preventDefault();
-        setShowRawSource(prev => !prev);
-      }
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key === 'u') { e.preventDefault(); setShowRawSource(prev => !prev); }
+      if (mod && e.key === 'm') { e.preventDefault(); toggleShowComments(); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [toggleShowComments]);
 
   // --- Comment UI state ---
-  const [showComments, setShowComments] = useState(true);
-  const [selection, setSelection] = useState<{
-    text: string; offset: number; rect: { top: number; left: number };
+  const [commentPopup, setCommentPopup] = useState<{
+    commentId: string;
+    position: { top: number; left: number };
   } | null>(null);
+
   const [commentInput, setCommentInput] = useState<{
-    top: number; left: number;
+    targetText: string;
+    charOffset: number;
+    position: { top: number; left: number };
   } | null>(null);
-  const [viewingComment, setViewingComment] = useState<{
-    comment: Comment; rect: { top: number; left: number };
+
+  const [addCommentBtn, setAddCommentBtn] = useState<{
+    position: { top: number; left: number };
+    targetText: string;
   } | null>(null);
-  const [editText, setEditText] = useState('');
 
-  // Highlight comments in the DOM after rendering
-  const showCommentPopup = useCallback((commentId: string, rect: DOMRect) => {
-    const comment = comments.find(c => c.id === commentId);
-    if (comment) {
-      setEditText(comment.body);
-      setViewingComment({
-        comment,
-        rect: { top: rect.bottom + window.scrollY + 4, left: rect.left },
-      });
-    }
-  }, [comments]);
-
-  // Store latest comments/callback in refs so the MutationObserver always uses current values
-  const commentsRef = useRef(comments);
-  commentsRef.current = comments;
-  const showCommentsRef = useRef(showComments);
-  showCommentsRef.current = showComments;
-  const popupRef = useRef(showCommentPopup);
-  popupRef.current = showCommentPopup;
-
-  // Apply/remove highlights after React renders
-  const suppressObserver = useRef(false);
-
-  useEffect(() => {
-    if (!contentRef.current) return;
-
-    const removeHighlights = () => {
-      if (!contentRef.current) return;
-      suppressObserver.current = true;
-      contentRef.current.querySelectorAll('mark.comment-highlight').forEach((mark) => {
-        const parent = mark.parentNode;
-        if (parent) {
-          parent.replaceChild(document.createTextNode(mark.textContent ?? ''), mark);
-          parent.normalize();
-        }
-      });
-      suppressObserver.current = false;
+  /** Convert a viewport rect to a position inside the (position: relative) root. */
+  const positionBelow = useCallback((rect: DOMRect, centered: boolean) => {
+    const root = rootRef.current;
+    if (!root) return { top: rect.bottom + 4, left: rect.left };
+    const rootRect = root.getBoundingClientRect();
+    const left = rect.left - rootRect.left + (centered ? rect.width / 2 : 0);
+    // Keep popups (max 340px wide) inside a narrow preview panel
+    const maxLeft = Math.max(8, root.clientWidth - (centered ? 60 : 350));
+    return {
+      top: rect.bottom - rootRect.top + 4,
+      left: Math.min(Math.max(8, left), maxLeft),
     };
+  }, []);
 
-    const applyHighlights = () => {
-      if (!contentRef.current || !showCommentsRef.current || commentsRef.current.length === 0) return;
-      suppressObserver.current = true;
-      highlightCommentsInDom(contentRef.current, commentsRef.current, popupRef.current);
-      suppressObserver.current = false;
-    };
-
-    if (!showComments) {
-      removeHighlights();
-      return;
-    }
-
-    // Initial apply after render settles
-    const timer = setTimeout(applyHighlights, 150);
-
-    // Re-apply when React replaces DOM children (e.g. after content update)
-    const observer = new MutationObserver(() => {
-      if (suppressObserver.current) return;
-      if (contentRef.current &&
-          !contentRef.current.querySelector('mark.comment-highlight') &&
-          commentsRef.current.length > 0 && showCommentsRef.current) {
-        setTimeout(applyHighlights, 150);
-      }
-    });
-    observer.observe(contentRef.current, { childList: true, subtree: true });
-
-    return () => { clearTimeout(timer); observer.disconnect(); };
-  }, [processed, comments, showComments]);
-
-  // Show "Add comment" button when text is selected
-  const handleMouseUp = useCallback((e: React.MouseEvent | MouseEvent) => {
-    // Don't clear selection if clicking on the "Add comment" button or comment popup
-    const target = e.target as HTMLElement;
-    if (target.closest('.add-comment-btn') || target.closest('.comment-input-popup') || target.closest('.comment-popup')) {
+  // Handle text selection → show "+ Comment" button
+  const handleMouseUp = useCallback(() => {
+    if (!showComments || showRawSource) {
+      setAddCommentBtn(null);
       return;
     }
 
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-      setSelection(null);
+      // Small delay before hiding to allow clicking the button
+      setTimeout(() => setAddCommentBtn(null), 200);
       return;
     }
 
-    const rawText = sel.toString().trim();
-    if (!rawText) { setSelection(null); return; }
-
+    const text = sel.toString().trim();
     const range = sel.getRangeAt(0);
     savedRangeRef.current = range.cloneRange();
-    const rect = range.getBoundingClientRect();
+    setAddCommentBtn({
+      position: positionBelow(range.getBoundingClientRect(), true),
+      targetText: text,
+    });
+  }, [showComments, showRawSource, positionBelow]);
 
-    const { cleanContent } = extractComments(fileContent?.content ?? '');
-    let targetText = rawText;
+  // When "+ Comment" button is clicked
+  const handleAddCommentClick = useCallback(() => {
+    if (!addCommentBtn) return;
+    const { targetText, position } = addCommentBtn;
+
     let offset = -1;
+    let resolvedTarget = targetText;
 
-    // Strategy 1: exact match in source
-    offset = cleanContent.indexOf(rawText);
+    // Strategy 1: exact + whitespace-normalized match, with DOM disambiguation for
+    // repeated targets (findInContent always returns the first hit, but the user may
+    // have selected a later occurrence in the same paragraph).
+    // If the hit lands inside a $...$ expression, discard it — Strategy 2 will extract
+    // the full LaTeX source form and find the correct $...$ boundary.
+    offset = findInContent(targetText, cleanContent);
+    if (offset !== -1 && savedRangeRef.current) {
+      const blockOffset = findOffsetFromDOMRange(savedRangeRef.current, cleanContent);
+      if (blockOffset !== -1) {
+        const approxOffset = blockOffset + estimateSelectionOffsetInBlock(savedRangeRef.current);
+        const closest = findClosestOccurrence(targetText, cleanContent, approxOffset);
+        if (closest !== -1) offset = closest;
+      }
+    }
+    if (offset !== -1 && isOffsetInsideInlineMath(cleanContent, offset)) {
+      offset = -1; // let Strategy 2 expand to the full $...$ expression
+    }
 
-    // Strategy 2: KaTeX — replace rendered math with LaTeX source and retry
-    if (offset === -1) {
-      const sourceText = extractSourceTextFromRange(range);
-      if (sourceText && sourceText !== rawText) {
-        offset = cleanContent.indexOf(sourceText);
-        if (offset !== -1) targetText = sourceText;
+    // Strategy 2: replace KaTeX rendering with LaTeX source, strip images
+    if (offset === -1 && savedRangeRef.current) {
+      const sourceText = extractSourceTextFromRange(savedRangeRef.current);
+      if (sourceText && sourceText !== targetText) {
+        offset = findInContent(sourceText, cleanContent);
+        if (offset !== -1) resolvedTarget = sourceText;
       }
     }
 
-    // Strategy 3: first non-empty line only (handles multi-line list/table selections)
+    // Strategy 3: first non-empty line only (handles multi-item lists, table rows)
     if (offset === -1) {
-      const firstLine = rawText.split('\n').find(l => l.trim());
-      if (firstLine && firstLine !== rawText) {
-        offset = cleanContent.indexOf(firstLine.trim());
-        if (offset !== -1) targetText = firstLine.trim();
+      const firstLine = targetText.split('\n').find(l => l.trim())?.trim() ?? '';
+      if (firstLine && firstLine !== targetText) {
+        offset = findInContent(firstLine, cleanContent);
+        if (offset !== -1) resolvedTarget = firstLine;
       }
     }
 
-    // Strategy 4: DOM position fallback — anchor to paragraph start
+    // Strategy 4: DOM position fallback — anchor to surrounding paragraph
     if (offset === -1 && savedRangeRef.current) {
       offset = findOffsetFromDOMRange(savedRangeRef.current, cleanContent);
-      // Use first 40 chars of raw text as the stored target
-      targetText = rawText.slice(0, 40);
+      if (offset !== -1) resolvedTarget = targetText.slice(0, 60).trim();
     }
 
-    if (offset === -1) offset = 0;
+    if (offset === -1) {
+      console.warn('[CQS Comment] Could not find selection in source markdown');
+      setAddCommentBtn(null);
+      return;
+    }
 
-    console.log('[CQS Comment] Text selected:', targetText.slice(0, 50), 'offset:', offset);
-    setSelection({
-      text: targetText,
-      offset,
-      rect: { top: rect.bottom + window.scrollY + 4, left: rect.left + rect.width / 2 },
-    });
-  }, [fileContent?.content]);
+    setCommentInput({ targetText: resolvedTarget, charOffset: offset, position });
+    setAddCommentBtn(null);
+    window.getSelection()?.removeAllRanges();
+  }, [addCommentBtn, cleanContent]);
 
-  // Close comment popup when clicking outside (must be before early return — hooks can't be conditional)
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (!target.closest('.comment-input-popup') &&
-        !target.closest('.comment-highlight') &&
-        !target.closest('.add-comment-btn')) {
-      setViewingComment(null);
-      // Don't clear selection here — handleMouseUp manages that
+  // Submit new comment
+  const handleCommentSubmit = useCallback((body: string) => {
+    if (!commentInput) return;
+    addComment(commentInput.targetText, commentInput.charOffset, body);
+    setCommentInput(null);
+  }, [commentInput, addComment]);
+
+  const cancelCommentInput = useCallback(() => setCommentInput(null), []);
+  const closeCommentPopup = useCallback(() => setCommentPopup(null), []);
+
+  // Handle clicking a comment highlight in the rendered view
+  const handleCommentClick = useCallback((commentId: string, rect: DOMRect) => {
+    setCommentPopup({ commentId, position: positionBelow(rect, false) });
+  }, [positionBelow]);
+
+  // Scroll to a comment from the panel
+  const handleScrollToComment = useCallback((commentId: string) => {
+    const el = document.querySelector(`[data-comment-id="${commentId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Flash the highlight
+      el.classList.add('comment-highlight-flash');
+      setTimeout(() => el.classList.remove('comment-highlight-flash'), 1500);
     }
   }, []);
+
+  const activeComment = commentPopup
+    ? comments.find(c => c.id === commentPopup.commentId)
+    : null;
 
   if (!fileContent) {
     return (
@@ -334,25 +391,24 @@ export default function App() {
     );
   }
 
+  const commentLabel = `${comments.length} comment${comments.length !== 1 ? 's' : ''}`;
+  const fileName = fileContent.filePath.split(/[\\/]/).pop() ?? '';
+
   return (
-    <div onMouseUp={(e) => handleMouseUp(e)} onClick={handleClick} style={{ position: 'relative' }}>
+    <div ref={rootRef} className="preview-root">
       {/* Toolbar */}
-      <div style={{
-        position: 'sticky', top: 0, zIndex: 50,
-        background: '#fff', borderBottom: '1px solid #ddd',
-        padding: '4px 16px', display: 'flex', gap: '8px', alignItems: 'center',
-        fontSize: '0.8rem',
-      }}>
-        {!showRawSource && comments.length > 0 && (
+      <div className="preview-toolbar">
+        {!showRawSource && (comments.length > 0 || !showComments) && (
           <button
             className={`comment-btn ${showComments ? 'comment-btn-primary' : ''}`}
-            onClick={() => setShowComments(prev => !prev)}
+            title="Toggle comments (Ctrl+M)"
+            onClick={toggleShowComments}
           >
-            {showComments ? `Hide ${comments.length} comment${comments.length !== 1 ? 's' : ''}` : `Show ${comments.length} comment${comments.length !== 1 ? 's' : ''}`}
+            {showComments ? `Hide ${commentLabel}` : `Show ${commentLabel}`}
           </button>
         )}
-        {!showRawSource && comments.length === 0 && (
-          <span style={{ color: '#6b6b6b' }}>Select text to add a comment</span>
+        {!showRawSource && comments.length === 0 && showComments && (
+          <span className="preview-toolbar-hint">Select text to add a comment</span>
         )}
         <div style={{ marginLeft: 'auto' }}>
           <button
@@ -365,81 +421,65 @@ export default function App() {
         </div>
       </div>
 
-      {showRawSource ? (
-        <pre style={{
-          fontFamily: 'var(--font-mono, monospace)',
-          fontSize: '0.85rem',
-          lineHeight: 1.6,
-          padding: '16px 24px',
-          margin: 0,
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
-          color: 'var(--color-text, #2d3b45)',
-          background: 'var(--color-code-bg, #f7f7f7)',
-          minHeight: '100vh',
-        }}>
-          {fileContent.content}
-        </pre>
-      ) : (
-      <div ref={contentRef}>
-        <MarkdownRenderer
-          content={processed}
-          imageMap={fileContent.imageMap}
-        />
-      </div>
-      )}
+      <div className="preview-layout">
+        {showRawSource ? (
+          <div className="raw-source-view">
+            <div className="raw-source-pre">
+              <RawSourceView content={fileContent.content.replace(/\r\n?/g, '\n')} fileName={fileName} />
+            </div>
+          </div>
+        ) : (
+          <main className="preview-content" onMouseUp={handleMouseUp}>
+            <MarkdownRenderer
+              content={processed}
+              imageMap={fileContent.imageMap}
+              onCommentClick={showComments ? handleCommentClick : undefined}
+            />
+          </main>
+        )}
 
-      {/* "Add comment" button on text selection */}
-      {selection && !commentInput && (
+        {/* Comment panel sidebar */}
+        {showComments && !showRawSource && comments.length > 0 && (
+          <CommentPanel
+            comments={comments}
+            onScrollTo={handleScrollToComment}
+            onDelete={deleteComment}
+          />
+        )}
+      </div>
+
+      {/* "+ Comment" button (floating near selection) */}
+      {addCommentBtn && showComments && !showRawSource && (
         <button
           className="add-comment-btn"
-          style={{ top: selection.rect.top, left: selection.rect.left }}
-          onClick={() => setCommentInput(selection.rect)}
+          style={{ top: addCommentBtn.position.top, left: addCommentBtn.position.left }}
+          onMouseDown={(e) => { e.preventDefault(); handleAddCommentClick(); }}
         >
-          Add comment
+          + Comment
         </button>
       )}
 
-      {/* Comment input popup */}
-      {commentInput && selection && (
+      {/* Comment input popover */}
+      {commentInput && (
         <CommentInput
-          position={commentInput}
-          onSubmit={(body) => {
-            addComment(selection.text, selection.offset, body);
-            setCommentInput(null);
-            setSelection(null);
-          }}
-          onCancel={() => { setCommentInput(null); setSelection(null); }}
+          position={commentInput.position}
+          onSubmit={handleCommentSubmit}
+          onCancel={cancelCommentInput}
         />
       )}
 
-      {/* Edit existing comment popup — opens as editable textarea immediately */}
-      {viewingComment && (
-        <div className="comment-input-popup"
-          style={{ top: viewingComment.rect.top, left: viewingComment.rect.left }}>
-          <div className="comment-popup-target">"{viewingComment.comment.targetText}"</div>
-          <textarea className="comment-textarea" value={editText}
-            onChange={(e) => setEditText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                editComment(viewingComment.comment.id, editText.trim());
-                setViewingComment(null);
-              }
-            }}
-            rows={3} autoFocus />
-          <div className="comment-popup-actions" style={{ marginTop: '8px' }}>
-            <button className="comment-btn comment-btn-primary" onClick={() => {
-              editComment(viewingComment.comment.id, editText.trim());
-              setViewingComment(null);
-            }}>Save</button>
-            <button className="comment-btn" style={{ color: '#dc3545' }} onClick={() => {
-              deleteComment(viewingComment.comment.id);
-              setViewingComment(null);
-            }}>Delete</button>
-          </div>
-          <div className="comment-input-hint">Ctrl+Enter to save</div>
-        </div>
+      {/* Comment popup (view/edit/delete) */}
+      {commentPopup && activeComment && (
+        <CommentPopup
+          commentId={activeComment.id}
+          body={activeComment.body}
+          date={activeComment.updatedAt}
+          targetText={activeComment.targetText}
+          position={commentPopup.position}
+          onEdit={editComment}
+          onDelete={deleteComment}
+          onClose={closeCommentPopup}
+        />
       )}
     </div>
   );

@@ -3,11 +3,13 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import remarkDirective from 'remark-directive';
+import remarkDeflist, { defListHastHandlers } from 'remark-definition-list';
 import remarkSupersub from 'remark-supersub';
 import rehypeKatex from 'rehype-katex';
 import rehypeSlug from 'rehype-slug';
 import rehypeRaw from 'rehype-raw';
 import rehypeHighlight from 'rehype-highlight';
+import katex from 'katex';
 import { remarkCallouts } from '../preprocessing/remarkCallouts';
 import CodeBlock from './CodeBlock';
 import MermaidBlock from './MermaidBlock';
@@ -18,6 +20,24 @@ import 'katex/dist/katex.min.css';
 let _vscodeApi: { postMessage(msg: any): void } | undefined;
 export function setVsCodeApi(api: { postMessage(msg: any): void }) {
   _vscodeApi = api;
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Render inline math ($...$) in a plain text string to KaTeX HTML; other text is escaped. */
+function renderInlineMath(text: string): string {
+  const re = /\$(?!\$)([^$\n]+)\$(?!\$)/g;
+  let html = '';
+  let last = 0;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    html += escapeHtml(text.slice(last, m.index));
+    html += katex.renderToString(m[1], { throwOnError: false });
+    last = m.index + m[0].length;
+  }
+  return html + escapeHtml(text.slice(last));
 }
 
 interface Props {
@@ -46,7 +66,7 @@ function handleLinkClick(e: React.MouseEvent, href: string) {
 
 export default function MarkdownRenderer({ content, imageMap, onCommentClick }: Props) {
   const remarkPlugins = useMemo(
-    () => [remarkGfm, remarkMath, remarkDirective, remarkCallouts, remarkSupersub],
+    () => [remarkGfm, remarkMath, remarkDirective, remarkCallouts, remarkDeflist, remarkSupersub],
     []
   );
 
@@ -99,7 +119,7 @@ export default function MarkdownRenderer({ content, imageMap, onCommentClick }: 
           return (
             <figure>
               <img src={resolved} alt={alt} {...props} />
-              <figcaption>{alt}</figcaption>
+              <figcaption dangerouslySetInnerHTML={{ __html: renderInlineMath(alt) }} />
             </figure>
           );
         }
@@ -124,14 +144,21 @@ export default function MarkdownRenderer({ content, imageMap, onCommentClick }: 
       mark({ className, children, ...props }: any) {
         const commentId = props['data-comment-id'];
         if (className === 'comment-highlight' && commentId && onCommentClick) {
+          // If the highlighted content is a LaTeX expression ($...$), render it with
+          // KaTeX so the math displays correctly inside the highlight.
+          const textContent = typeof children === 'string' ? children : '';
+          const isInlineMath = /^\$(?!\$)[^$]+\$(?!\$)$/.test(textContent);
+          const displayContent = isInlineMath
+            ? <span dangerouslySetInnerHTML={{ __html: renderInlineMath(textContent) }} />
+            : children;
           return (
             <mark className="comment-highlight" data-comment-id={commentId}
               onClick={(e) => {
                 e.stopPropagation();
-                const rect = (e.target as HTMLElement).getBoundingClientRect();
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                 onCommentClick(commentId, rect);
               }}>
-              {children}
+              {displayContent}
               <span className="comment-indicator" />
             </mark>
           );
@@ -167,6 +194,8 @@ export default function MarkdownRenderer({ content, imageMap, onCommentClick }: 
       <Markdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins as any}
+        // Without these handlers the definition list nodes come out as plain divs
+        remarkRehypeOptions={{ handlers: defListHastHandlers as any }}
         components={components}
       >
         {content}
