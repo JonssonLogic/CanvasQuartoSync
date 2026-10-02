@@ -248,10 +248,10 @@ if ($doVenv) {
         exit 1
     }
 
-    $venvActivate = Join-Path $VENV_DIR "Scripts\Activate.ps1"
+    $venvPython = Join-Path $VENV_DIR "Scripts\python.exe"
     $requirementsFile = Join-Path $CLONE_DIR "requirements.txt"
 
-    if (-not (Test-Path $venvActivate)) {
+    if (-not (Test-Path $venvPython)) {
         Write-Host "   Creating virtual environment..." -ForegroundColor White
         uv venv --clear --python 3.13 $VENV_DIR
         if ($LASTEXITCODE -ne 0) {
@@ -263,16 +263,11 @@ if ($doVenv) {
         Write-Ok "Virtual environment exists at $VENV_DIR"
     }
 
-    # Activate venv
-    try { & $venvActivate } catch {
-        $env:Path = (Join-Path $VENV_DIR "Scripts") + ";" + $env:Path
-        $env:VIRTUAL_ENV = $VENV_DIR
-    }
-
-    # Install packages
+    # Install packages. --python targets the venv without activating it:
+    # activation would change PATH for the rest of the user's PowerShell window.
     if (Test-Path $requirementsFile) {
         Write-Host "   Installing packages..." -ForegroundColor White
-        uv pip install -r $requirementsFile
+        uv pip install --python $venvPython -r $requirementsFile
         if ($LASTEXITCODE -ne 0) { Write-Err "Package installation failed."; exit 1 }
         Write-Ok "Python packages installed."
     } else {
