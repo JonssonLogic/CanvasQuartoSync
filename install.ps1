@@ -8,10 +8,19 @@
 # ============================================================================
 
 # --- Configuration ---
+# The tool is an app, not a project: it lives in the per-user app folder with
+# its venv inside, so deleting one folder uninstalls it. Course folders, the
+# VS Code extension and dev-deploy.ps1 all look here first.
 $REPO_URL   = "https://github.com/JonssonLogic/CanvasQuartoSync.git"
-$VENV_ROOT  = Join-Path $env:USERPROFILE ".venvs"
-$VENV_DIR   = Join-Path $VENV_ROOT "canvas_quarto_env"
-$CLONE_DIR  = Join-Path $env:USERPROFILE "CanvasQuartoSync"
+$CLONE_DIR  = Join-Path $env:LOCALAPPDATA "CanvasQuartoSync"
+$VENV_DIR   = Join-Path $CLONE_DIR ".venv"
+
+# Earlier installers used these; reported at the end so they can be deleted.
+$OLD_INSTALLS = @(
+    (Join-Path $env:USERPROFILE "CanvasQuartoSync"),
+    (Join-Path $env:USERPROFILE ".venvs\canvas_quarto_env"),
+    (Join-Path $env:USERPROFILE "venvs\canvas_quarto_env")
+)
 
 # --- Enforce TLS 1.2 ---
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -214,19 +223,13 @@ if ($doClone) {
         & git pull 2>&1 | Out-Null
         Pop-Location
         Write-Ok "Updated to latest version."
+    } elseif (Test-Path (Join-Path $CLONE_DIR "sync_to_canvas.py")) {
+        # dev-deploy.ps1 copies a working tree here without .git
+        Write-Warn "$CLONE_DIR holds a copy that is not a git clone (dev-deploy.ps1?). Left as is."
     } else {
         & git clone $REPO_URL $CLONE_DIR 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) { Write-Err "Failed to clone repository."; exit 1 }
         Write-Ok "Repository cloned to $CLONE_DIR"
-    }
-
-    # Patch run_sync_here.bat
-    $batFile = Join-Path $CLONE_DIR "run_sync_here.bat"
-    if (Test-Path $batFile) {
-        $batContent = Get-Content $batFile -Raw
-        $batContent = $batContent -replace '(?m)^set "PROJECT_DIR=.*"', "set `"PROJECT_DIR=$CLONE_DIR`""
-        $batContent = $batContent -replace '(?m)^"%PROJECT_DIR%\\\.venv\\Scripts\\python\.exe".*', "`"$VENV_DIR\Scripts\python.exe`" `"%PROJECT_DIR%\sync_to_canvas.py`" `"%~dp0.`" %*"
-        Set-Content -Path $batFile -Value $batContent -NoNewline
     }
 }
 
@@ -331,3 +334,18 @@ Write-Host "     1. Restart VS Code (close all windows and reopen)" -ForegroundC
 Write-Host "     2. Click the graduation cap icon in the sidebar"   -ForegroundColor White
 Write-Host "     3. Click 'New Project' to set up your course"      -ForegroundColor White
 Write-Host ""
+
+# ============================================================================
+#  Earlier installs
+# ============================================================================
+$found = @($OLD_INSTALLS | Where-Object { Test-Path $_ })
+if ($found.Count -gt 0) {
+    Write-Host "   Earlier install(s) found. Nothing uses them once your course" -ForegroundColor Yellow
+    Write-Host "   folders are refreshed, so they can be deleted:"              -ForegroundColor Yellow
+    foreach ($dir in $found) { Write-Host "     $dir" -ForegroundColor White }
+    Write-Host ""
+    Write-Host "   Refresh each course folder once, so its check_content and update_kit" -ForegroundColor Yellow
+    Write-Host "   find this install (they look it up themselves from then on):"        -ForegroundColor Yellow
+    Write-Host "     & `"$VENV_DIR\Scripts\python.exe`" `"$CLONE_DIR\init_content_project.py`" <course folder> --update" -ForegroundColor White
+    Write-Host ""
+}

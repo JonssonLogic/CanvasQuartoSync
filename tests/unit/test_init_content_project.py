@@ -30,12 +30,24 @@ class TestScaffold:
         assert {"check_content.bat", "check_content.sh",
                 "update_kit.bat", "update_kit.sh"} <= files
 
-    def test_wrappers_are_stamped_with_real_paths(self, tmp_path):
+    def test_wrappers_carry_no_machine_paths(self, tmp_path):
+        """The wrappers look the tool up at run time; a stamped path would
+        break the folder the moment the tool moves."""
         install(str(tmp_path), python_exe=r"C:\some\venv\python.exe")
-        text = (tmp_path / "check_content.bat").read_text(encoding="utf-8")
-        assert "@@PYTHON@@" not in text and "@@REPO@@" not in text
-        assert r"C:\some\venv\python.exe" in text
-        assert "validate_content.py" in text
+        for name in ("check_content.bat", "check_content.sh",
+                     "update_kit.bat", "update_kit.sh"):
+            text = (tmp_path / name).read_text(encoding="utf-8")
+            assert r"C:\some\venv" not in text, name
+            assert os.path.dirname(os.path.abspath(__file__)) not in text, name
+            assert "CANVAS_QUARTO_SYNC_DIR" in text, name
+
+    def test_wrapper_line_endings_suit_their_shell(self, tmp_path):
+        install(str(tmp_path))
+        for name in ("check_content.bat", "update_kit.bat"):
+            data = (tmp_path / name).read_bytes()
+            assert data.count(b"\n") == data.count(b"\r\n"), f"{name} must be CRLF"
+        for name in ("check_content.sh", "update_kit.sh"):
+            assert b"\r\n" not in (tmp_path / name).read_bytes(), f"{name} must be LF"
 
     def test_stamp_records_version(self, tmp_path):
         install(str(tmp_path))

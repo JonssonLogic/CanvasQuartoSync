@@ -7,9 +7,17 @@
 #  Updates the repo, installs latest VSIX, and updates Python packages.
 # ============================================================================
 
-$CLONE_DIR  = Join-Path $env:USERPROFILE "CanvasQuartoSync"
-$VENV_DIR   = Join-Path $env:USERPROFILE ".venvs\canvas_quarto_env"
+$CLONE_DIR  = Join-Path $env:LOCALAPPDATA "CanvasQuartoSync"
+$VENV_DIR   = Join-Path $CLONE_DIR ".venv"
 $REPO_URL   = "https://github.com/JonssonLogic/CanvasQuartoSync.git"
+
+# Earlier installers used these. If one exists and the new location doesn't,
+# this machine still needs install.ps1, which sets up the new layout.
+$OLD_INSTALLS = @(
+    (Join-Path $env:USERPROFILE "CanvasQuartoSync"),
+    (Join-Path $env:USERPROFILE ".venvs\canvas_quarto_env"),
+    (Join-Path $env:USERPROFILE "venvs\canvas_quarto_env")
+)
 
 # --- Enforce TLS 1.2 ---
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -24,6 +32,14 @@ Write-Host ""
 Write-Host "=============================================" -ForegroundColor Cyan
 Write-Host "   Canvas Quarto Sync - Updater"              -ForegroundColor Cyan
 Write-Host "=============================================" -ForegroundColor Cyan
+
+$oldFound = @($OLD_INSTALLS | Where-Object { Test-Path $_ })
+if (-not (Test-Path $CLONE_DIR) -and $oldFound.Count -gt 0) {
+    Write-Warn "CanvasQuartoSync now installs to $CLONE_DIR."
+    Write-Host "   This machine has the earlier layout. Run install.ps1 once to move over:" -ForegroundColor Yellow
+    Write-Host "     irm https://raw.githubusercontent.com/JonssonLogic/CanvasQuartoSync/main/install.ps1 | iex" -ForegroundColor White
+    exit 1
+}
 
 # ---- Step 1: Update repo ----
 Write-Step "Updating CanvasQuartoSync..."
@@ -104,3 +120,9 @@ Write-Host "=============================================" -ForegroundColor Gree
 Write-Host "   Update complete! Restart VS Code."         -ForegroundColor Green
 Write-Host "=============================================" -ForegroundColor Green
 Write-Host ""
+
+if ($oldFound.Count -gt 0) {
+    Write-Host "   Earlier install(s) still on disk; nothing uses them now, so they can be deleted:" -ForegroundColor Yellow
+    foreach ($dir in $oldFound) { Write-Host "     $dir" -ForegroundColor White }
+    Write-Host ""
+}

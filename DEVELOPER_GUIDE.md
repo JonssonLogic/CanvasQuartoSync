@@ -39,7 +39,7 @@ CanvasQuartoSync/
 ├── content_kit/               # Source of the kit copied into content folders
 │   ├── CLAUDE.md.template     # Lands in the content folder root
 │   ├── skills/canvas-content/ # Claude Code skill: SKILL.md + reference/*.md
-│   ├── check_content.bat/.sh  # Validator wrappers (paths stamped at scaffold time)
+│   ├── check_content.bat/.sh  # Validator wrappers (find the tool at run time)
 │   ├── update_kit.bat/.sh     # One-click kit refresh
 │   ├── starter/               # config.toml, _quarto.yml, branding.css, .gitignore
 │   └── example/               # Sample module for --with-example
@@ -288,11 +288,21 @@ a setting the tool doesn't support.
 
 ### The content authoring kit
 
-`content_kit/` is the source; `init_content_project.py` copies it into a content folder
-and stamps machine-specific paths into the wrappers. Notes for maintainers:
+`content_kit/` is the source; `init_content_project.py` copies it into a content folder.
+Notes for maintainers:
 
-- Paths come from `sys.executable` and `__file__`, never a hardcoded `.venv` — the
-  installer puts the venv in `~/venvs/canvas_quarto_env`, outside the repo.
+- The wrappers carry no paths. Each one finds the tool at run time:
+  `CANVAS_QUARTO_SYNC_DIR` (must be valid if set), then the install location
+  (`%LOCALAPPDATA%\CanvasQuartoSync`, `~/Library/Application Support/CanvasQuartoSync`,
+  `~/.local/share/canvasquartosync`, venv inside as `.venv`), then the two earlier
+  layouts. `run_sync_here.bat` and the extension's `venvResolver.ts` use the same order.
+  The lookup is duplicated in each launcher so a course folder needs no helper file;
+  `test_doc_consistency.py` fails if the copies drift, and `test_kit_launchers.py` runs
+  them against fake installs.
+- `.bat` files must stay CRLF (cmd misreads `call :label` with LF), `.sh` files LF.
+  `.gitattributes` pins both, and the scaffolder normalises them when copying.
+- To have your own course folders use your dev clone, set `CANVAS_QUARTO_SYNC_DIR` to
+  it (`setx CANVAS_QUARTO_SYNC_DIR C:\path\to\clone`). The clone needs a `.venv`.
 - The skill directory is replaced wholesale on `--update` (tool-owned), while
   `config.toml`, course content, and an edited `CLAUDE.md` are left alone.
 - `kit_status()` powers the stale-kit notice in `sync_to_canvas.py`; it must stay
