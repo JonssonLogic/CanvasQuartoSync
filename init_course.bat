@@ -15,12 +15,13 @@ if exist "%SCRIPT_DIR%handlers\qmd_preprocessor.py" (
 ) else if exist "%SCRIPT_DIR%CanvasQuartoSync\handlers\qmd_preprocessor.py" (
     set "CQS_DIR=%SCRIPT_DIR%CanvasQuartoSync\"
 ) else (
-    :: Search common install locations
+    :: Search install locations, newest layout first; the first hit wins
     for %%d in (
-        "%USERPROFILE%\venvs\canvas_quarto_env\CanvasQuartoSync"
+        "%LOCALAPPDATA%\CanvasQuartoSync"
         "%USERPROFILE%\CanvasQuartoSync"
+        "%USERPROFILE%\venvs\canvas_quarto_env\CanvasQuartoSync"
     ) do (
-        if exist "%%~d\handlers\qmd_preprocessor.py" set "CQS_DIR=%%~d\"
+        if not defined CQS_DIR if exist "%%~d\handlers\qmd_preprocessor.py" set "CQS_DIR=%%~d\"
     )
 )
 

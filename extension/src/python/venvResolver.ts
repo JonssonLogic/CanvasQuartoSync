@@ -4,14 +4,38 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 /**
+ * Where install.ps1 / install.sh put the tool, with its venv inside as .venv.
+ * The course-folder launchers (check_content, update_kit, run_sync_here) look
+ * in the same places in the same order; keep them in step.
+ */
+export function installDir(): string {
+  if (process.platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    return path.join(localAppData, 'CanvasQuartoSync');
+  }
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support', 'CanvasQuartoSync');
+  }
+  const dataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
+  return path.join(dataHome, 'canvasquartosync');
+}
+
+/** A dev clone to use instead of the install, as the launchers honour it. */
+function devCloneDir(): string | undefined {
+  return process.env.CANVAS_QUARTO_SYNC_DIR || undefined;
+}
+
+/**
  * Resolves the path to the Python executable inside the CanvasQuartoSync venv.
  *
  * Resolution order:
  * 1. cqs.pythonVenvPath setting
  * 2. CANVAS_QUARTO_VENV environment variable
- * 3. ~/.venvs/canvas_quarto_env/
- * 4. ~/venvs/canvas_quarto_env/  (legacy)
- * 5. Workspace-local .venv/
+ * 3. CANVAS_QUARTO_SYNC_DIR/.venv (dev clone)
+ * 4. <install dir>/.venv
+ * 5. ~/.venvs/canvas_quarto_env/  (previous layout)
+ * 6. ~/venvs/canvas_quarto_env/   (oldest layout)
+ * 7. Workspace-local .venv/
  */
 export function resolvePython(): string | undefined {
   const candidates: string[] = [];
@@ -30,13 +54,20 @@ export function resolvePython(): string | undefined {
     candidates.push(envPath);
   }
 
-  // 3. Default location (current)
-  candidates.push(path.join(os.homedir(), '.venvs', 'canvas_quarto_env'));
+  // 3. Dev clone
+  const clone = devCloneDir();
+  if (clone) {
+    candidates.push(path.join(clone, '.venv'));
+  }
 
-  // 4. Legacy location
+  // 4. Install location
+  candidates.push(path.join(installDir(), '.venv'));
+
+  // 5-6. Previous layouts
+  candidates.push(path.join(os.homedir(), '.venvs', 'canvas_quarto_env'));
   candidates.push(path.join(os.homedir(), 'venvs', 'canvas_quarto_env'));
 
-  // 5. Workspace-local .venv
+  // 7. Workspace-local .venv
   const workspaceFolders = vscode.workspace.workspaceFolders;
   if (workspaceFolders) {
     candidates.push(path.join(workspaceFolders[0].uri.fsPath, '.venv'));
@@ -63,12 +94,17 @@ function getPythonInVenv(venvDir: string): string {
  * Resolves the path to the CanvasQuartoSync repo root.
  *
  * Resolution order:
- * 1. ~/CanvasQuartoSync/ (default install location)
- * 2. Parent of extensionPath (dev: extension lives at repo/extension/)
- * 3. Legacy ~/venvs/canvas_quarto_env/CanvasQuartoSync/
+ * 1. CANVAS_QUARTO_SYNC_DIR (dev clone)
+ * 2. The install location (see installDir)
+ * 3. ~/CanvasQuartoSync/ (previous layout)
+ * 4. Parent of extensionPath (dev: extension lives at repo/extension/)
+ * 5. ~/venvs/canvas_quarto_env/CanvasQuartoSync/ (oldest layout)
  */
 export function resolveCqsRoot(extensionPath: string): string {
+  const clone = devCloneDir();
   const candidates = [
+    ...(clone ? [clone] : []),
+    installDir(),
     path.join(os.homedir(), 'CanvasQuartoSync'),
     path.dirname(extensionPath),
     path.join(os.homedir(), 'venvs', 'canvas_quarto_env', 'CanvasQuartoSync'),
@@ -80,6 +116,6 @@ export function resolveCqsRoot(extensionPath: string): string {
     }
   }
 
-  // Fallback to default location even if not yet cloned
-  return candidates[0];
+  // Fallback to the install location even if not yet installed
+  return installDir();
 }

@@ -18,6 +18,8 @@ curl -fsSL https://raw.githubusercontent.com/JonssonLogic/CanvasQuartoSync/main/
 
 Both installers let you select which components to install (Python, Git, Quarto, venv, repo clone, VS Code extension). Deselect anything you already have. Restart VS Code after install.
 
+The tool installs to one folder, with its Python environment inside: `%LOCALAPPDATA%\CanvasQuartoSync` on Windows, `~/Library/Application Support/CanvasQuartoSync` on macOS, `~/.local/share/canvasquartosync` on Linux. Deleting that folder uninstalls it. To use a clone of the repo instead (for development), set `CANVAS_QUARTO_SYNC_DIR` to the clone; it needs its own `.venv`.
+
 ## Quick Start
 
 1. Open **VS Code**

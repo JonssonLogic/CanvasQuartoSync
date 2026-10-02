@@ -96,10 +96,22 @@ class TestKitIsShippable:
             PROJECT_ROOT, "content_kit", "skills", "canvas-content", "SKILL.md"))
         assert f"reference/{name}" in skill, f"{name} is not indexed in SKILL.md"
 
-    def test_wrapper_templates_carry_placeholders(self):
-        """Un-stamped templates must keep their tokens or scaffolding breaks."""
-        kit = os.path.join(PROJECT_ROOT, "content_kit")
-        for name in ("check_content.bat", "check_content.sh",
-                     "update_kit.bat", "update_kit.sh"):
-            text = _read(os.path.join(kit, name))
-            assert "@@PYTHON@@" in text and "@@REPO@@" in text, name
+    @pytest.mark.parametrize("ext,first", [(".bat", "\n:find_tool\n"), (".sh", "\ntry()")])
+    def test_tool_lookup_is_the_same_in_every_launcher(self, ext, first):
+        """The lookup is copied into each launcher so a course folder needs no
+        helper file. The copies must not drift: compare from the lookup's
+        first line to its end, with each script's message prefix removed."""
+        names = ["check_content", "update_kit"] + (["run_sync_here"] if ext == ".bat" else [])
+        blocks = {}
+        for name in names:
+            path = os.path.join(PROJECT_ROOT, "content_kit", name + ext)
+            if not os.path.exists(path):
+                path = os.path.join(PROJECT_ROOT, name + ext)
+            text = _read(path).replace("\r\n", "\n")
+            block = text[text.index(first):]
+            if ext == ".sh":
+                block = block[:block.index("\nfind_tool ||")]
+            blocks[name] = block.replace(f"[{name}]", "[*]")
+        reference = blocks[names[0]]
+        for name, block in blocks.items():
+            assert block == reference, f"{name}{ext} lookup differs from {names[0]}{ext}"

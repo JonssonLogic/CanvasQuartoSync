@@ -863,8 +863,10 @@ MECH201/
 
 Add `--with-example` for a sample module to copy from.
 
-The wrappers are stamped with the **absolute path of the Python interpreter you ran the
-scaffolder with**, so the virtual environment can live anywhere and be named anything.
+The wrappers contain **no paths**: each run looks the tool up, first in
+`CANVAS_QUARTO_SYNC_DIR` (a clone with its own `.venv`, for development), then in the
+install location (`%LOCALAPPDATA%\CanvasQuartoSync` on Windows), then in the layouts
+earlier installers used. Moving or reinstalling the tool never breaks a content folder.
 If you later move the tool or the venv, re-run with `--update`.
 
 Existing content is never overwritten — running the scaffolder on a folder that already

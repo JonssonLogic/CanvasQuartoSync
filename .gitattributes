@@ -1,0 +1,4 @@
+# Batch files misparse labels (call :name) with LF endings; shell scripts
+# break with CRLF. Pin both regardless of core.autocrlf.
+*.bat text eol=crlf
+*.sh  text eol=lf
