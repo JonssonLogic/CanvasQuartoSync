@@ -11,7 +11,7 @@ from handlers.dates import resolve_timezone, to_canvas_iso
 from handlers.gradebook import resolve_gradebook_settings, needs_unhide
 from handlers.ip_filter import ip_filter_to_new_quiz
 from handlers.qmd_quiz_parser import parse_qmd_quiz
-from handlers.new_quiz_api import NewQuizAPIClient, NewQuizAPIError
+from handlers.new_quiz_api import NewQuizAPIClient, NewQuizAPIError, resolve_credentials
 from handlers.log import logger
 
 class NewQuizHandler(BaseHandler):
@@ -40,8 +40,7 @@ class NewQuizHandler(BaseHandler):
         logger.info("  [cyan]Syncing new quiz:[/cyan] [bold]%s[/bold]", filename)
 
         # Instantiate API Client
-        api_url = os.environ.get("CANVAS_API_URL")
-        api_token = os.environ.get("CANVAS_API_TOKEN")
+        api_url, api_token = resolve_credentials(course, content_root)
         client = NewQuizAPIClient(api_url, api_token)
         course_id = course.id
 
