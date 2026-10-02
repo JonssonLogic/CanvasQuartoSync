@@ -36,6 +36,11 @@ python -m pytest tests/unit/ -v
 python -m pytest tests/integration/ -v
 ```
 
+Tests marked `quarto` (`tests/integration/test_quarto_crossrefs.py`) run the real
+Quarto CLI to check that cross-references, equation numbers and citations survive the
+render into the Canvas body. They skip themselves when Quarto is not installed; select
+them alone with `-m quarto`.
+
 ### Tier 3: End-to-End Tests (`tests/e2e/`)
 **Requires real Canvas course + Quarto CLI.** Syncs dedicated test content (`tests/fixtures/e2e_content/`) to a real Canvas test course, then downloads and verifies the results. Each developer uses their own test course.
 

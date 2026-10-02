@@ -505,3 +505,102 @@ def test_drift_temp_files_are_not_validated(tmp_path):
     seen = [os.path.basename(r.path) for r in reports]
     assert "canvas__01_Intro__01_Welcome.qmd" not in seen
     assert "01_Welcome.qmd" in seen
+
+
+# --- Cross-references -------------------------------------------------------
+
+def _single(tmp_path, body, images=()):
+    """Validate one page with the given body; images listed exist on disk."""
+    for name in images:
+        _write(tmp_path, f"01_Mod/{name}", "")
+    path = _write(tmp_path, "01_Mod/01_Page.qmd", _page(body))
+    return validate_file(path, content_root=str(tmp_path))
+
+
+def _xref_errors(report):
+    return [i.message for i in report.errors
+            if "cross-reference" in i.message or "not alone" in i.message]
+
+
+class TestCrossRefs:
+
+    def test_reference_with_a_target_is_clean(self, tmp_path):
+        r = _single(tmp_path, "See @fig-a.\n\n![Alpha](a.png){#fig-a}\n", images=["a.png"])
+        assert _xref_errors(r) == []
+
+    def test_reference_without_a_target_is_an_error(self, tmp_path):
+        r = _single(tmp_path, "See @fig-missing below.\n")
+        msgs = _xref_errors(r)
+        assert len(msgs) == 1
+        assert "@fig-missing" in msgs[0] and "?@fig-missing" in msgs[0]
+
+    def test_same_missing_label_is_reported_once(self, tmp_path):
+        r = _single(tmp_path, "See @fig-x and again @fig-x.\n")
+        assert len(_xref_errors(r)) == 1
+
+    def test_stacked_images_are_not_figures(self, tmp_path):
+        # The Lab 1 shape: three images on adjacent lines. None becomes a
+        # float, so every reference to them comes out as '?@fig-...'.
+        body = ("See @fig-a, @fig-b and @fig-c.\n\n"
+                "![A](a.png){#fig-a}\n"
+                "![B](b.png){#fig-b}\n"
+                "![C](c.png){#fig-c}\n")
+        r = _single(tmp_path, body, images=["a.png", "b.png", "c.png"])
+        msgs = _xref_errors(r)
+        assert len(msgs) == 3
+        assert all("not alone in its paragraph" in m for m in msgs)
+        # Line numbers count from the top of the file, frontmatter included.
+        assert "line 9: figure fig-a" in msgs[0]
+
+    def test_images_between_blank_lines_are_clean(self, tmp_path):
+        body = ("See @fig-a and @fig-b.\n\n"
+                "![A](a.png){#fig-a}\n\n"
+                "![B](b.png){#fig-b}\n")
+        r = _single(tmp_path, body, images=["a.png", "b.png"])
+        assert _xref_errors(r) == []
+
+    def test_text_on_the_image_line_is_flagged(self, tmp_path):
+        body = "See @fig-a.\n\n![A](a.png){#fig-a} as shown\n"
+        r = _single(tmp_path, body, images=["a.png"])
+        assert len(_xref_errors(r)) == 1
+
+    def test_subfigure_div_may_stack_images(self, tmp_path):
+        body = ("See @fig-panel, @fig-l and @fig-r.\n\n"
+                "::: {#fig-panel layout-ncol=2}\n"
+                "![Left](l.png){#fig-l}\n"
+                "![Right](r.png){#fig-r}\n\n"
+                "Two views\n"
+                ":::\n")
+        r = _single(tmp_path, body, images=["l.png", "r.png"])
+        assert _xref_errors(r) == []
+
+    def test_cell_label_defines_a_figure(self, tmp_path):
+        body = ("See @fig-plot.\n\n"
+                "```{python}\n#| label: fig-plot\n#| fig-cap: A plot\nplot()\n```\n")
+        r = _single(tmp_path, body)
+        assert _xref_errors(r) == []
+
+    def test_equation_and_section_labels_resolve(self, tmp_path):
+        body = ("## Theory {#sec-theory}\n\n"
+                "$$\n\\sigma = F/A\n$$ {#eq-stress}\n\n"
+                "@eq-stress is derived in @sec-theory.\n")
+        r = _single(tmp_path, body)
+        assert _xref_errors(r) == []
+
+    def test_capitalised_prefix_and_citation_syntax_resolve(self, tmp_path):
+        body = ("@Fig-a at the start, then [@fig-a; -@fig-b], then @fig-b.\n\n"
+                "![A](a.png){#fig-a}\n\n"
+                "![B](b.png){#fig-b}\n")
+        r = _single(tmp_path, body, images=["a.png", "b.png"])
+        assert _xref_errors(r) == []
+
+    def test_references_in_code_and_comments_are_ignored(self, tmp_path):
+        body = ("Write `@fig-x` to reference a figure.\n\n"
+                "```\nSee @fig-y\n```\n\n"
+                "<!-- @fig-z is discussed later -->\n")
+        r = _single(tmp_path, body)
+        assert _xref_errors(r) == []
+
+    def test_email_addresses_are_not_references(self, tmp_path):
+        r = _single(tmp_path, "Mail lab@fig-dept.example.\n")
+        assert _xref_errors(r) == []
