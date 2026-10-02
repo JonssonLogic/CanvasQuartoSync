@@ -3,12 +3,12 @@
 #  Canvas Quarto Sync — One-Line Installer (Linux/macOS)
 #
 #  Usage:
-#    curl -fsSL https://raw.githubusercontent.com/cenmir/CanvasQuartoSync/main/install.sh | bash
+#    curl -fsSL https://raw.githubusercontent.com/JonssonLogic/CanvasQuartoSync/main/install.sh | bash
 # ============================================================================
 
 set -e
 
-REPO_URL="https://github.com/cenmir/CanvasQuartoSync.git"
+REPO_URL="https://github.com/JonssonLogic/CanvasQuartoSync.git"
 VENV_ROOT="$HOME/venvs"
 VENV_DIR="$VENV_ROOT/canvas_quarto_env"
 CLONE_DIR="$VENV_DIR/CanvasQuartoSync"
@@ -175,7 +175,7 @@ if $do_vscode; then
 
     if [ -n "$CODE_CMD" ]; then
         VSIX_PATH="/tmp/canvasquartosync.vsix"
-        DOWNLOAD_URL=$(curl -fsSL "https://api.github.com/repos/cenmir/CanvasQuartoSync/releases/latest" \
+        DOWNLOAD_URL=$(curl -fsSL "https://api.github.com/repos/JonssonLogic/CanvasQuartoSync/releases/latest" \
             | grep -o '"browser_download_url": "[^"]*\.vsix"' \
             | head -1 \
             | cut -d'"' -f4)
@@ -187,7 +187,7 @@ if $do_vscode; then
                 warn "Extension install failed. Try: $CODE_CMD --install-extension $VSIX_PATH"
             rm -f "$VSIX_PATH"
         else
-            warn "No .vsix in latest release. Download from https://github.com/cenmir/CanvasQuartoSync/releases"
+            warn "No .vsix in latest release. Download from https://github.com/JonssonLogic/CanvasQuartoSync/releases"
         fi
     else
         warn "VS Code not found in PATH."
