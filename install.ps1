@@ -2,16 +2,25 @@
 #  Canvas Quarto Sync - One-Line Installer (Windows PowerShell)
 #
 #  Usage:
-#    irm https://raw.githubusercontent.com/cenmir/CanvasQuartoSync/main/install.ps1 | iex
+#    irm https://raw.githubusercontent.com/JonssonLogic/CanvasQuartoSync/main/install.ps1 | iex
 #
 #  Interactive component selector, then fully automatic install.
 # ============================================================================
 
 # --- Configuration ---
-$REPO_URL   = "https://github.com/cenmir/CanvasQuartoSync.git"
-$VENV_ROOT  = Join-Path $env:USERPROFILE ".venvs"
-$VENV_DIR   = Join-Path $VENV_ROOT "canvas_quarto_env"
-$CLONE_DIR  = Join-Path $env:USERPROFILE "CanvasQuartoSync"
+# The tool is an app, not a project: it lives in the per-user app folder with
+# its venv inside, so deleting one folder uninstalls it. Course folders, the
+# VS Code extension and dev-deploy.ps1 all look here first.
+$REPO_URL   = "https://github.com/JonssonLogic/CanvasQuartoSync.git"
+$CLONE_DIR  = Join-Path $env:LOCALAPPDATA "CanvasQuartoSync"
+$VENV_DIR   = Join-Path $CLONE_DIR ".venv"
+
+# Earlier installers used these; reported at the end so they can be deleted.
+$OLD_INSTALLS = @(
+    (Join-Path $env:USERPROFILE "CanvasQuartoSync"),
+    (Join-Path $env:USERPROFILE ".venvs\canvas_quarto_env"),
+    (Join-Path $env:USERPROFILE "venvs\canvas_quarto_env")
+)
 
 # --- Enforce TLS 1.2 ---
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -214,19 +223,13 @@ if ($doClone) {
         & git pull 2>&1 | Out-Null
         Pop-Location
         Write-Ok "Updated to latest version."
+    } elseif (Test-Path (Join-Path $CLONE_DIR "sync_to_canvas.py")) {
+        # dev-deploy.ps1 copies a working tree here without .git
+        Write-Warn "$CLONE_DIR holds a copy that is not a git clone (dev-deploy.ps1?). Left as is."
     } else {
         & git clone $REPO_URL $CLONE_DIR 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) { Write-Err "Failed to clone repository."; exit 1 }
         Write-Ok "Repository cloned to $CLONE_DIR"
-    }
-
-    # Patch run_sync_here.bat
-    $batFile = Join-Path $CLONE_DIR "run_sync_here.bat"
-    if (Test-Path $batFile) {
-        $batContent = Get-Content $batFile -Raw
-        $batContent = $batContent -replace '(?m)^set "PROJECT_DIR=.*"', "set `"PROJECT_DIR=$CLONE_DIR`""
-        $batContent = $batContent -replace '(?m)^"%PROJECT_DIR%\\\.venv\\Scripts\\python\.exe".*', "`"$VENV_DIR\Scripts\python.exe`" `"%PROJECT_DIR%\sync_to_canvas.py`" `"%~dp0.`" %*"
-        Set-Content -Path $batFile -Value $batContent -NoNewline
     }
 }
 
@@ -245,10 +248,10 @@ if ($doVenv) {
         exit 1
     }
 
-    $venvActivate = Join-Path $VENV_DIR "Scripts\Activate.ps1"
+    $venvPython = Join-Path $VENV_DIR "Scripts\python.exe"
     $requirementsFile = Join-Path $CLONE_DIR "requirements.txt"
 
-    if (-not (Test-Path $venvActivate)) {
+    if (-not (Test-Path $venvPython)) {
         Write-Host "   Creating virtual environment..." -ForegroundColor White
         uv venv --clear --python 3.13 $VENV_DIR
         if ($LASTEXITCODE -ne 0) {
@@ -260,16 +263,11 @@ if ($doVenv) {
         Write-Ok "Virtual environment exists at $VENV_DIR"
     }
 
-    # Activate venv
-    try { & $venvActivate } catch {
-        $env:Path = (Join-Path $VENV_DIR "Scripts") + ";" + $env:Path
-        $env:VIRTUAL_ENV = $VENV_DIR
-    }
-
-    # Install packages
+    # Install packages. --python targets the venv without activating it:
+    # activation would change PATH for the rest of the user's PowerShell window.
     if (Test-Path $requirementsFile) {
         Write-Host "   Installing packages..." -ForegroundColor White
-        uv pip install -r $requirementsFile
+        uv pip install --python $venvPython -r $requirementsFile
         if ($LASTEXITCODE -ne 0) { Write-Err "Package installation failed."; exit 1 }
         Write-Ok "Python packages installed."
     } else {
@@ -292,7 +290,7 @@ if ($doVSCode) {
         $vsixPath = Join-Path $env:TEMP "canvasquartosync.vsix"
         try {
             Write-Host "   Downloading extension from GitHub..." -ForegroundColor White
-            $release = Invoke-RestMethod -Uri "https://api.github.com/repos/cenmir/CanvasQuartoSync/releases/latest" -Headers @{ Accept = "application/vnd.github.v3+json" }
+            $release = Invoke-RestMethod -Uri "https://api.github.com/repos/JonssonLogic/CanvasQuartoSync/releases/latest" -Headers @{ Accept = "application/vnd.github.v3+json" }
             $asset = $release.assets | Where-Object { $_.name -like "*.vsix" } | Select-Object -First 1
             if ($asset) {
                 Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $vsixPath -UseBasicParsing
@@ -306,11 +304,11 @@ if ($doVSCode) {
                 }
                 Remove-Item $vsixPath -ErrorAction SilentlyContinue
             } else {
-                Write-Warn "No .vsix in latest release. Download from https://github.com/cenmir/CanvasQuartoSync/releases"
+                Write-Warn "No .vsix in latest release. Download from https://github.com/JonssonLogic/CanvasQuartoSync/releases"
             }
         } catch {
             Write-Warn "Could not download extension: $_"
-            Write-Host "   Download manually from: https://github.com/cenmir/CanvasQuartoSync/releases" -ForegroundColor Yellow
+            Write-Host "   Download manually from: https://github.com/JonssonLogic/CanvasQuartoSync/releases" -ForegroundColor Yellow
         }
     } else {
         Write-Warn "VS Code not found in PATH."
@@ -331,3 +329,18 @@ Write-Host "     1. Restart VS Code (close all windows and reopen)" -ForegroundC
 Write-Host "     2. Click the graduation cap icon in the sidebar"   -ForegroundColor White
 Write-Host "     3. Click 'New Project' to set up your course"      -ForegroundColor White
 Write-Host ""
+
+# ============================================================================
+#  Earlier installs
+# ============================================================================
+$found = @($OLD_INSTALLS | Where-Object { Test-Path $_ })
+if ($found.Count -gt 0) {
+    Write-Host "   Earlier install(s) found. Nothing uses them once your course" -ForegroundColor Yellow
+    Write-Host "   folders are refreshed, so they can be deleted:"              -ForegroundColor Yellow
+    foreach ($dir in $found) { Write-Host "     $dir" -ForegroundColor White }
+    Write-Host ""
+    Write-Host "   Refresh each course folder once, so its check_content and update_kit" -ForegroundColor Yellow
+    Write-Host "   find this install (they look it up themselves from then on):"        -ForegroundColor Yellow
+    Write-Host "     & `"$VENV_DIR\Scripts\python.exe`" `"$CLONE_DIR\init_content_project.py`" <course folder> --update" -ForegroundColor White
+    Write-Host ""
+}

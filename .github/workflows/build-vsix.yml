@@ -10,6 +10,11 @@ on:
       - 'v*'
   workflow_dispatch:
 
+# Creating the release needs write access; the repo's default token is read-only,
+# which made the v0.11.0 run build the VSIX and then fail with a 403.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest

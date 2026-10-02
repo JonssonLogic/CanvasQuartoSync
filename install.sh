@@ -3,15 +3,25 @@
 #  Canvas Quarto Sync — One-Line Installer (Linux/macOS)
 #
 #  Usage:
-#    curl -fsSL https://raw.githubusercontent.com/cenmir/CanvasQuartoSync/main/install.sh | bash
+#    curl -fsSL https://raw.githubusercontent.com/JonssonLogic/CanvasQuartoSync/main/install.sh | bash
 # ============================================================================
 
 set -e
 
-REPO_URL="https://github.com/cenmir/CanvasQuartoSync.git"
-VENV_ROOT="$HOME/venvs"
-VENV_DIR="$VENV_ROOT/canvas_quarto_env"
-CLONE_DIR="$VENV_DIR/CanvasQuartoSync"
+REPO_URL="https://github.com/JonssonLogic/CanvasQuartoSync.git"
+
+# The tool is an app, not a project: it lives in the per-user app folder with
+# its venv inside, so deleting one folder uninstalls it. Course folders and
+# the VS Code extension look here first.
+if [ "$(uname)" = "Darwin" ]; then
+    CLONE_DIR="$HOME/Library/Application Support/CanvasQuartoSync"
+else
+    CLONE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/canvasquartosync"
+fi
+VENV_DIR="$CLONE_DIR/.venv"
+
+# Earlier installers used these; reported at the end so they can be deleted.
+OLD_INSTALLS=("$HOME/CanvasQuartoSync" "$HOME/.venvs/canvas_quarto_env" "$HOME/venvs/canvas_quarto_env")
 
 step()  { echo -e "\n\033[36m>> $1\033[0m"; }
 ok()    { echo -e "   \033[32m[OK]\033[0m $1"; }
@@ -114,15 +124,17 @@ fi
 # ============================================================================
 if $do_clone; then
     step "Setting up CanvasQuartoSync..."
-    mkdir -p "$VENV_ROOT" "$VENV_DIR"
+    mkdir -p "$(dirname "$CLONE_DIR")"
 
     if [ -d "$CLONE_DIR/.git" ]; then
         ok "Already installed at $CLONE_DIR"
         cd "$CLONE_DIR" && git pull -q && cd - >/dev/null
         ok "Updated to latest version."
+    elif [ -f "$CLONE_DIR/sync_to_canvas.py" ]; then
+        warn "$CLONE_DIR holds a copy that is not a git clone. Left as is."
     else
         git clone -q "$REPO_URL" "$CLONE_DIR"
-        ok "Repository cloned."
+        ok "Repository cloned to $CLONE_DIR"
     fi
 fi
 
@@ -175,7 +187,7 @@ if $do_vscode; then
 
     if [ -n "$CODE_CMD" ]; then
         VSIX_PATH="/tmp/canvasquartosync.vsix"
-        DOWNLOAD_URL=$(curl -fsSL "https://api.github.com/repos/cenmir/CanvasQuartoSync/releases/latest" \
+        DOWNLOAD_URL=$(curl -fsSL "https://api.github.com/repos/JonssonLogic/CanvasQuartoSync/releases/latest" \
             | grep -o '"browser_download_url": "[^"]*\.vsix"' \
             | head -1 \
             | cut -d'"' -f4)
@@ -187,7 +199,7 @@ if $do_vscode; then
                 warn "Extension install failed. Try: $CODE_CMD --install-extension $VSIX_PATH"
             rm -f "$VSIX_PATH"
         else
-            warn "No .vsix in latest release. Download from https://github.com/cenmir/CanvasQuartoSync/releases"
+            warn "No .vsix in latest release. Download from https://github.com/JonssonLogic/CanvasQuartoSync/releases"
         fi
     else
         warn "VS Code not found in PATH."
@@ -208,3 +220,19 @@ echo "     1. Restart VS Code (close all windows and reopen)"
 echo "     2. Click the graduation cap icon in the sidebar"
 echo "     3. Click 'New Project' to set up your course"
 echo ""
+
+# ============================================================================
+#  Earlier installs
+# ============================================================================
+found=()
+for dir in "${OLD_INSTALLS[@]}"; do [ -e "$dir" ] && found+=("$dir"); done
+if [ "${#found[@]}" -gt 0 ]; then
+    warn "Earlier install(s) found. Nothing uses them once your course folders are"
+    echo "   refreshed, so they can be deleted:"
+    for dir in "${found[@]}"; do echo "     $dir"; done
+    echo ""
+    echo "   Refresh each course folder once, so its check_content and update_kit"
+    echo "   find this install (they look it up themselves from then on):"
+    echo "     \"$VENV_DIR/bin/python\" \"$CLONE_DIR/init_content_project.py\" <course folder> --update"
+    echo ""
+fi

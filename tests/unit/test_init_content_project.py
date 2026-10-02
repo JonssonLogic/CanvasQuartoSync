@@ -30,12 +30,24 @@ class TestScaffold:
         assert {"check_content.bat", "check_content.sh",
                 "update_kit.bat", "update_kit.sh"} <= files
 
-    def test_wrappers_are_stamped_with_real_paths(self, tmp_path):
+    def test_wrappers_carry_no_machine_paths(self, tmp_path):
+        """The wrappers look the tool up at run time; a stamped path would
+        break the folder the moment the tool moves."""
         install(str(tmp_path), python_exe=r"C:\some\venv\python.exe")
-        text = (tmp_path / "check_content.bat").read_text(encoding="utf-8")
-        assert "@@PYTHON@@" not in text and "@@REPO@@" not in text
-        assert r"C:\some\venv\python.exe" in text
-        assert "validate_content.py" in text
+        for name in ("check_content.bat", "check_content.sh",
+                     "update_kit.bat", "update_kit.sh"):
+            text = (tmp_path / name).read_text(encoding="utf-8")
+            assert r"C:\some\venv" not in text, name
+            assert os.path.dirname(os.path.abspath(__file__)) not in text, name
+            assert "CANVAS_QUARTO_SYNC_DIR" in text, name
+
+    def test_wrapper_line_endings_suit_their_shell(self, tmp_path):
+        install(str(tmp_path))
+        for name in ("check_content.bat", "update_kit.bat"):
+            data = (tmp_path / name).read_bytes()
+            assert data.count(b"\n") == data.count(b"\r\n"), f"{name} must be CRLF"
+        for name in ("check_content.sh", "update_kit.sh"):
+            assert b"\r\n" not in (tmp_path / name).read_bytes(), f"{name} must be LF"
 
     def test_stamp_records_version(self, tmp_path):
         install(str(tmp_path))
@@ -70,6 +82,45 @@ class TestUpdate:
         stray.write_text("obsolete", encoding="utf-8")
         install(str(tmp_path), update=True)
         assert not stray.exists()
+
+    def test_update_survives_a_folder_held_open(self, tmp_path, monkeypatch):
+        """Dropbox or an editor holding reference/ open made Windows refuse to
+        remove it, and the update stopped with the reference files deleted."""
+        import init_content_project as m
+        install(str(tmp_path))
+        ref = tmp_path / ".claude" / "skills" / "canvas-content" / "reference"
+        (ref / "old.md").write_text("obsolete", encoding="utf-8")
+        real_rmdir = os.rmdir
+
+        def held_open(path):
+            if os.path.basename(path) == "reference":
+                raise PermissionError(32, "being used by another process", path)
+            real_rmdir(path)
+
+        monkeypatch.setattr(m.os, "rmdir", held_open)
+        install(str(tmp_path), update=True)
+
+        names = {p.name for p in ref.iterdir()}
+        assert "frontmatter.md" in names
+        assert "old.md" not in names
+
+    def test_update_waits_out_a_briefly_locked_file(self, tmp_path, monkeypatch):
+        import init_content_project as m
+        install(str(tmp_path))
+        real_remove = os.remove
+        calls = {"n": 0}
+
+        def locked_once(path):
+            if path.endswith("SKILL.md") and calls["n"] == 0:
+                calls["n"] += 1
+                raise PermissionError(32, "being used by another process", path)
+            real_remove(path)
+
+        monkeypatch.setattr(m.os, "remove", locked_once)
+        monkeypatch.setattr(m.time, "sleep", lambda s: None)
+        install(str(tmp_path), update=True)
+        assert calls["n"] == 1
+        assert (tmp_path / ".claude" / "skills" / "canvas-content" / "SKILL.md").exists()
 
     def test_update_preserves_config_and_content(self, tmp_path):
         install(str(tmp_path))

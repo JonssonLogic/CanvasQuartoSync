@@ -22,6 +22,14 @@ uses div answers, and every `- [x]` checklist answer in that question is discard
 **Untitled callouts arrive unstyled.** Give every callout a `##` heading as its first
 line - see recipes.md.
 
+**A broken cross-reference uploads as `?@fig-x`.** Quarto warns on stderr and still
+exits 0. The usual cause is not a typo: an image only becomes a numbered figure when it
+stands alone between blank lines, so images stacked on adjacent lines are inline
+images and every `@fig-` reference to them fails. Inside a figure div
+(`::: {#fig-panel layout-ncol=2}`) stacking is the syntax, and fine. The validator
+catches both cases. The sync warns and uploads anyway; `strict_crossrefs = true` in
+`config.toml` makes it skip the item instead.
+
 ## Dates and the source of truth
 
 Your files are authoritative. **Removing a date key clears that date in Canvas** rather

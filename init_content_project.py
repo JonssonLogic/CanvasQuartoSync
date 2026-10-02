@@ -11,9 +11,9 @@ Usage:
     python init_content_project.py C:\\Courses\\MECH201 --update    # refresh kit
     python init_content_project.py . --with-example                 # + sample module
 
-The wrappers are stamped with absolute paths derived from the interpreter that
-runs this script (``sys.executable``) and this file's location, so the venv can
-live anywhere and be called anything.
+The wrappers carry no paths. They look the tool up at run time
+(CANVAS_QUARTO_SYNC_DIR, then the install location, then older layouts), so
+moving or reinstalling the tool never breaks a content folder.
 """
 
 import argparse
@@ -23,6 +23,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 
 from handlers import __version__
@@ -127,20 +128,54 @@ def _course_name(target):
 # Copy steps
 # ---------------------------------------------------------------------------
 
+def _retry(fn, path, attempts=5, delay=0.2):
+    """Run fn(path), retrying briefly while another process holds the file."""
+    for i in range(attempts):
+        try:
+            return fn(path)
+        except PermissionError:
+            if i == attempts - 1:
+                raise
+            time.sleep(delay)
+
+
+def _empty_dir(path):
+    """Delete everything under path, keeping any folder that will not go.
+
+    Content folders usually sit in Dropbox or OneDrive, and the sync client,
+    an editor or a file watcher can hold a folder open. Windows then refuses to
+    remove the folder, though its files still delete. rmtree stopped on that
+    halfway, leaving a skill with no reference files; here an empty folder that
+    stays is simply reused by the copy that follows."""
+    for root, dirs, files in os.walk(path, topdown=False):
+        for name in files:
+            _retry(os.remove, os.path.join(root, name))
+        for name in dirs:
+            try:
+                os.rmdir(os.path.join(root, name))
+            except OSError:
+                pass
+
+
 def copy_skill(target, log):
     """Replace the skill directory wholesale - it is tool-owned, never edited."""
     src = os.path.join(KIT_SRC, "skills", "canvas-content")
     dst = os.path.join(target, ".claude", "skills", "canvas-content")
     if os.path.exists(dst):
-        shutil.rmtree(dst)
-    shutil.copytree(src, dst)
+        _empty_dir(dst)
+    shutil.copytree(src, dst, dirs_exist_ok=True)
     log.append(f"  skill      .claude/skills/canvas-content/ ({len(os.listdir(os.path.join(dst, 'reference')))} reference files)")
 
 
-def copy_wrappers(target, python_exe, log):
+def copy_wrappers(target, log):
+    """Copy the wrappers with the line endings their shell needs.
+
+    cmd.exe misreads ``call :label`` in an LF-only .bat, and bash chokes on
+    CRLF, so neither may depend on how git checked the source out."""
     for name in _WRAPPERS:
-        text = _read(os.path.join(KIT_SRC, name))
-        text = text.replace("@@PYTHON@@", python_exe).replace("@@REPO@@", REPO_ROOT)
+        text = _read(os.path.join(KIT_SRC, name)).replace("\r\n", "\n")
+        if name.endswith(".bat"):
+            text = text.replace("\n", "\r\n")
         _write(os.path.join(target, name), text, executable=name.endswith(".sh"))
     log.append(f"  wrappers   {', '.join(_WRAPPERS)}")
 
@@ -225,7 +260,7 @@ def install(target, python_exe=None, update=False, with_example=False):
     stamp = load_stamp(target)
 
     copy_skill(target, log)
-    copy_wrappers(target, python_exe, log)
+    copy_wrappers(target, log)
     claude_hash = copy_claude_md(target, stamp, log)
 
     if not update:
@@ -248,7 +283,7 @@ def main():
     parser.add_argument("--with-example", action="store_true",
                         help="Also write a sample module to copy from.")
     parser.add_argument("--python",
-                        help="Interpreter to stamp into the wrappers "
+                        help="Interpreter to check for the tool's dependencies "
                              "(default: the one running this script).")
     args = parser.parse_args()
 

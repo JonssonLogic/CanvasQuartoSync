@@ -169,6 +169,67 @@ def store_canvas_hash(content_root: str, file_path: str, canvas_html: str):
         logger.debug("    Could not write snapshot: %s", e)
 
 
+def _remove_snapshot(content_root: str, rel_path: str) -> bool:
+    """Delete the stored snapshot for a relative path, if there is one."""
+    # Built by hand rather than through _snapshot_path, which creates the
+    # snapshot directory as a side effect. Forgetting a file should never
+    # bring one into existence.
+    snap = os.path.join(content_root, SNAPSHOT_DIR,
+                        rel_path.replace('/', '__').replace(' ', '_') + '.html')
+    if not os.path.isfile(snap):
+        return False
+    try:
+        os.remove(snap)
+        return True
+    except OSError as e:
+        logger.debug("    Could not remove snapshot %s: %s", snap, e)
+        return False
+
+
+def forget_synced_file(content_root: str, rel_path: str) -> bool:
+    """Drop everything we remember about a file: sync map entry and snapshot.
+
+    The mirror of :func:`store_canvas_hash`. Without it, deleting content left
+    both behind, and the module panel went on reporting a file that is no
+    longer on disk as synced. The sharper failure is a stale entry that shares
+    a Canvas id with a live file: the reverse id lookup in module_structure is
+    last-write-wins, so the dead path could win and hide the real one.
+
+    Returns True if anything was removed.
+    """
+    rel_path = rel_path.replace('\\', '/')
+    removed = False
+
+    sync_map = load_sync_map(content_root)
+    if rel_path in sync_map:
+        del sync_map[rel_path]
+        save_sync_map(content_root, sync_map)
+        removed = True
+
+    if _remove_snapshot(content_root, rel_path):
+        removed = True
+
+    return removed
+
+
+def forget_synced_dir(content_root: str, local_dir: str) -> int:
+    """Forget every tracked file under a directory. Returns how many were dropped."""
+    prefix = local_dir.replace('\\', '/').rstrip('/') + '/'
+    sync_map = load_sync_map(content_root)
+    doomed = [k for k in sync_map if k.startswith(prefix)]
+    if not doomed:
+        return 0
+
+    for rel_path in doomed:
+        del sync_map[rel_path]
+    save_sync_map(content_root, sync_map)
+
+    for rel_path in doomed:
+        _remove_snapshot(content_root, rel_path)
+
+    return len(doomed)
+
+
 def check_drift(content_root: str, file_path: str, current_canvas_html: str) -> dict:
     """Check if Canvas content has drifted from what we last synced.
 
@@ -317,8 +378,11 @@ def drift_report(course, drifted, content_root, include_diff=False):
     Kept here rather than inline in main() so it can be tested without a
     Canvas connection, and so sync_to_canvas.py stays thin.
 
-    The diff is opt-in because it can be long, matching the human report where
-    --show-diff controls the same thing.
+    The diff *text* is opt-in because it can be long, matching the human report
+    where --show-diff controls the same thing. ``canvas_qmd_path`` is not: it
+    is one path, and it is the only way a caller can open a diff editor on the
+    Canvas side. Leaving it out meant the extension read undefined, threw
+    inside an async handler, and showed the user nothing at all.
     """
     items = []
     for item in drifted:
@@ -331,6 +395,9 @@ def drift_report(course, drifted, content_root, include_diff=False):
             'stored_hash': item.get('stored_hash', ''),
             'current_hash': item.get('current_hash', ''),
         }
+        # Absent when the drift check ran without building diffs.
+        if item.get('canvas_qmd_path'):
+            entry['canvas_qmd_path'] = item['canvas_qmd_path']
         if include_diff:
             entry['diff'] = item.get('diff', '')
         items.append(entry)
@@ -342,7 +409,7 @@ def drift_report(course, drifted, content_root, include_diff=False):
     }
 
 
-def check_all_drift(course, content_root: str) -> list:
+def check_all_drift(course, content_root: str, include_diff: bool = True) -> list:
     """Check drift for all synced items.
 
     Returns a list of dicts for items that have drifted:
@@ -351,6 +418,12 @@ def check_all_drift(course, content_root: str) -> list:
 
     canvas_qmd_path is a temp file containing the Canvas content converted
     to .qmd format, suitable for opening in VS Code's diff editor.
+
+    ``include_diff=False`` answers only *whether* each item drifted, and
+    writes nothing. A caller that just wants a status light should use it:
+    building the diff costs an HTML-to-text conversion per item and leaves
+    files in .canvas_diff_temp/, which is wasted work when nobody is going
+    to open a diff editor. ``diff`` and ``canvas_qmd_path`` are then absent.
     """
     sync_map = load_sync_map(content_root)
     drifted_items = []
@@ -398,28 +471,28 @@ def check_all_drift(course, content_root: str) -> list:
                 if current_html is not None:
                     current_hash = compute_content_hash(current_html)
                     if current_hash != stored_hash:
-                        # Build diff
-                        abs_path = os.path.join(content_root, rel_path.replace('/', os.sep))
-                        diff_text = _compute_diff(content_root, abs_path, current_html)
-
-                        # Build Canvas QMD for VS Code diff editor
-                        canvas_qmd = _canvas_html_to_qmd(
-                            current_html, item_type, canvas_obj,
-                            sync_map, content_root
-                        )
-                        canvas_qmd_path = _write_diff_temp(
-                            content_root, rel_path, canvas_qmd
-                        )
-
-                        drifted_items.append({
+                        item = {
                             'file': rel_path,
                             'type': item_type,
                             'title': title,
                             'stored_hash': stored_hash,
                             'current_hash': current_hash,
-                            'diff': diff_text,
-                            'canvas_qmd_path': canvas_qmd_path,
-                        })
+                        }
+
+                        if include_diff:
+                            abs_path = os.path.join(content_root, rel_path.replace('/', os.sep))
+                            item['diff'] = _compute_diff(content_root, abs_path, current_html)
+
+                            # Canvas QMD for VS Code's diff editor
+                            canvas_qmd = _canvas_html_to_qmd(
+                                current_html, item_type, canvas_obj,
+                                sync_map, content_root
+                            )
+                            item['canvas_qmd_path'] = _write_diff_temp(
+                                content_root, rel_path, canvas_qmd
+                            )
+
+                        drifted_items.append(item)
 
         except Exception as e:
             logger.debug("  Could not check drift for %s: %s", rel_path, e)

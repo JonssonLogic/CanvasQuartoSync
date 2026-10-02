@@ -3,6 +3,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import { resolvePython, resolveCqsRoot } from '../python/venvResolver';
 import { getWorkspaceRoot } from '../config/configLoader';
+import { diffFileWithCanvas } from '../commands/diffWithCanvas';
 import { setSyncing } from './statusBar';
 
 // ── Module Structure Panel ──────────────────────────────────────────
@@ -29,6 +30,8 @@ interface ModuleItem {
   updated_at?: string;
   local_mtime?: string;
   last_synced_at?: string;
+  // true drifted, false checked and clean, null/undefined not checked.
+  canvas_drift?: boolean | null;
   local_only?: boolean;
 }
 
@@ -77,8 +80,10 @@ export async function openModuleStructurePanel(extensionPath: string): Promise<v
         const uri = vscode.Uri.file(path.join(ws, msg.path));
         vscode.window.showTextDocument(uri);
       }
+    } else if (msg.type === 'diff') {
+      if (msg.localPath) await diffFileWithCanvas(extensionPath, msg.localPath);
     } else if (msg.type === 'refresh') {
-      await refreshPanel(extensionPath);
+      await refreshPanel(extensionPath, !!msg.withDrift);
     } else if (msg.type === 'sync') {
       if (ws && msg.localPath) {
         await handleSync(extensionPath, ws, msg.localPath, true);
@@ -160,9 +165,9 @@ export async function openModuleStructurePanel(extensionPath: string): Promise<v
   await refreshPanel(extensionPath);
 }
 
-async function refreshPanel(extensionPath: string): Promise<void> {
+async function refreshPanel(extensionPath: string, withDrift = false): Promise<void> {
   if (!currentPanel) return;
-  const result = await fetchStructure(extensionPath);
+  const result = await fetchStructure(extensionPath, withDrift);
   if (!currentPanel) return;
 
   if (result.type === 'error') {
@@ -516,7 +521,8 @@ async function handleBatchDelete(extensionPath: string, items: Record<string, un
 // ── Fetch from Python ───────────────────────────────────────────────
 
 async function fetchStructure(
-  extensionPath: string
+  extensionPath: string,
+  withDrift = false
 ): Promise<{ type: string; data?: StructureData; message?: string }> {
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) return { type: 'error', message: 'No workspace folder open.' };
@@ -527,6 +533,9 @@ async function fetchStructure(
   const cqsRoot = resolveCqsRoot(extensionPath);
   const scriptPath = path.join(cqsRoot, 'sync_to_canvas.py');
   const args = [scriptPath, workspaceRoot, '--module-structure'];
+  // Off by default: drift costs one Canvas request per synced item, and
+  // opening the panel should not pay for an answer nobody asked for.
+  if (withDrift) args.push('--with-drift');
 
   log.appendLine('[fetch] python=' + pythonPath);
   log.appendLine('[fetch] cwd=' + workspaceRoot);
@@ -544,7 +553,11 @@ async function fetchStructure(
       setSyncing(false);
       log.appendLine('[fetch] exit=' + code);
       if (code !== 0) {
-        resolve({ type: 'error', message: 'Python exit ' + code + ': ' + stderr.slice(0, 500) });
+        // The tool logs through rich, which writes to stdout, so stderr is
+        // empty on a normal failure and this message used to read just
+        // 'Python exit 1:'. Prefer whichever stream actually said something.
+        const detail = (stderr.trim() || stdout.trim() || '(no output)').slice(0, 500);
+        resolve({ type: 'error', message: 'Python exit ' + code + ': ' + detail });
         return;
       }
       // --module-structure implies --quiet upstream, so stdout is the
@@ -598,6 +611,99 @@ const TYPE_ICONS: Record<string, string> = {
   SubHeader: '&#x1F4CC;',
 };
 
+/**
+ * What state is this item in, as words.
+ *
+ * The panel used to answer this with a coloured dot and a legend, which is
+ * unreadable if you cannot separate the colours, and needs a lookup even if
+ * you can. The text is the answer; any colour is decoration on top of it.
+ *
+ * `title` carries the part that does not fit in two words, including the one
+ * honest caveat: without a drift check we know our own file has not changed
+ * since we pushed it, but not whether somebody edited it in Canvas.
+ */
+function syncStatus(item: ModuleItem): { cls: string; text: string; title: string } {
+  if (item.local_only) {
+    return {
+      cls: 'not-synced',
+      text: 'Not synced',
+      title: 'Exists locally, never pushed to Canvas.',
+    };
+  }
+  if (!item.local_path) {
+    return {
+      cls: 'canvas-only',
+      text: 'Canvas only',
+      title: 'Exists in Canvas with no local file. Import it to bring it under source control.',
+    };
+  }
+
+  // A content hash beats every timestamp, and for an assignment it is the only
+  // signal there is: Canvas bumps their updated_at for submissions and grading,
+  // so it is never fetched and never means anything about the content.
+  if (item.canvas_drift === true) {
+    return {
+      cls: 'canvas-newer',
+      text: 'Canvas newer',
+      title: 'Canvas content differs from what was last synced. Syncing overwrites it.',
+    };
+  }
+
+  const syncTime = item.last_synced_at ? new Date(item.last_synced_at).getTime() : 0;
+  const localTime = item.local_mtime ? new Date(item.local_mtime).getTime() : 0;
+  const canvasTime = item.updated_at ? new Date(item.updated_at).getTime() : 0;
+
+  if (syncTime) {
+    // updated_at is not a content timestamp for anything. Canvas bumps it for
+    // publishing, grading and settings changes, so it cannot say the content
+    // changed, only that something happened. Claiming "Canvas newer" from it
+    // made the panel accuse Canvas of an edit the panel itself had just caused
+    // by publishing an item. Only the hash gets to make that claim; the
+    // timestamp gets to raise the question.
+    if (item.canvas_drift == null && canvasTime > syncTime + 60000) {
+      return {
+        cls: 'check-canvas',
+        text: 'Check Canvas',
+        title: 'Canvas reports activity since the last sync, but a timestamp '
+          + 'moves for publishing and settings changes too, so it may not be the '
+          + 'content. Press Check Canvas to compare it properly.',
+      };
+    }
+    if (localTime > syncTime + 60000) {
+      return {
+        cls: 'local-newer',
+        text: 'Local newer',
+        title: 'The local file changed after the last sync. Sync to push it.',
+      };
+    }
+    return {
+      cls: 'in-sync',
+      text: 'In sync',
+      title: item.canvas_drift === false
+        ? 'Local file and Canvas content both match the last sync.'
+        : 'Local file unchanged since the last sync. The Canvas side has not been '
+          + 'checked: press Check Canvas to compare content.',
+    };
+  }
+
+  // Never synced by this tool, so the only comparison left is two timestamps.
+  if (canvasTime && localTime) {
+    if (Math.abs(canvasTime - localTime) < 120000) {
+      return { cls: 'in-sync', text: 'In sync', title: 'Timestamps match. Never synced by this tool.' };
+    }
+    return canvasTime > localTime
+      ? { cls: 'canvas-newer', text: 'Canvas newer', title: 'Canvas is newer than the local file. Never synced by this tool.' }
+      : { cls: 'local-newer', text: 'Local newer', title: 'The local file is newer than Canvas. Never synced by this tool.' };
+  }
+
+  return {
+    cls: 'unknown',
+    text: 'Unknown',
+    title: 'Matched to a local file, but there is nothing to compare: no sync '
+      + 'record and no usable Canvas timestamp.',
+  };
+}
+
 function renderBody(data: StructureData): string {
   // Compute counts excluding local-only items from canvas totals
   const canvasItems = data.modules.reduce((s, m) => s + m.items.filter(i => !i.local_only).length, 0);
@@ -620,8 +726,12 @@ function renderBody(data: StructureData): string {
   if ((data as any).workflow_state) infoParts.push(esc((data as any).workflow_state));
   infoParts.push(data.modules.length + ' modules');
   infoParts.push(canvasItems + ' items');
+  // Say plainly whether the Canvas side was compared, so "In sync" cannot be
+  // read as a promise the panel never made.
+  const driftChecked = data.modules.some(m => m.items.some(i => i.canvas_drift != null));
+  infoParts.push(driftChecked ? 'Canvas checked' : 'Canvas not checked');
   h += '<div class="subtitle">' + infoParts.join(' &middot; ') + '</div>';
-  h += '</div><div style="display:flex;gap:8px"><button class="refresh-btn" onclick="doCreateModule()" title="Create a new Canvas module">+ New Module</button><button class="refresh-btn" onclick="refresh()">Refresh</button></div></div>';
+  h += '</div><div style="display:flex;gap:8px"><button class="refresh-btn" onclick="doCreateModule()" title="Create a new Canvas module">+ New Module</button><button class="refresh-btn" onclick="checkCanvas()" title="Ask Canvas what has changed since the last sync. One request per synced item, so it takes a moment.">Check Canvas</button><button class="refresh-btn" onclick="refresh()">Refresh</button></div></div>';
 
   // Stats
   h += '<div class="stats">';
@@ -632,14 +742,6 @@ function renderBody(data: StructureData): string {
   }
   h += '</div>';
 
-  // Legend
-  h += '<div class="legend">';
-  h += '<div class="legend-item"><span class="dot local"></span> In sync</div>';
-  h += '<div class="legend-item"><span class="dot local-newer"></span> Local newer</div>';
-  h += '<div class="legend-item"><span class="dot canvas-newer"></span> Canvas newer</div>';
-  h += '<div class="legend-item"><span class="dot canvas-only"></span> Canvas-only</div>';
-  h += '<div class="legend-item"><span class="dot not-synced"></span> Not synced</div>';
-  h += '</div>';
 
   // Modules
   for (let mi = 0; mi < data.modules.length; mi++) {
@@ -696,42 +798,7 @@ function renderBody(data: StructureData): string {
       const hasLocal = !!item.local_path;
       const icon = isLocalOnly ? '&#x1F4C4;' : (TYPE_ICONS[item.type] || '&#x1F4E6;');
 
-      // Determine dot color based on sync state
-      // Compare Canvas updated_at and local mtime against last_synced_at
-      let dotCls: string;
-      if (isLocalOnly) {
-        dotCls = 'not-synced';
-      } else if (!hasLocal) {
-        dotCls = 'canvas-only';
-      } else if (item.last_synced_at) {
-        const syncTime = new Date(item.last_synced_at).getTime();
-        const canvasTime = item.updated_at ? new Date(item.updated_at).getTime() : 0;
-        const localTime = item.local_mtime ? new Date(item.local_mtime).getTime() : 0;
-        const canvasChanged = canvasTime > syncTime + 60000;
-        const localChanged = localTime > syncTime + 60000;
-        if (canvasChanged && localChanged) {
-          dotCls = 'canvas-newer';
-        } else if (canvasChanged) {
-          dotCls = 'canvas-newer';
-        } else if (localChanged) {
-          dotCls = 'local-newer';
-        } else {
-          dotCls = 'local';
-        }
-      } else if (item.updated_at && item.local_mtime) {
-        const ct = new Date(item.updated_at).getTime();
-        const lt = new Date(item.local_mtime).getTime();
-        if (Math.abs(ct - lt) < 120000) {
-          dotCls = 'local';
-        } else if (ct > lt) {
-          dotCls = 'canvas-newer';
-        } else {
-          dotCls = 'local-newer';
-        }
-      } else {
-        dotCls = 'local';
-      }
-      const unpubCls = (item.published === false && !isLocalOnly) ? ' unpublished' : '';
+      const status = syncStatus(item);
       const clickCls = item.html_url ? ' clickable' : '';
       const safePath = hasLocal ? esc(item.local_path!.replace(/\\/g, '/')) : '';
       // Title always links to Canvas
@@ -771,7 +838,6 @@ function renderBody(data: StructureData): string {
       const deleteVal = esc(JSON.stringify(deleteObj));
       h += '<div class="item' + clickCls + '" data-kind="' + dataKind + '" data-value="' + dataVal.replace(/"/g, '&quot;') + '">';
       h += '<span class="cb-cell"><input type="checkbox" class="item-cb" onclick="event.stopPropagation();onCheckChanged()" data-kind="' + dataKind + '" data-value="' + dataVal.replace(/"/g, '&quot;') + '" data-delete="' + deleteVal.replace(/"/g, '&quot;') + '"></span>';
-      h += '<span class="status-dot ' + dotCls + unpubCls + '"></span>';
       h += '<span class="icon">' + icon + '</span>';
       h += '<span class="title"' + titleClick + '>' + esc(item.title) + '</span>';
       h += '<span class="type-badge' + badgeCls + '">' + badgeText + '</span>';
@@ -785,17 +851,27 @@ function renderBody(data: StructureData): string {
         h += '<span class="local-path" title="' + pathText + '">' + pathText + '</span>';
       }
 
+      h += '<span class="status ' + status.cls + '" title="' + esc(status.title) + '">'
+        + status.text + '</span>';
+
       // Action buttons
       h += '<span class="actions">';
       // Publish/unpublish toggle for Canvas items (not local-only)
       if (!isLocalOnly && item.module_item_id) {
         const togglePub = !item.published;
-        const pubIcon = item.published ? '&#x1F441;' : '&#x1F441;&#xFE0F;&#x200D;&#x1F5E8;';
-        const pubTitle = item.published ? 'Unpublish' : 'Publish';
+        // Words, not a green or grey circle. It sits next to the sync status,
+        // and a row should not need colour vision to be read.
+        const pubTitle = item.published ? 'Published. Click to unpublish.' : 'Draft. Click to publish.';
         const pubBtnCls = item.published ? 'pub-on' : 'pub-off';
         h += '<button class="action-btn pub-btn ' + pubBtnCls + '" onclick="event.stopPropagation();doSetPublished({target:\'item\',module_id:'
           + mod.id + ',item_id:' + item.module_item_id + ',published:' + togglePub + '})" title="' + pubTitle + '">'
-          + (item.published ? '&#x1F7E2;' : '&#x26AA;') + '</button>';
+          + (item.published ? 'Published' : 'Draft') + '</button>';
+      }
+      // Only offered where Canvas is known to differ. Everywhere else it
+      // would spend a Canvas round trip to say "nothing changed".
+      if (hasLocal && (status.cls === 'canvas-newer' || status.cls === 'check-canvas')) {
+        h += '<button class="action-btn diff-btn" onclick="event.stopPropagation();doDiff(\''
+          + safePath.replace(/'/g, "\\'") + '\')" title="Show what changed in Canvas, side by side with your local file">Diff</button>';
       }
       if (isLocalOnly || hasLocal) {
         // Has local file: Sync button
@@ -846,12 +922,13 @@ function renderBody(data: StructureData): string {
         const orphanDel = esc(JSON.stringify({ target: 'local_file', local_path: f.replace(/\\/g, '/') }));
         h += '<div class="item clickable">';
         h += '<span class="cb-cell"><input type="checkbox" class="item-cb" onclick="event.stopPropagation();onCheckChanged()" data-kind="delete" data-value="" data-delete="' + orphanDel.replace(/"/g, '&quot;') + '"></span>';
-        h += '<span class="status-dot not-synced"></span>';
         h += '<span class="icon">&#x1F4C4;</span>';
         h += '<span class="title" onclick="openFile(\'' + safeF.replace(/'/g, "\\'") + '\')">' + esc(f) + '</span>';
         h += '<span class="type-badge not-synced-badge">No module</span>';
         h += '<span class="updated"></span>';
         h += '<span class="local-path"></span>';
+        h += '<span class="status not-synced" title="Not in any Canvas module. '
+          + 'Move it into an NN_ directory, or delete it.">Not synced</span>';
         h += '<span class="actions"></span>';
         h += '</div>';
       }
@@ -885,8 +962,6 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);backgr
 .header .subtitle{font-size:12px;color:var(--vscode-descriptionForeground);margin-top:2px}
 .refresh-btn{background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px}
 .refresh-btn:hover{background:var(--vscode-button-hoverBackground)}
-.legend{display:flex;gap:16px;margin-bottom:16px;font-size:12px;color:var(--vscode-descriptionForeground)}
-.legend-item{display:flex;align-items:center;gap:4px}
 .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
 .dot.local{background:#198754}.dot.canvas-only{background:#dc3545}.dot.not-synced{background:#0d6efd}.dot.canvas-newer{background:#ffc107}.dot.local-newer{background:#20c997}.dot.unpublished{background:#6c757d}
 .module{margin-bottom:16px;border:1px solid var(--vscode-widget-border);border-radius:6px;overflow:hidden}
@@ -898,7 +973,7 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);backgr
 .pub-badge{font-size:10px;padding:1px 6px;border-radius:3px;font-weight:400}
 .pub-badge.published{background:rgba(25,135,84,0.15);color:#198754}
 .pub-badge.draft{background:rgba(108,117,125,0.15);color:#6c757d}
-.module-items{padding:4px 0;display:grid;grid-template-columns:22px 12px 24px 1fr 80px 70px minmax(100px,280px) auto;align-items:center;row-gap:1px}.module-items.hidden{display:none}
+.module-items{padding:4px 0;display:grid;grid-template-columns:22px 24px 1fr 80px 70px minmax(100px,280px) 96px auto;align-items:center;row-gap:1px}.module-items.hidden{display:none}
 .item{display:contents;cursor:default;font-size:13px}
 .item>*{padding:4px 0}
 .item:hover>*{background:var(--vscode-list-hoverBackground)}
@@ -906,8 +981,14 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);backgr
 .item .icon{font-size:14px;text-align:center;padding-left:4px}
 .item .title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:6px;padding-right:8px}
 .item .type-badge{font-size:10px;padding:2px 8px;border-radius:3px;background:var(--vscode-badge-background);color:var(--vscode-badge-foreground);text-align:center;width:80px;justify-self:end}
-.item .status-dot{width:8px;height:8px;border-radius:50%;justify-self:center}
-.item .status-dot.local{background:#198754}.item .status-dot.canvas-only{background:#dc3545}.item .status-dot.not-synced{background:#0d6efd}.item .status-dot.canvas-newer{background:#ffc107}.item .status-dot.local-newer{background:#20c997}.item .status-dot.unpublished{opacity:0.5}
+.item .status{font-size:10px;text-align:center;white-space:nowrap;padding:2px 6px;border-radius:3px;justify-self:end;font-weight:600;letter-spacing:0.02em}
+.item .status.in-sync{color:var(--vscode-descriptionForeground);font-weight:400}
+.item .status.local-newer{background:rgba(32,201,151,0.16);color:#20c997}
+.item .status.canvas-newer{background:rgba(255,193,7,0.18);color:#ffc107}
+.item .status.check-canvas{background:rgba(255,193,7,0.10);color:#d9a406;font-weight:400}
+.item .status.canvas-only{background:rgba(220,53,69,0.16);color:#ff6b7a}
+.item .status.not-synced{background:rgba(13,110,253,0.16);color:#6ea8fe}
+.item .status.unknown{background:var(--vscode-badge-background);color:var(--vscode-badge-foreground)}
 .type-badge.not-synced-badge{background:rgba(13,110,253,0.15);color:#6ea8fe}
 .item .updated{font-size:10px;color:var(--vscode-descriptionForeground);text-align:right;white-space:nowrap;padding-right:4px}
 .item .local-path{font-size:11px;color:var(--vscode-descriptionForeground);padding-left:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px;text-align:right}
@@ -920,6 +1001,8 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);backgr
 .action-btn.import-btn:hover{background:rgba(13,110,253,0.15)}
 .action-btn.sync-btn{border-color:#198754;color:#75b798}
 .action-btn.sync-btn:hover{background:rgba(25,135,84,0.15)}
+.action-btn.diff-btn{border-color:#ffc107;color:#ffc107}
+.action-btn.diff-btn:hover{background:rgba(255,193,7,0.15)}
 .action-btn.delete-btn{border-color:#dc3545;color:#ea868f}
 .action-btn.delete-btn:hover{background:rgba(220,53,69,0.15)}
 .mod-cb{cursor:pointer;width:14px;height:14px;accent-color:#dc3545;margin-right:2px}
@@ -943,8 +1026,11 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);backgr
 .new-menu-item:hover{background:var(--vscode-list-hoverBackground)}
 .orphan-module{border-color:rgba(13,110,253,0.3)}
 .pub-toggle{cursor:pointer}.pub-toggle:hover{opacity:0.7}
-.pub-btn{font-size:12px;padding:1px 4px;min-width:24px;border:none}
-.pub-btn.pub-on{color:#198754}.pub-btn.pub-off{color:#6c757d}
+.pub-btn{font-size:10px;padding:2px 6px;min-width:76px;font-weight:600;justify-content:center}
+.pub-btn.pub-on{border-color:#198754;color:#75b798;background:rgba(25,135,84,0.12)}
+.pub-btn.pub-on:hover{background:rgba(25,135,84,0.22)}
+.pub-btn.pub-off{border-color:var(--vscode-descriptionForeground);color:var(--vscode-foreground);background:none;font-weight:400}
+.pub-btn.pub-off:hover{background:var(--vscode-list-hoverBackground)}
 .batch-bar{position:fixed;bottom:0;left:0;right:0;background:var(--vscode-sideBar-background);border-top:2px solid var(--vscode-focusBorder);padding:10px 24px;display:flex;align-items:center;gap:12px;z-index:100;font-size:13px}
 .batch-bar.hidden{display:none}
 #batch-count{font-weight:600;min-width:90px}
@@ -961,6 +1047,8 @@ function openUrl(u){vscode.postMessage({type:"openUrl",url:u})}
 function doSync(p){vscode.postMessage({type:"sync",localPath:p})}
 function doSetPublished(d){vscode.postMessage({type:"setPublished",data:d})}
 function doCreateModule(){vscode.postMessage({type:"createModule"})}
+function checkCanvas(){vscode.postMessage({type:"refresh",withDrift:true})}
+function doDiff(p){vscode.postMessage({type:"diff",localPath:p})}
 function doImport(jsonStr){try{var d=JSON.parse(jsonStr);vscode.postMessage({type:"import",itemData:d})}catch(e){console.error(e)}}
 function toggleNewMenu(mi){
   var menu=document.getElementById("new-menu-"+mi);

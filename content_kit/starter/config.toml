@@ -11,11 +11,22 @@ credits     = "7.5 ECTS"
 semester    = "Spring 2026"
 language    = "english"              # or "swedish"
 
+# Where a study guide links for the official syllabus, in the HTML page and on
+# the PDF cover. Defaults to Jonkoping's syllabus service, derived from the
+# course code. Point it anywhere, or set it to "" to leave the link out.
+# syllabus_url = "https://your-institution.instructure.com/courses/1/files/42"
+
 # Timezone for times written without a Z or offset (e.g. due_at: "2026-03-15T23:59:00").
 # The sync converts correctly either way - it falls back to the Canvas course's own
 # setting. Set it here anyway if you want check_content's daylight-saving warnings:
 # the validator runs offline and cannot read the Canvas setting. Use an IANA name.
 # timezone  = "Europe/Stockholm"
+
+# A cross-reference Quarto cannot resolve (@fig-x with no {#fig-x}, or an image
+# not alone between blank lines) renders as literal "?@fig-x". The sync warns
+# and uploads anyway; set this to true to skip the item instead, so Canvas keeps
+# its previous version until the reference is fixed.
+# strict_crossrefs = true
 
 # canvas_api_url    = "https://your-institution.instructure.com"
 # canvas_token_path = "token.txt"

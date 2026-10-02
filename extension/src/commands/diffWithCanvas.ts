@@ -15,7 +15,9 @@ interface DriftItem {
   file: string;
   type: string;
   title: string;
-  canvas_qmd_path: string;
+  // Written only when the drift check built diffs. Absent is a real case, so
+  // it is optional here and checked before use.
+  canvas_qmd_path?: string;
   local_path: string;
 }
 
@@ -60,21 +62,58 @@ export async function diffWithCanvas(extensionPath: string): Promise<void> {
 
   if (!picked) return;
 
+  await runDriftCheck(extensionPath, picked.value === 'all' ? null : picked.value);
+}
+
+/**
+ * Compare one file with Canvas and open the diff, with no picker.
+ *
+ * The Module Structure panel knows which row was clicked, so asking again
+ * would be asking a question the user already answered.
+ *
+ * `relPath` is relative to the workspace root, the form the panel already
+ * carries and the form --only expects.
+ */
+export async function diffFileWithCanvas(
+  extensionPath: string,
+  relPath: string
+): Promise<void> {
+  const workspaceRoot = getWorkspaceRoot();
+  if (!workspaceRoot) return;
+  await runDriftCheck(extensionPath, path.join(workspaceRoot, relPath));
+}
+
+async function runDriftCheck(
+  extensionPath: string,
+  targetPath: string | null
+): Promise<void> {
+  const workspaceRoot = getWorkspaceRoot();
+  if (!workspaceRoot) {
+    vscode.window.showErrorMessage('No workspace folder open.');
+    return;
+  }
+
+  const pythonPath = resolvePython();
+  if (!pythonPath) {
+    vscode.window.showErrorMessage(
+      'Python virtual environment not found. Run install.ps1 first.'
+    );
+    return;
+  }
+
   const cqsRoot = resolveCqsRoot(extensionPath);
   const scriptPath = path.join(cqsRoot, 'sync_to_canvas.py');
   const args = [scriptPath, workspaceRoot, '--check-drift', '--json'];
 
-  if (picked.value !== 'all') {
-    const relativePath = path.relative(workspaceRoot, picked.value);
-    args.push('--only', relativePath);
+  if (targetPath) {
+    args.push('--only', path.relative(workspaceRoot, targetPath));
   }
 
   setSyncing(true);
 
-  const progressTitle =
-    picked.value === 'all'
-      ? 'Checking drift (all files)'
-      : `Checking drift (${path.basename(picked.value)})`;
+  const progressTitle = targetPath
+    ? `Checking drift (${path.basename(targetPath)})`
+    : 'Checking drift (all files)';
 
   vscode.window.withProgress(
     {
@@ -114,6 +153,7 @@ export async function diffWithCanvas(extensionPath: string): Promise<void> {
         proc.on('close', async (code) => {
           setSyncing(false);
           resolveProgress();
+          try {
 
           if (code !== 0) {
             vscode.window.showErrorMessage(
@@ -136,7 +176,9 @@ export async function diffWithCanvas(extensionPath: string): Promise<void> {
 
           if (driftItems.length === 0) {
             vscode.window.showInformationMessage(
-              'No drift detected. Canvas content matches your local files.'
+              targetPath
+                ? `No drift in ${path.basename(targetPath)}. Canvas matches your local file.`
+                : 'No drift detected. Canvas content matches your local files.'
             );
             return;
           }
@@ -178,6 +220,11 @@ export async function diffWithCanvas(extensionPath: string): Promise<void> {
           } else {
             await openDiff(selected.item);
           }
+          } catch (e) {
+            vscode.window.showErrorMessage(
+              'Drift check failed after the run: ' + String(e)
+            );
+          }
         });
 
         proc.on('error', (err) => {
@@ -191,6 +238,17 @@ export async function diffWithCanvas(extensionPath: string): Promise<void> {
 }
 
 async function openDiff(item: DriftItem): Promise<void> {
+  // Uri.file(undefined) throws, and this runs inside an async handler whose
+  // rejection goes nowhere: the user clicked Diff and watched nothing happen.
+  // Say so instead.
+  if (!item.canvas_qmd_path || !item.local_path) {
+    vscode.window.showErrorMessage(
+      `Cannot open the diff for ${item.title}: the drift check did not return `
+      + `a Canvas copy to compare against.`
+    );
+    return;
+  }
+
   const canvasUri = vscode.Uri.file(item.canvas_qmd_path);
   const localUri = vscode.Uri.file(item.local_path);
 

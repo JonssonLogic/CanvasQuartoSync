@@ -2,12 +2,12 @@
   "name": "canvasquartosync",
   "displayName": "Canvas Quarto Sync",
   "description": "Write courses in Quarto, preview live, sync to Canvas in one click.",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "publisher": "KalleMirza",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cenmir/CanvasQuartoSync"
+    "url": "https://github.com/JonssonLogic/CanvasQuartoSync"
   },
   "engines": {
     "vscode": "^1.85.0"

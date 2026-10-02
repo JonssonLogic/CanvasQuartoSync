@@ -8,15 +8,17 @@ Manage your entire course as a local Git repository and keep Canvas in sync for 
 
 **Windows** (PowerShell):
 ```powershell
-irm https://raw.githubusercontent.com/cenmir/CanvasQuartoSync/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/JonssonLogic/CanvasQuartoSync/main/install.ps1 | iex
 ```
 
 **Linux / macOS** (Terminal):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cenmir/CanvasQuartoSync/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/JonssonLogic/CanvasQuartoSync/main/install.sh | bash
 ```
 
 Both installers let you select which components to install (Python, Git, Quarto, venv, repo clone, VS Code extension). Deselect anything you already have. Restart VS Code after install.
+
+The tool installs to one folder, with its Python environment inside: `%LOCALAPPDATA%\CanvasQuartoSync` on Windows, `~/Library/Application Support/CanvasQuartoSync` on macOS, `~/.local/share/canvasquartosync` on Linux. Deleting that folder uninstalls it. To use a clone of the repo instead (for development), set `CANVAS_QUARTO_SYNC_DIR` to the clone; it needs its own `.venv`.
 
 ## Quick Start
 
@@ -142,7 +144,8 @@ check_content.bat 01_Introduction\02_Welcome.qmd
 
 It needs no Canvas connection and reports what each file will become in Canvas, plus the
 mistakes that otherwise only surface after a sync: missing `NN_` prefixes, misspelled
-settings, broken image paths, quiz questions that will not grade.
+settings, broken image paths, cross-references that would render as `?@fig-x`, quiz
+questions that will not grade.
 
 The kit instructs assistants never to sync. Pushing to a live course stays your call.
 Full details in the [User Guide](Guides/Canvas_Sync_User_Guide.md#8-authoring-with-an-ai-assistant).

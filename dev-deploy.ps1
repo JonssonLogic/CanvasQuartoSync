@@ -9,14 +9,15 @@ $ErrorActionPreference = "Stop"
 
 $REPO_ROOT  = $PSScriptRoot
 $EXT_DIR    = Join-Path $REPO_ROOT "extension"
-$CLONE_DIR  = Join-Path $env:USERPROFILE "CanvasQuartoSync"
+$CLONE_DIR  = Join-Path $env:LOCALAPPDATA "CanvasQuartoSync"   # same as install.ps1
+$VENV_DIR   = Join-Path $CLONE_DIR ".venv"
 
 # --- Helpers ---
 function Write-Step  { param([string]$msg) Write-Host "`n>> $msg" -ForegroundColor Cyan }
 function Write-Ok    { param([string]$msg) Write-Host "   [OK] $msg" -ForegroundColor Green }
 function Write-Err   { param([string]$msg) Write-Host "   [ERROR] $msg" -ForegroundColor Red }
 
-# ---- Step 1: Sync repo files to ~/CanvasQuartoSync ----
+# ---- Step 1: Sync repo files to the install location ----
 Write-Step "Syncing repo to $CLONE_DIR..."
 
 if ($REPO_ROOT -ne $CLONE_DIR) {
@@ -32,6 +33,18 @@ if ($REPO_ROOT -ne $CLONE_DIR) {
 } else {
     Write-Ok "Already running from install directory."
 }
+
+# The venv lives inside the install; create it on first deploy, and keep its
+# packages in step with requirements.txt on every deploy.
+$venvPython = Join-Path $VENV_DIR "Scripts\python.exe"
+if (-not (Test-Path $venvPython)) {
+    Write-Step "Creating virtual environment at $VENV_DIR..."
+    uv venv --python 3.13 $VENV_DIR
+    if ($LASTEXITCODE -ne 0) { Write-Err "Could not create the venv (is uv installed?)."; exit 1 }
+}
+uv pip install --quiet --python $venvPython -r (Join-Path $CLONE_DIR "requirements.txt")
+if ($LASTEXITCODE -ne 0) { Write-Err "Package install failed."; exit 1 }
+Write-Ok "Python packages up to date."
 
 # ---- Step 2: Build VSIX ----
 Write-Step "Building VSIX..."

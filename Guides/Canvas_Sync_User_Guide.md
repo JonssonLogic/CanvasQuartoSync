@@ -94,6 +94,24 @@ back). Both still sync; move the time by an hour if the warning matters.
 > On Windows the `tzdata` package is required (it is in `requirements.txt`), because
 > Windows ships no system timezone database.
 
+### Cross-references
+
+Quarto's `@fig-x`, `@tbl-x`, `@eq-x` and `@sec-x` references work on Canvas: the
+text "Figure 1" and the caption are plain HTML by the time the page is uploaded.
+An unresolved reference is a different story. Quarto renders it as literal
+`?@fig-x`, prints a warning and exits 0, so the sync reads that warning back and
+reports it:
+
+```
+Unresolved cross-reference(s): @fig-geometry, @fig-load - students will see '?@...' in Canvas.
+```
+
+The page is still uploaded. To block it instead, so Canvas keeps the previous
+version until the reference is fixed, set `strict_crossrefs = true` in
+`config.toml`. The offline validator (`check_content`) flags the same problems
+before a sync, including the most common cause: images on adjacent lines with no
+blank line between them, which are inline images to Quarto, not figures.
+
 ### Usage
 Run the script from the root of your project:
 
@@ -703,6 +721,7 @@ Settings shared by both formats and both engines (specified in `canvas` frontmat
 | `one_question_at_a_time` | Boolean | Show one question at a time |
 | `cant_go_back` | Boolean | Prevent going back (requires `one_question_at_a_time`) |
 | `access_code` | String | Student must enter code to take quiz |
+| `ip_filter` | String or List | Restrict the quiz to IPv4 addresses: single addresses, ranges `a-b`, or CIDR blocks, comma-separated or as a list, e.g. `"193.10.0.1-193.10.255.255"`. Removing the key does not lift the filter in Canvas |
 | `description_file` | String | Path to `.qmd` description (Classic only) |
 | `show_correct_answers` | Boolean | Classic only |
 | `quiz_type` | String | Classic only: `practice_quiz`, `assignment`, `graded_survey`, `survey` |
@@ -904,8 +923,10 @@ MECH201/
 
 Add `--with-example` for a sample module to copy from.
 
-The wrappers are stamped with the **absolute path of the Python interpreter you ran the
-scaffolder with**, so the virtual environment can live anywhere and be named anything.
+The wrappers contain **no paths**: each run looks the tool up, first in
+`CANVAS_QUARTO_SYNC_DIR` (a clone with its own `.venv`, for development), then in the
+install location (`%LOCALAPPDATA%\CanvasQuartoSync` on Windows), then in the layouts
+earlier installers used. Moving or reinstalling the tool never breaks a content folder.
 If you later move the tool or the venv, re-run with `--update`.
 
 Existing content is never overwritten — running the scaffolder on a folder that already
@@ -942,6 +963,8 @@ a sync:
 *   misspelled settings (`publish:` instead of `published:`);
 *   invalid dates, out-of-range indents, unknown grading types;
 *   broken image and link paths;
+*   cross-references with no target, and images stacked on adjacent lines that never
+    become figures (either way `@fig-x` reaches Canvas as `?@fig-x`);
 *   quiz problems: mixed answer styles, missing correct answers, numeric or formula
     questions on the Classic engine, formulas that divide by zero.
 
