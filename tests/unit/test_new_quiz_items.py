@@ -76,6 +76,67 @@ class TestAnswerFeedback:
         assert len(item['entry']['answer_feedback']) == 1
 
 
+class TestShuffleChoices:
+    """Quiz-level shuffle_answers doesn't tick the per-item "Shuffle Choices"
+    box in New Quizzes; it lives in entry.properties.shuffle_rules."""
+
+    def _rules(self, item):
+        return item['entry']['properties']['shuffle_rules']['choices']
+
+    def test_shuffled_when_asked(self):
+        item = handler._transform_question(_mc([
+            {'answer_text': 'A', 'weight': 100},
+            {'answer_text': 'B', 'weight': 0},
+        ]), 1, shuffle_choices=True)
+        assert self._rules(item) == {'shuffled': True, 'to_lock': []}
+
+    def test_not_shuffled_by_default(self):
+        item = handler._transform_question(_mc([
+            {'answer_text': 'A', 'weight': 100},
+        ]), 1)
+        assert self._rules(item)['shuffled'] is False
+
+    def test_multi_answer_shuffled_too(self):
+        item = handler._transform_question(_mc([
+            {'answer_text': 'A', 'weight': 100},
+            {'answer_text': 'B', 'weight': 100},
+        ], q_type='multiple_answers_question'), 1, shuffle_choices=True)
+        assert self._rules(item)['shuffled'] is True
+
+    def test_true_false_has_no_shuffle_rules(self):
+        item = handler._transform_question({
+            'question_name': 'TF', 'question_text': 'x',
+            'question_type': 'true_false_question',
+            'answers': [{'answer_text': 'True', 'weight': 100}],
+        }, 1, shuffle_choices=True)
+        assert 'shuffle_rules' not in item['entry']['properties']
+
+    def test_properties_live_on_entry_not_item(self):
+        item = handler._transform_question(_mc([{'answer_text': 'A', 'weight': 100}]), 1)
+        assert 'properties' not in item
+        assert 'properties' in item['entry']
+
+    def test_sync_questions_passes_flag_from_handler(self, monkeypatch):
+        seen = []
+        orig = handler._transform_question
+
+        def spy(q, pos, shuffle_choices=False):
+            seen.append(shuffle_choices)
+            return orig(q, pos, shuffle_choices=shuffle_choices)
+
+        monkeypatch.setattr(handler, '_transform_question', spy)
+
+        class Client:
+            def list_items(self, *a): return []
+            def create_item(self, *a, **k): return {'id': '1'}
+            def update_item(self, *a, **k): return {'id': '1'}
+            def delete_item(self, *a, **k): pass
+
+        handler._sync_questions(Client(), 1, 2, [_mc([{'answer_text': 'A', 'weight': 100}])],
+                                None, 'x.qmd', 0, None, shuffle_choices=True)
+        assert seen == [True]
+
+
 class TestRenderQueuesAnswerComments:
     """_render_qmd_questions must send answer comments through Quarto too.
 

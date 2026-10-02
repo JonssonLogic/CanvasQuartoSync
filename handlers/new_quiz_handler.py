@@ -139,7 +139,8 @@ class NewQuizHandler(BaseHandler):
                     map_entry = None  # Clear stale item IDs — new quiz has no items yet
 
                 # Sync questions
-                self._sync_questions(client, course_id, existing_id, questions_data, content_root, file_path, current_mtime, map_entry)
+                self._sync_questions(client, course_id, existing_id, questions_data, content_root, file_path, current_mtime, map_entry,
+                                     shuffle_choices=bool(canvas_meta.get('shuffle_answers', False)))
 
                 if canvas_meta.get('hide_in_gradebook'):
                     # Re-apply now that the quiz and its items exist. Canvas
@@ -468,7 +469,8 @@ class NewQuizHandler(BaseHandler):
 
         return rendered_questions
 
-    def _sync_questions(self, client, course_id, assignment_id, questions_data, content_root, file_path, mtime, map_entry):
+    def _sync_questions(self, client, course_id, assignment_id, questions_data, content_root, file_path, mtime, map_entry,
+                        shuffle_choices=False):
         logger.info("    [cyan]Syncing %d questions to new quiz...[/cyan]", len(questions_data))
 
         # Load existing items from Canvas
@@ -496,7 +498,7 @@ class NewQuizHandler(BaseHandler):
         for i, q_data in enumerate(questions_data):
             q_name = q_data.get('question_name', f"Question {i+1}")
 
-            item_data = self._transform_question(q_data, i + 1)
+            item_data = self._transform_question(q_data, i + 1, shuffle_choices=shuffle_choices)
 
             # 1. Try to match by tracked ID first (fastest/safest)
             item_id = tracked_item_ids.get(q_name)
@@ -550,8 +552,13 @@ class NewQuizHandler(BaseHandler):
             }
             save_sync_map(content_root, sync_map)
 
-    def _transform_question(self, q_data, position):
-        """ Transforms internal question representation to New Quizzes API payload. """
+    def _transform_question(self, q_data, position, shuffle_choices=False):
+        """ Transforms internal question representation to New Quizzes API payload.
+
+        ``shuffle_choices`` sets the per-item "Shuffle Choices" box on choice
+        and multi-answer items. The quiz-level ``shuffle_answers`` setting
+        doesn't tick it, so the handler passes the same flag down here.
+        """
         q_type = q_data.get('question_type', 'multiple_choice_question')
 
         interaction_slug = 'choice'
@@ -579,7 +586,6 @@ class NewQuizHandler(BaseHandler):
             "entry_type": "Item",
             "position": position,
             "points_possible": float(q_data.get('points_possible', 1.0)),
-            "properties": {},
             "entry": {
                 "title": q_data.get('question_name', f"Question {position}"),
                 "item_body": q_data.get('question_text', ''),
@@ -587,6 +593,7 @@ class NewQuizHandler(BaseHandler):
                 "scoring_algorithm": scoring_algorithm,
                 "calculator_type": "none",
                 "interaction_data": {},
+                "properties": {},
                 "scoring_data": {},
                 "feedback": {}
             }
@@ -627,6 +634,9 @@ class NewQuizHandler(BaseHandler):
                     answer_feedback[choice_id] = ans['answer_comments']
 
             item_data['entry']['interaction_data']['choices'] = choices
+            item_data['entry']['properties']['shuffle_rules'] = {
+                'choices': {'shuffled': shuffle_choices, 'to_lock': []}
+            }
             if answer_feedback and interaction_slug == 'choice':
                 item_data['entry']['answer_feedback'] = answer_feedback
 
