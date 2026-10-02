@@ -59,17 +59,14 @@ if (Test-Path (Join-Path $CLONE_DIR ".git")) {
 # ---- Step 2: Update Python packages ----
 Write-Step "Updating Python packages..."
 
-$venvActivate = Join-Path $VENV_DIR "Scripts\Activate.ps1"
+$venvPython = Join-Path $VENV_DIR "Scripts\python.exe"
 $requirementsFile = Join-Path $CLONE_DIR "requirements.txt"
 
-if (Test-Path $venvActivate) {
-    try { & $venvActivate } catch {
-        $env:Path = (Join-Path $VENV_DIR "Scripts") + ";" + $env:Path
-        $env:VIRTUAL_ENV = $VENV_DIR
-    }
-
+if (Test-Path $venvPython) {
+    # --python targets the venv without activating it, which would change
+    # PATH for the rest of the user's PowerShell window.
     if (Test-Path $requirementsFile) {
-        uv pip install --upgrade -r $requirementsFile
+        uv pip install --python $venvPython --upgrade -r $requirementsFile
         if ($LASTEXITCODE -eq 0) {
             Write-Ok "Python packages updated."
         } else {

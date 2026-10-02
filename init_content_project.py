@@ -23,6 +23,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 
 from handlers import __version__
@@ -127,13 +128,42 @@ def _course_name(target):
 # Copy steps
 # ---------------------------------------------------------------------------
 
+def _retry(fn, path, attempts=5, delay=0.2):
+    """Run fn(path), retrying briefly while another process holds the file."""
+    for i in range(attempts):
+        try:
+            return fn(path)
+        except PermissionError:
+            if i == attempts - 1:
+                raise
+            time.sleep(delay)
+
+
+def _empty_dir(path):
+    """Delete everything under path, keeping any folder that will not go.
+
+    Content folders usually sit in Dropbox or OneDrive, and the sync client,
+    an editor or a file watcher can hold a folder open. Windows then refuses to
+    remove the folder, though its files still delete. rmtree stopped on that
+    halfway, leaving a skill with no reference files; here an empty folder that
+    stays is simply reused by the copy that follows."""
+    for root, dirs, files in os.walk(path, topdown=False):
+        for name in files:
+            _retry(os.remove, os.path.join(root, name))
+        for name in dirs:
+            try:
+                os.rmdir(os.path.join(root, name))
+            except OSError:
+                pass
+
+
 def copy_skill(target, log):
     """Replace the skill directory wholesale - it is tool-owned, never edited."""
     src = os.path.join(KIT_SRC, "skills", "canvas-content")
     dst = os.path.join(target, ".claude", "skills", "canvas-content")
     if os.path.exists(dst):
-        shutil.rmtree(dst)
-    shutil.copytree(src, dst)
+        _empty_dir(dst)
+    shutil.copytree(src, dst, dirs_exist_ok=True)
     log.append(f"  skill      .claude/skills/canvas-content/ ({len(os.listdir(os.path.join(dst, 'reference')))} reference files)")
 
 
