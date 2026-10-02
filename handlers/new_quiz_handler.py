@@ -9,6 +9,7 @@ from handlers.base_handler import BaseHandler
 from handlers.content_utils import get_mapped_id, save_mapped_id, parse_module_name, load_sync_map, save_sync_map, process_content
 from handlers.dates import resolve_timezone, to_canvas_iso
 from handlers.gradebook import resolve_gradebook_settings, needs_unhide
+from handlers.ip_filter import ip_filter_to_new_quiz
 from handlers.qmd_quiz_parser import parse_qmd_quiz
 from handlers.new_quiz_api import NewQuizAPIClient, NewQuizAPIError
 from handlers.log import logger
@@ -242,6 +243,12 @@ class NewQuizHandler(BaseHandler):
         if 'access_code' in canvas_meta:
             quiz_settings['require_student_access_code'] = True
             quiz_settings['student_access_code'] = canvas_meta['access_code']
+
+        # IP filter (Classic parity: same YAML key). New Quizzes take inclusive
+        # [start, end] pairs; bad input raises ValueError, like a bad date.
+        if 'ip_filter' in canvas_meta:
+            quiz_settings['filter_ip_address'] = True
+            quiz_settings['filters'] = {'ips': ip_filter_to_new_quiz(canvas_meta['ip_filter'])}
 
         # Calculator type
         if 'calculator_type' in canvas_meta:

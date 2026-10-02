@@ -150,6 +150,49 @@ class TestClassicParitySettings:
         assert _qs(payload)['student_access_code'] == 'secret123'
 
 
+class TestIpFilter:
+    """canvas.ip_filter -> quiz_settings.filter_ip_address + filters.ips pairs."""
+
+    def _ips(self, value):
+        qs = _qs(handler._build_quiz_payload("Q", False, {'ip_filter': value}))
+        assert qs['filter_ip_address'] is True
+        return qs['filters']['ips']
+
+    def test_single_ip(self):
+        assert self._ips("193.10.0.1") == [["193.10.0.1", "193.10.0.1"]]
+
+    def test_range(self):
+        assert self._ips("193.10.0.1-193.10.255.255") == [["193.10.0.1", "193.10.255.255"]]
+
+    def test_cidr(self):
+        assert self._ips("193.10.0.0/16") == [["193.10.0.0", "193.10.255.255"]]
+
+    def test_list_of_several(self):
+        assert self._ips(["10.0.0.1", "192.168.1.0/24", "172.16.0.1 - 172.16.0.9"]) == [
+            ["10.0.0.1", "10.0.0.1"],
+            ["192.168.1.0", "192.168.1.255"],
+            ["172.16.0.1", "172.16.0.9"],
+        ]
+
+    def test_comma_separated_string(self):
+        assert self._ips("10.0.0.1, 192.168.1.0/24") == [
+            ["10.0.0.1", "10.0.0.1"], ["192.168.1.0", "192.168.1.255"]]
+
+    def test_absent_key_sends_nothing(self):
+        payload = handler._build_quiz_payload("Q", False, {'shuffle_answers': True})
+        assert 'filter_ip_address' not in _qs(payload)
+        assert 'filters' not in _qs(payload)
+
+    def test_payload_is_json_serialisable(self):
+        import json
+        json.dumps({"quiz": handler._build_quiz_payload("Q", False, {'ip_filter': "10.0.0.0/8"})})
+
+    def test_bad_value_raises(self):
+        import pytest
+        with pytest.raises(ValueError, match="ip_filter"):
+            handler._build_quiz_payload("Q", False, {'ip_filter': "10.0.0.9-10.0.0.1"})
+
+
 # ---------------------------------------------------------------------------
 # New-Quizzes-only settings
 # ---------------------------------------------------------------------------

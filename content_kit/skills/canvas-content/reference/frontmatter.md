@@ -93,6 +93,7 @@ The file body is ignored entirely; only frontmatter is read.
 | `one_question_at_a_time` | bool | `false` | Show one question per screen |
 | `cant_go_back` | bool | `false` | No effect unless `one_question_at_a_time` is true |
 | `access_code` | string | unset | Password required to start |
+| `ip_filter` | string or list | unset | Only these IPv4 addresses may take the quiz. Comma-separated string or YAML list of single addresses, ranges `a-b`, or CIDR blocks, e.g. `ip_filter: "193.10.0.1-193.10.255.255"`. Ranges are sent to Classic as the CIDR blocks covering them. Removing the key does **not** lift the filter in Canvas - clear it there by hand |
 | `omit_from_final_grade` | bool | `false` | Excluded from the final grade. Needs `quiz_type: assignment` or `graded_survey` - other types never reach the gradebook |
 
 A classic quiz cannot be hidden from the gradebook; see [gotchas](gotchas.md).
@@ -101,13 +102,19 @@ A classic quiz cannot be hidden from the gradebook; see [gotchas](gotchas.md).
 
 Accepts every shared quiz key above (`title`, dates, `shuffle_answers`,
 `allowed_attempts`, `time_limit`, `one_question_at_a_time`, `cant_go_back`,
-`access_code`) with one difference: **`time_limit` is in seconds**, not minutes.
+`access_code`, `ip_filter`) with one difference: **`time_limit` is in seconds**, not minutes.
 `quiz_type`, `description`, `description_file`, and `show_correct_answers` are
 Classic-only and do nothing here.
+
+"Detect multiple sessions" is not exposed by the public New Quizzes API, so it
+must be switched on by hand in Canvas. A re-sync never sends it: the sync
+PATCHes only the `quiz_settings` fields whose keys appear in the frontmatter,
+not the whole settings object, so the hand-made setting is not overwritten.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `quiz_engine` | string | - | JSON files only: set to `new` to select this engine |
+| `ip_filter` | string or list | unset | Only these IPv4 addresses may take the quiz, e.g. `ip_filter: "193.10.0.1-193.10.255.255"`. Same syntax as Classic (addresses, ranges `a-b`, CIDR; string or list), sent as address ranges. Removing the key does **not** lift the filter in Canvas |
 | `points` | number | unset | Total points possible |
 | `instructions` | string | unset | Shown before the quiz starts |
 | `shuffle_questions` | bool | `false` | Randomise question order |

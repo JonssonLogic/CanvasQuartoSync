@@ -7,6 +7,7 @@ import frontmatter
 from handlers.base_handler import BaseHandler
 from handlers.content_utils import get_mapped_id, save_mapped_id, parse_module_name, process_content, safe_delete_file, safe_delete_dir
 from handlers.dates import resolve_timezone, to_canvas_iso
+from handlers.ip_filter import ip_filter_to_classic
 from handlers.qmd_quiz_parser import parse_qmd_quiz
 from handlers.log import logger
 
@@ -195,7 +196,8 @@ class QuizHandler(BaseHandler):
                 'allowed_attempts': 'allowed_attempts',
                 'one_question_at_a_time': 'one_question_at_a_time',
                 'cant_go_back': 'cant_go_back',
-                'access_code': 'access_code'
+                'access_code': 'access_code',
+                'ip_filter': 'ip_filter'
             }
 
             tz = resolve_timezone(course, content_root)
@@ -213,6 +215,11 @@ class QuizHandler(BaseHandler):
                         quiz_payload[canvas_key] = description_html
                     elif local_key in canvas_meta:
                         quiz_payload[canvas_key] = canvas_meta[local_key]
+                elif local_key == 'ip_filter':
+                    # Classic takes addresses and CIDR blocks only, so ranges are
+                    # converted. Bad input raises ValueError, like a bad date.
+                    if local_key in canvas_meta:
+                        quiz_payload[canvas_key] = ip_filter_to_classic(canvas_meta[local_key])
                 elif local_key in canvas_meta:
                     quiz_payload[canvas_key] = canvas_meta[local_key]
 

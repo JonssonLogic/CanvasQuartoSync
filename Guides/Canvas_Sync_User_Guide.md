@@ -644,6 +644,7 @@ Settings shared by both formats and both engines (specified in `canvas` frontmat
 | `one_question_at_a_time` | Boolean | Show one question at a time |
 | `cant_go_back` | Boolean | Prevent going back (requires `one_question_at_a_time`) |
 | `access_code` | String | Student must enter code to take quiz |
+| `ip_filter` | String or List | Restrict the quiz to IPv4 addresses: single addresses, ranges `a-b`, or CIDR blocks, comma-separated or as a list, e.g. `"193.10.0.1-193.10.255.255"`. Removing the key does not lift the filter in Canvas |
 | `description_file` | String | Path to `.qmd` description (Classic only) |
 | `show_correct_answers` | Boolean | Classic only |
 | `quiz_type` | String | Classic only: `practice_quiz`, `assignment`, `graded_survey`, `survey` |
