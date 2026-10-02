@@ -471,6 +471,99 @@ def _check_links(report, body, base_path):
             _check_cross_link(report, abs_target, target)
 
 
+# Quarto cross-references. An @fig-x in the text needs a {#fig-x} (or a
+# "#| label: fig-x" cell option) in the same file; otherwise Quarto renders it as
+# literal "?@fig-x", reports success, and the sync uploads it as-is.
+_XREF_PREFIXES = ("fig", "tbl", "eq", "sec", "lst",
+                  "thm", "lem", "cor", "prp", "cnj", "def", "exm", "exr")
+_XREF_LABEL = r"(?:%s)-[\w-]*\w" % "|".join(_XREF_PREFIXES)
+# "@Fig-x" is Quarto for a capitalised "Figure"; the label is still fig-x.
+_XREF_REF_RE = re.compile(r"(?<![\w@.])@(" + _XREF_LABEL + r")", re.IGNORECASE)
+_XREF_DEF_RE = re.compile(
+    r"\{#(" + _XREF_LABEL + r")[\s}]"
+    r"|^\s*#\|\s*label:\s*(" + _XREF_LABEL + r")\s*$",
+    re.MULTILINE,
+)
+_FIG_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)\{[^}]*#(fig-[\w-]*\w)[^}]*\}")
+_FIG_IMAGE_ALONE_RE = re.compile(r"^\s*!\[[^\]]*\]\([^)]*\)\{[^}]*\}\s*$")
+
+
+def _normalise_label(label):
+    prefix, sep, rest = label.partition("-")
+    return prefix.lower() + sep + rest
+
+
+def _check_crossrefs(report, body, raw_text):
+    """Every @fig-/@tbl-/@eq-/... reference must have a target in this file.
+
+    `body` is the text without frontmatter; `raw_text` is the whole file, so
+    the line numbers in the figure check match what the author sees."""
+    defined = {_normalise_label(a or b) for a, b in _XREF_DEF_RE.findall(body)}
+
+    # References inside code, inline code or HTML comments are never resolved
+    # by Quarto, so they cannot be broken either.
+    text = re.sub(r"```[\s\S]*?```", "", body)
+    text = re.sub(r"`[^`\n]*`", "", text)
+    text = re.sub(r"<!--[\s\S]*?-->", "", text)
+
+    seen = set()
+    for label in _XREF_REF_RE.findall(text):
+        label = _normalise_label(label)
+        if label in defined or label in seen:
+            continue
+        seen.add(label)
+        report.error(
+            f"cross-reference @{label} has no matching {{#{label}}} in this file - "
+            f"Quarto renders it as '?@{label}'"
+        )
+
+    _check_figure_paragraphs(report, raw_text)
+
+
+def _check_figure_paragraphs(report, body):
+    """An image only becomes a numbered figure when it is alone in its
+    paragraph. Stacked on adjacent lines, the images are inline and every
+    @fig- reference to them comes out as '?@fig-...'. The exception is a
+    figure div (::: {#fig-panel layout-ncol=2}), where stacking is the syntax."""
+    lines = body.splitlines()
+    in_code = False
+    div_depth = 0       # inside any fenced div
+    figure_div = 0      # depth at which a figure/layout div was opened, 0 = none
+    for n, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            continue
+        if in_code:
+            continue
+        if stripped.startswith(":::"):
+            opener = stripped.lstrip(":").strip()
+            if opener:
+                div_depth += 1
+                if not figure_div and ("#fig-" in opener or "layout" in opener):
+                    figure_div = div_depth
+            else:
+                if figure_div == div_depth:
+                    figure_div = 0
+                div_depth = max(div_depth - 1, 0)
+            continue
+        if figure_div:
+            continue
+
+        m = _FIG_IMAGE_RE.search(line)
+        if not m:
+            continue
+        prev_blank = n == 0 or not lines[n - 1].strip()
+        next_blank = n == len(lines) - 1 or not lines[n + 1].strip()
+        if _FIG_IMAGE_ALONE_RE.match(line) and prev_blank and next_blank:
+            continue
+        label = m.group(1)
+        report.error(
+            f"line {n + 1}: figure {label} is not alone in its paragraph - put a "
+            f"blank line before and after the image, or @{label} renders as '?@{label}'"
+        )
+
+
 def _check_cross_link(report, abs_target, shown):
     """A .qmd/.json link resolves to a Canvas item only if it has canvas metadata."""
     try:
@@ -710,7 +803,9 @@ def validate_file(file_path, content_root=None, handlers=None):
                 )
 
     if raw_text is not None:
-        _check_links(report, frontmatter.loads(raw_text).content, base_path)
+        body = frontmatter.loads(raw_text).content
+        _check_links(report, body, base_path)
+        _check_crossrefs(report, body, raw_text)
 
     return report
 

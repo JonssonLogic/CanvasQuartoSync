@@ -132,7 +132,8 @@ check_content.bat 01_Introduction\02_Welcome.qmd
 
 It needs no Canvas connection and reports what each file **will become in Canvas**, plus
 the mistakes that otherwise only surface after a sync — missing `NN_` prefixes,
-misspelled settings, broken image paths, quiz questions that won't grade.
+misspelled settings, broken image paths, cross-references that would render as
+`?@fig-x`, quiz questions that won't grade.
 
 The kit instructs assistants **never to sync**: pushing to a live course stays your call.
 Full details in the [User Guide](Guides/Canvas_Sync_User_Guide.md#8-authoring-with-an-ai-assistant).

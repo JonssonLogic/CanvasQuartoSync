@@ -17,6 +17,12 @@ language    = "english"              # or "swedish"
 # the validator runs offline and cannot read the Canvas setting. Use an IANA name.
 # timezone  = "Europe/Stockholm"
 
+# A cross-reference Quarto cannot resolve (@fig-x with no {#fig-x}, or an image
+# not alone between blank lines) renders as literal "?@fig-x". The sync warns
+# and uploads anyway; set this to true to skip the item instead, so Canvas keeps
+# its previous version until the reference is fixed.
+# strict_crossrefs = true
+
 # canvas_api_url    = "https://your-institution.instructure.com"
 # canvas_token_path = "token.txt"
 

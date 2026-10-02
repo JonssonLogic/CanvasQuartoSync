@@ -19,6 +19,13 @@ _DEFAULT_CALLOUT_STYLES = {
 
 _callout_cache = {}
 
+# Quarto prints one of these per cross-reference it cannot resolve, renders the
+# reference as literal "?@fig-x" text, and still exits 0. Without reading stderr
+# the broken reference goes straight to Canvas.
+_CROSSREF_WARNING_RE = re.compile(r'Unable to resolve crossref @(\S+)')
+# The same thing seen from the rendered body: what a student would read.
+_CROSSREF_UNRESOLVED_RE = re.compile(r'\?@([\w:-]*\w)')
+
 def _load_callout_styles(content_root):
     """Parse callout styles from branding.css, with defaults as fallback."""
     if content_root in _callout_cache:
@@ -225,7 +232,11 @@ class BaseHandler(ABC):
                 f.write(processed_content)
 
             cmd = ["quarto", "render", temp_qmd, "--to", "html"]
-            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            result = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stderr_text = result.stderr.decode('utf-8', errors='replace') if result.stderr else ''
+            for line in stderr_text.splitlines():
+                if 'WARNING' in line:
+                    logger.debug("    quarto: %s", line.strip())
 
             temp_html = temp_qmd.replace('.qmd', '.html')
 
@@ -247,6 +258,22 @@ class BaseHandler(ABC):
                 html_body = full_html
                 html_body = re.sub(r'<header[^>]*id="title-block-header"[^>]*>.*?</header>', '', html_body, flags=re.DOTALL)
 
+            unresolved = self._unresolved_crossrefs(stderr_text, html_body)
+            if unresolved:
+                shown = ', '.join('@' + label for label in unresolved)
+                strict = bool(load_config(content_root).get('strict_crossrefs')) if content_root else False
+                if strict:
+                    logger.error(
+                        "    [red]Unresolved cross-reference(s):[/red] %s - not uploaded "
+                        "(strict_crossrefs is on in config.toml)", shown)
+                    self._cleanup(temp_qmd, temp_html, temp_files_dir)
+                    return None
+                logger.warning(
+                    "    [yellow]Unresolved cross-reference(s):[/yellow] %s - students will "
+                    "see '?@...' in Canvas. Usually a label typo, or an image with {#fig-...} "
+                    "that is not alone between blank lines. Set strict_crossrefs = true in "
+                    "config.toml to block the upload instead.", shown)
+
             # Inline styles for Canvas compatibility
             callout_styles = _load_callout_styles(content_root) if content_root else _DEFAULT_CALLOUT_STYLES
             html_body = self._inline_callout_styles(html_body, callout_styles)
@@ -261,6 +288,18 @@ class BaseHandler(ABC):
             logger.error("    Quarto render failed: %s", e)
             self._cleanup(temp_qmd, None, temp_files_dir)
             return None
+
+    @staticmethod
+    def _unresolved_crossrefs(stderr_text, html_body):
+        """Labels Quarto could not resolve, in the order it reported them.
+
+        Quarto's stderr warning is the primary source; the rendered body is
+        scanned as well so nothing slips through if the wording changes."""
+        labels = _CROSSREF_WARNING_RE.findall(stderr_text or '')
+        for label in _CROSSREF_UNRESOLVED_RE.findall(html_body or ''):
+            if label not in labels:
+                labels.append(label)
+        return labels
 
     @staticmethod
     def _inline_callout_styles(html, callout_styles):
