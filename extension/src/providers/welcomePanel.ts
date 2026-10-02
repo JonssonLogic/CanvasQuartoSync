@@ -170,7 +170,7 @@ function getWelcomeHtml(): string {
     </div>
 
     <div class="footer">
-      <p>Need help? See the <a href="https://github.com/cenmir/CanvasQuartoSync">documentation</a>.</p>
+      <p>Need help? See the <a href="https://github.com/JonssonLogic/CanvasQuartoSync">documentation</a>.</p>
     </div>
   </div>
 

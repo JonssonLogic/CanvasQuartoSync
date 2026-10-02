@@ -2,13 +2,13 @@
 #  Canvas Quarto Sync - One-Line Installer (Windows PowerShell)
 #
 #  Usage:
-#    irm https://raw.githubusercontent.com/cenmir/CanvasQuartoSync/main/install.ps1 | iex
+#    irm https://raw.githubusercontent.com/JonssonLogic/CanvasQuartoSync/main/install.ps1 | iex
 #
 #  Interactive component selector, then fully automatic install.
 # ============================================================================
 
 # --- Configuration ---
-$REPO_URL   = "https://github.com/cenmir/CanvasQuartoSync.git"
+$REPO_URL   = "https://github.com/JonssonLogic/CanvasQuartoSync.git"
 $VENV_ROOT  = Join-Path $env:USERPROFILE ".venvs"
 $VENV_DIR   = Join-Path $VENV_ROOT "canvas_quarto_env"
 $CLONE_DIR  = Join-Path $env:USERPROFILE "CanvasQuartoSync"
@@ -292,7 +292,7 @@ if ($doVSCode) {
         $vsixPath = Join-Path $env:TEMP "canvasquartosync.vsix"
         try {
             Write-Host "   Downloading extension from GitHub..." -ForegroundColor White
-            $release = Invoke-RestMethod -Uri "https://api.github.com/repos/cenmir/CanvasQuartoSync/releases/latest" -Headers @{ Accept = "application/vnd.github.v3+json" }
+            $release = Invoke-RestMethod -Uri "https://api.github.com/repos/JonssonLogic/CanvasQuartoSync/releases/latest" -Headers @{ Accept = "application/vnd.github.v3+json" }
             $asset = $release.assets | Where-Object { $_.name -like "*.vsix" } | Select-Object -First 1
             if ($asset) {
                 Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $vsixPath -UseBasicParsing
@@ -306,11 +306,11 @@ if ($doVSCode) {
                 }
                 Remove-Item $vsixPath -ErrorAction SilentlyContinue
             } else {
-                Write-Warn "No .vsix in latest release. Download from https://github.com/cenmir/CanvasQuartoSync/releases"
+                Write-Warn "No .vsix in latest release. Download from https://github.com/JonssonLogic/CanvasQuartoSync/releases"
             }
         } catch {
             Write-Warn "Could not download extension: $_"
-            Write-Host "   Download manually from: https://github.com/cenmir/CanvasQuartoSync/releases" -ForegroundColor Yellow
+            Write-Host "   Download manually from: https://github.com/JonssonLogic/CanvasQuartoSync/releases" -ForegroundColor Yellow
         }
     } else {
         Write-Warn "VS Code not found in PATH."

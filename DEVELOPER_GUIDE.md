@@ -187,7 +187,7 @@ Each handler checks the file's `mtime` against the value stored in `.canvas_sync
 
 All Python dependencies are listed in `requirements.txt` at the project root. The project uses a **virtual environment** managed with "uv".
 
-**Quick setup** (Windows): `irm https://raw.githubusercontent.com/cenmir/CanvasQuartoSync/main/install.ps1 | iex`
+**Quick setup** (Windows): `irm https://raw.githubusercontent.com/JonssonLogic/CanvasQuartoSync/main/install.ps1 | iex`
 
 **Manual setup**: activate the venv and install:
 
