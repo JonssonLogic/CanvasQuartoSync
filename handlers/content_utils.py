@@ -333,12 +333,10 @@ def resolve_cross_link(course, current_file_path, link_target, base_path):
 
         if not target_obj:
             logger.info("    [green]Creating stub new quiz:[/green] %s", target_title)
-            from handlers.new_quiz_api import NewQuizAPIClient
-            # New Quizzes use a separate REST API; credentials come from the
-            # environment (same as NewQuizHandler) rather than canvasapi's
-            # private requester internals.
-            api_url = os.environ.get("CANVAS_API_URL") or getattr(course._requester, "original_url", None)
-            api_token = os.environ.get("CANVAS_API_TOKEN")
+            from handlers.new_quiz_api import NewQuizAPIClient, resolve_credentials
+            # New Quizzes use a separate REST API. No content_root here, so
+            # credentials come from the env or the course's own connection.
+            api_url, api_token = resolve_credentials(course)
             client = NewQuizAPIClient(api_url, api_token)
 
             quiz_payload = {

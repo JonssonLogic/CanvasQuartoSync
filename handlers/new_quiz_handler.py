@@ -9,8 +9,9 @@ from handlers.base_handler import BaseHandler
 from handlers.content_utils import get_mapped_id, save_mapped_id, parse_module_name, load_sync_map, save_sync_map, process_content
 from handlers.dates import resolve_timezone, to_canvas_iso
 from handlers.gradebook import resolve_gradebook_settings, needs_unhide
+from handlers.ip_filter import ip_filter_to_new_quiz
 from handlers.qmd_quiz_parser import parse_qmd_quiz
-from handlers.new_quiz_api import NewQuizAPIClient, NewQuizAPIError
+from handlers.new_quiz_api import NewQuizAPIClient, NewQuizAPIError, resolve_credentials
 from handlers.log import logger
 
 class NewQuizHandler(BaseHandler):
@@ -39,8 +40,7 @@ class NewQuizHandler(BaseHandler):
         logger.info("  [cyan]Syncing new quiz:[/cyan] [bold]%s[/bold]", filename)
 
         # Instantiate API Client
-        api_url = os.environ.get("CANVAS_API_URL")
-        api_token = os.environ.get("CANVAS_API_TOKEN")
+        api_url, api_token = resolve_credentials(course, content_root)
         client = NewQuizAPIClient(api_url, api_token)
         course_id = course.id
 
@@ -139,7 +139,8 @@ class NewQuizHandler(BaseHandler):
                     map_entry = None  # Clear stale item IDs — new quiz has no items yet
 
                 # Sync questions
-                self._sync_questions(client, course_id, existing_id, questions_data, content_root, file_path, current_mtime, map_entry)
+                self._sync_questions(client, course_id, existing_id, questions_data, content_root, file_path, current_mtime, map_entry,
+                                     shuffle_choices=bool(canvas_meta.get('shuffle_answers', False)))
 
                 if canvas_meta.get('hide_in_gradebook'):
                     # Re-apply now that the quiz and its items exist. Canvas
@@ -242,6 +243,12 @@ class NewQuizHandler(BaseHandler):
         if 'access_code' in canvas_meta:
             quiz_settings['require_student_access_code'] = True
             quiz_settings['student_access_code'] = canvas_meta['access_code']
+
+        # IP filter (Classic parity: same YAML key). New Quizzes take inclusive
+        # [start, end] pairs; bad input raises ValueError, like a bad date.
+        if 'ip_filter' in canvas_meta:
+            quiz_settings['filter_ip_address'] = True
+            quiz_settings['filters'] = {'ips': ip_filter_to_new_quiz(canvas_meta['ip_filter'])}
 
         # Calculator type
         if 'calculator_type' in canvas_meta:
@@ -346,6 +353,11 @@ class NewQuizHandler(BaseHandler):
                     if var_pattern:
                         text = var_pattern.sub(r'QVAR_START_\1_QVAR_END', text)
                     chunks.append((f"q{qi}_a{ai}", text))
+                if ans.get('answer_comments'):
+                    text = ans['answer_comments']
+                    if var_pattern:
+                        text = var_pattern.sub(r'QVAR_START_\1_QVAR_END', text)
+                    chunks.append((f"q{qi}_a{ai}_comment", text))
 
             for comment_key in ['correct_comments', 'incorrect_comments']:
                 if q.get(comment_key):
@@ -442,6 +454,9 @@ class NewQuizHandler(BaseHandler):
                     if ans_key in rendered_map:
                         ans['answer_html'] = rendered_map[ans_key]
                         ans.pop('answer_text', None)
+                    comment_key = f"{ans_key}_comment"
+                    if comment_key in rendered_map:
+                        ans['answer_comments'] = rendered_map[comment_key]
                     rendered_answers.append(ans)
                 q['answers'] = rendered_answers
 
@@ -454,7 +469,8 @@ class NewQuizHandler(BaseHandler):
 
         return rendered_questions
 
-    def _sync_questions(self, client, course_id, assignment_id, questions_data, content_root, file_path, mtime, map_entry):
+    def _sync_questions(self, client, course_id, assignment_id, questions_data, content_root, file_path, mtime, map_entry,
+                        shuffle_choices=False):
         logger.info("    [cyan]Syncing %d questions to new quiz...[/cyan]", len(questions_data))
 
         # Load existing items from Canvas
@@ -482,7 +498,7 @@ class NewQuizHandler(BaseHandler):
         for i, q_data in enumerate(questions_data):
             q_name = q_data.get('question_name', f"Question {i+1}")
 
-            item_data = self._transform_question(q_data, i + 1)
+            item_data = self._transform_question(q_data, i + 1, shuffle_choices=shuffle_choices)
 
             # 1. Try to match by tracked ID first (fastest/safest)
             item_id = tracked_item_ids.get(q_name)
@@ -536,8 +552,13 @@ class NewQuizHandler(BaseHandler):
             }
             save_sync_map(content_root, sync_map)
 
-    def _transform_question(self, q_data, position):
-        """ Transforms internal question representation to New Quizzes API payload. """
+    def _transform_question(self, q_data, position, shuffle_choices=False):
+        """ Transforms internal question representation to New Quizzes API payload.
+
+        ``shuffle_choices`` sets the per-item "Shuffle Choices" box on choice
+        and multi-answer items. The quiz-level ``shuffle_answers`` setting
+        doesn't tick it, so the handler passes the same flag down here.
+        """
         q_type = q_data.get('question_type', 'multiple_choice_question')
 
         interaction_slug = 'choice'
@@ -565,7 +586,6 @@ class NewQuizHandler(BaseHandler):
             "entry_type": "Item",
             "position": position,
             "points_possible": float(q_data.get('points_possible', 1.0)),
-            "properties": {},
             "entry": {
                 "title": q_data.get('question_name', f"Question {position}"),
                 "item_body": q_data.get('question_text', ''),
@@ -573,6 +593,7 @@ class NewQuizHandler(BaseHandler):
                 "scoring_algorithm": scoring_algorithm,
                 "calculator_type": "none",
                 "interaction_data": {},
+                "properties": {},
                 "scoring_data": {},
                 "feedback": {}
             }
@@ -590,6 +611,9 @@ class NewQuizHandler(BaseHandler):
         if interaction_slug in ['choice', 'multi-answer']:
             choices = []
             correct_values = []
+            # Per-answer feedback, keyed by choice id. The API only offers it
+            # on 'choice' items; multi-answer silently ignores it.
+            answer_feedback = {}
 
             for index, ans in enumerate(answers):
                 choice_id = str(uuid.uuid4())
@@ -606,7 +630,15 @@ class NewQuizHandler(BaseHandler):
                 if ans.get('weight', 0) == 100 or ans.get('answer_weight', 0) == 100:
                     correct_values.append(choice_id)
 
+                if ans.get('answer_comments'):
+                    answer_feedback[choice_id] = ans['answer_comments']
+
             item_data['entry']['interaction_data']['choices'] = choices
+            item_data['entry']['properties']['shuffle_rules'] = {
+                'choices': {'shuffled': shuffle_choices, 'to_lock': []}
+            }
+            if answer_feedback and interaction_slug == 'choice':
+                item_data['entry']['answer_feedback'] = answer_feedback
 
             if interaction_slug == 'choice':
                 if correct_values:

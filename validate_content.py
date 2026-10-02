@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 import frontmatter
 
 from handlers.content_utils import is_valid_name
+from handlers.ip_filter import parse_ip_filter
 from handlers.single_sync import build_handlers
 
 
@@ -39,7 +40,7 @@ from handlers.single_sync import build_handlers
 @dataclass(frozen=True)
 class Key:
     """One ``canvas.*`` key: its value kind and, where closed, its choices."""
-    kind: str                    # bool | int | number | str | list | date | dict
+    kind: str                    # bool | int | number | str | list | str_or_list | date | dict
     choices: tuple = ()
     note: str = ""
 
@@ -70,6 +71,7 @@ _QUIZ_COMMON = {
     "one_question_at_a_time": Key("bool"),
     "cant_go_back": Key("bool"),
     "access_code": Key("str"),
+    "ip_filter": Key("str_or_list", note="IPv4 addresses, ranges a-b, or CIDR blocks"),
 }
 
 RESULT_VIEW_KEYS = {
@@ -353,6 +355,9 @@ def _check_value(report, dotted_name, key, value, tz=None):
         return
     if key.kind == "list" and not isinstance(value, list):
         report.error(f"canvas.{dotted_name}: expected a list, got {value!r}")
+        return
+    if key.kind == "str_or_list" and not isinstance(value, (str, list)):
+        report.error(f"canvas.{dotted_name}: expected text or a list, got {value!r}")
         return
     if key.kind == "dict" and not isinstance(value, dict):
         report.error(f"canvas.{dotted_name}: expected a nested block, got {value!r}")
@@ -788,6 +793,15 @@ def validate_file(file_path, content_root=None, handlers=None):
             )
         if canvas_meta.get("cant_go_back") and not canvas_meta.get("one_question_at_a_time"):
             report.warn("cant_go_back has no effect without one_question_at_a_time: true.")
+        # Parse with the helper the sync uses. A wrong type (e.g. a number) was
+        # already reported by _check_keys; None is not, and the sync rejects it.
+        ip_filter = canvas_meta.get("ip_filter")
+        if (report.kind in ("quiz", "new_quiz") and "ip_filter" in canvas_meta
+                and (ip_filter is None or isinstance(ip_filter, (str, list)))):
+            try:
+                parse_ip_filter(ip_filter)
+            except ValueError as e:
+                report.error(f"canvas.{e}")
 
     if report.kind in ("quiz", "new_quiz"):
         _check_quiz(report, file_path, report.kind, canvas_meta, raw_text)

@@ -1,6 +1,33 @@
 import requests
 import json
 
+def resolve_credentials(course=None, content_root=None):
+    """Return (api_url, api_token) for the New Quizzes client.
+
+    Same sources as the rest of the sync, in order: env vars and config.toml
+    (via handlers.config), then the canvasapi connection the course was
+    fetched with. Reading only the env vars broke quiz sync for courses that
+    keep their credentials in config.toml.
+    """
+    import os
+    url = os.environ.get("CANVAS_API_URL")
+    token = os.environ.get("CANVAS_API_TOKEN")
+    if content_root and not (url and token):
+        from handlers.config import get_api_credentials
+        cfg_url, cfg_token = get_api_credentials(content_root)
+        url = url or cfg_url
+        token = token or cfg_token
+    requester = getattr(course, "_requester", None)
+    if requester is not None:
+        url = url or getattr(requester, "original_url", None)
+        token = token or getattr(requester, "access_token", None)
+    if not url or not token:
+        raise NewQuizAPIError(
+            "Canvas credentials not found for New Quizzes. Set CANVAS_API_URL / "
+            "CANVAS_API_TOKEN, or canvas_api_url / canvas_token_path in config.toml.")
+    return url, token
+
+
 class NewQuizAPIError(Exception):
     """Exception raised for errors in the New Quiz API calls."""
     def __init__(self, message, response=None):

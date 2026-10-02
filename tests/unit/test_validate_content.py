@@ -267,6 +267,41 @@ class TestQuizzes:
                       ":::: {.question name=\"A\"}\nT\n\n- [x] Yes\n::::\n")
         assert "NN_ prefix" in _messages(validate_file(path, str(tmp_path)))
 
+    @pytest.mark.parametrize("quiz_type", ["quiz", "new_quiz"])
+    @pytest.mark.parametrize("value", [
+        '"193.10.0.1-193.10.255.255"',
+        '"193.10.0.0/16, 10.0.0.1"',
+        '["193.10.0.0/16", "10.0.0.1 - 10.0.0.9"]',
+    ])
+    def test_valid_ip_filter_passes(self, tmp_path, quiz_type, value):
+        path = _write(tmp_path, "01_Q.qmd",
+                      f"---\ncanvas:\n  type: {quiz_type}\n  title: Q\n"
+                      f"  ip_filter: {value}\n---\n"
+                      ":::: {.question name=\"A\"}\nT\n\n- [x] Yes\n::::\n")
+        assert validate_file(path, str(tmp_path)).issues == []
+
+    @pytest.mark.parametrize("value,fragment", [
+        ('"193.10.255.255-193.10.0.1"', "starts after it ends"),
+        ('"193.10.0.300"', "not a valid IPv4 address"),
+        ('""', "no addresses"),
+        ('', "expected a string or a list"),
+    ])
+    def test_bad_ip_filter_is_an_error(self, tmp_path, value, fragment):
+        path = _write(tmp_path, "01_Q.qmd",
+                      "---\ncanvas:\n  type: new_quiz\n  title: Q\n"
+                      f"  ip_filter: {value}\n---\n"
+                      ":::: {.question name=\"A\"}\nT\n\n- [x] Yes\n::::\n")
+        errors = _errors(validate_file(path, str(tmp_path)))
+        assert "canvas.ip_filter" in errors and fragment in errors
+
+    def test_ip_filter_of_wrong_type_is_reported_once(self, tmp_path):
+        path = _write(tmp_path, "01_Q.qmd",
+                      "---\ncanvas:\n  type: quiz\n  title: Q\n  ip_filter: 42\n---\n"
+                      ":::: {.question name=\"A\"}\nT\n\n- [x] Yes\n::::\n")
+        report = validate_file(path, str(tmp_path))
+        assert len(report.errors) == 1
+        assert "expected text or a list" in _errors(report)
+
 
 # --- Links ------------------------------------------------------------------
 

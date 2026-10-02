@@ -84,6 +84,11 @@ Strain
 :::
 ```
 
+Per-answer feedback reaches both engines, with one limit on New Quizzes: Canvas only
+offers it on `multiple_choice_question` items, so on `multiple_answers_question` the
+per-answer comments are dropped (use `correct-comment` / `incorrect-comment` there).
+Whether students see it is governed by `result_view.show_feedback`.
+
 **Never mix the two styles inside one question.** If a question contains any
 `::: {.answer}` block, the parser uses div answers and **silently drops every
 checklist answer**. The validator treats this as an error.
