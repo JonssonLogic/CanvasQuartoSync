@@ -1,0 +1,132 @@
+/* ─── Comment highlights ──────────────────────────────────────────── */
+.comment-highlight {
+  background: rgba(255, 220, 80, 0.3);
+  border-bottom: 2px solid rgba(220, 180, 40, 0.6);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  position: relative;
+}
+.comment-highlight:hover { background: rgba(255, 200, 40, 0.5); }
+
+/* Block-level highlight (for math, complex elements that can't be wrapped in <mark>) */
+.comment-highlight-block {
+  background: rgba(255, 220, 80, 0.15);
+  border-left: 3px solid rgba(220, 180, 40, 0.8);
+  padding-left: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.comment-highlight-block:hover { background: rgba(255, 200, 40, 0.25); }
+
+.comment-indicator {
+  display: inline-block;
+  width: 6px; height: 6px;
+  background: var(--brand-primary, #961B81);
+  border-radius: 50%;
+  margin-left: 2px;
+  vertical-align: super;
+}
+
+/* ─── Comment input popup ─────────────────────────────────────────── */
+.comment-input-popup {
+  position: absolute;
+  z-index: 200;
+  background: var(--color-surface, #f9f9f9);
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: var(--radius, 4px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  padding: 12px;
+  max-width: 340px;
+  min-width: 240px;
+  font-family: var(--font-heading);
+  font-size: 0.85rem;
+  color: var(--color-text, #2d3b45);
+}
+
+.comment-input-header { font-weight: 600; margin-bottom: 8px; }
+.comment-input-hint { font-size: 0.68rem; color: var(--color-text-secondary, #6b6b6b); margin-top: 4px; }
+
+.comment-textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: 4px;
+  padding: 8px;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  background: #fff;
+  color: var(--color-text, #2d3b45);
+  line-height: 1.5;
+  min-height: 60px;
+}
+.comment-textarea:focus {
+  outline: none;
+  border-color: var(--brand-primary, #961B81);
+  box-shadow: 0 0 0 2px rgba(150, 27, 129, 0.15);
+}
+
+.comment-popup-actions { display: flex; gap: 6px; margin-top: 8px; }
+
+.comment-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--color-text, #2d3b45);
+  font-size: 0.75rem;
+  font-family: var(--font-heading);
+  cursor: pointer;
+}
+.comment-btn:hover { background: #f0f0f0; }
+
+.comment-btn-primary {
+  background: var(--brand-primary, #961B81);
+  color: #fff;
+  border-color: var(--brand-primary, #961B81);
+}
+.comment-btn-primary:hover { background: #7a1569; }
+.comment-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ─── Comment popup (viewing existing comment) ────────────────────── */
+.comment-popup {
+  position: absolute;
+  z-index: 200;
+  background: var(--color-surface, #f9f9f9);
+  border: 1px solid var(--color-border, #ddd);
+  border-radius: var(--radius, 4px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  padding: 12px;
+  max-width: 340px;
+  min-width: 220px;
+  font-size: 0.85rem;
+}
+
+.comment-popup-target {
+  font-style: italic;
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  margin-bottom: 8px;
+  border-left: 3px solid var(--brand-primary, #961B81);
+  padding-left: 8px;
+}
+
+.comment-popup-body { line-height: 1.5; margin-bottom: 6px; white-space: pre-wrap; }
+.comment-popup-date { font-size: 0.72rem; color: var(--color-text-secondary); margin-bottom: 8px; }
+
+/* ─── Add comment floating button ─────────────────────────────────── */
+.add-comment-btn {
+  position: absolute;
+  z-index: 100;
+  background: var(--brand-primary, #961B81);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  white-space: nowrap;
+}
+.add-comment-btn:hover { background: var(--brand-heading, #003865); }

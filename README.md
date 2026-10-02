@@ -1,120 +1,130 @@
 # Canvas Quarto Sync
 
-> [!NOTE]
-> 🤖 Generated with [**Gemini 3 Pro**](https://antigravity.google/)
+Write your course in Quarto. Preview it live. Sync to Canvas in one click.
 
-A Python tool to synchronize local **Quarto** content, assignments, quizzes, and calendar events directly to **Instructure Canvas**.
+Manage your entire course as a local Git repository and keep Canvas in sync for students.
 
-Allows you to manage your entire course as a local code repository (Git) while keeping Canvas perfectly in sync for students.
+## Install
 
-## Table of Contents
-
-- [🚀 Key Features](#-key-features)
-- [📚 Documentation & Examples](#-documentation--examples)
-- [🤖 Authoring with an AI Assistant](#-authoring-with-an-ai-assistant)
-- [🛠️ Prerequisites](#-prerequisites)
-- [📦 Installation](#-installation)
-- [⚙️ Configuration](#-configuration)
-- [🏃 Usage](#-usage)
-- [📂 File Organization](#-file-organization)
-- [📝 Content Metadata](#-content-metadata)
-- [🤝 Contributing](#-contributing)
-- [📄 License](#-license)
-
-## 🚀 Key Features
-
-*   **Quarto Integration**: Renders `.qmd` files to HTML and syncs them as Canvas Pages, Assignments, or Quizzes (both Classic and New Quizzes).
-*   **External Links**: Add external URL links as module items using simple QMD frontmatter.
-*   **Rich Quiz Descriptions**: Support for external `.qmd` description files for quizzes, enabling full markdown formatting and images.
-*   **Smart Linking**:
-    *   **Auto-Uploads**: Links to local PDFs, ZIPs, or images (`[Syllabus](docs/syllabus.pdf)`) are automatically uploaded to Canvas and securely linked.
-    *   **Cross-References**: Link to other content by filename (`[Next Lab](02_Lab.qmd)`). The system resolves the correct Canvas URL.
-    *   **JIT Stubbing**: Handles circular dependencies by creating placeholders ("stubs") if a link target doesn't exist yet.
-*   **Safe Updates**: Edits existing Canvas items instead of overwriting them, preserving student submissions and grades.
-*   **Performance & Caching**: 
-    - **Smart Upload**: Only re-uploads assets (images/PDFs) if they have changed locally.
-    - **Caching**: Minimizes API calls by remembering Canvas folder IDs.
-*   **Auto-Cleanup**: Automatically "prunes" (deletes) orphaned assets from Canvas `synced-` folders when they are removed from your local files.
-*   **Opt-in Calendar**: Manage your course schedule in a simple YAML file (`--sync-calendar`).
-*   **Clean Output**: Semantic HTML rendering without duplicate headers or metadata clutter.
-*   **AI Authoring Kit**: Scaffold a content folder so an AI assistant knows the format from the first prompt, plus an offline validator that catches mistakes before you sync.
-
-## 📚 Documentation & Examples
-
-*   **[User Guide](Guides/Canvas_Sync_User_Guide.md)**: Comprehensive documentation on all features, file naming conventions, and advanced linking.
-*   **[Example Project](Example/)**: A reference directory showing the correct folder structure, naming conventions, and typical `.qmd` file headers.
-
-## 🛠️ Prerequisites
-
-*   **Python 3.8+**
-*   **[Quarto CLI](https://quarto.org/docs/get-started/)** (Must be in your system PATH)
-*   **Canvas API Token**
-
-## 📦 Installation
-
-### Quick Install (Windows PowerShell)
-
-Run this single command in PowerShell:
-
+**Windows** (PowerShell):
 ```powershell
 irm https://raw.githubusercontent.com/JonssonLogic/CanvasQuartoSync/main/install.ps1 | iex
 ```
 
-This will interactively check prerequisites, clone the repo, create a virtual environment at `~/venvs/canvas_quarto_env`, install all dependencies, and help you configure your Canvas API credentials.
-
-### Manual Install
-
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/JonssonLogic/CanvasQuartoSync.git
-    cd CanvasQuartoSync
-    ```
-
-2.  Install dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-## ⚙️ Configuration
-
-1.  **Environment Variables**:
-    Set the following in your shell or `.env` file:
-    *   `CANVAS_API_URL`: Your institution's Canvas URL (e.g., `https://canvas.instructure.com`)
-    *   `CANVAS_API_TOKEN`: Your generic API access token.
-
-2.  **Course ID**:
-    Create a file named `course_id.txt` in your content directory containing only the numeric ID of your Canvas course (e.g., `12345`).
-
-## 🏃 Usage
-
-Run the sync script pointing to your content directory:
-
+**Linux / macOS** (Terminal):
 ```bash
-# Sync content from the current directory
-python sync_to_canvas.py .
-
-# Sync from a specific content folder
-python sync_to_canvas.py ./MyCourseContent
-
-# Sync including Calendar events (Opt-in)
-python sync_to_canvas.py --sync-calendar
-
-# Verbose output (debug details with timestamps)
-python sync_to_canvas.py --verbose
-
-# Quiet mode (errors only)
-python sync_to_canvas.py --quiet
-
-# Save full debug log to a file
-python sync_to_canvas.py --log-file sync.log
+curl -fsSL https://raw.githubusercontent.com/JonssonLogic/CanvasQuartoSync/main/install.sh | bash
 ```
 
-### Portable Mode
-Copy `run_sync_here.bat` to your content folder to run the sync with a simple double-click (Windows).
+Both installers let you select which components to install (Python, Git, Quarto, venv, repo clone, VS Code extension). Deselect anything you already have. Restart VS Code after install.
 
-## 🤖 Authoring with an AI Assistant
+## Quick Start
 
-Course content is usually written in a separate folder, with an AI assistant open on it —
+1. Open **VS Code**
+2. Click the **graduation cap** icon in the sidebar
+3. Click **New Project**: enter your course name, Canvas course ID, and API URL
+4. Write content in `.qmd` files
+5. Click **Sync to Canvas** in the status bar
+
+## Setting Up Canvas Credentials
+
+You need a Canvas API token to sync. Two options:
+
+**Option A: Token file** (recommended): Save your token to a text file (e.g. `C:\Users\you\privateCanvasToken`), then set the path in `config.toml`:
+
+```toml
+canvas_token_path = "C:/Users/you/privateCanvasToken"
+```
+
+**Option B: Environment variable**: Set `CANVAS_API_TOKEN` in PowerShell:
+
+```powershell
+setx CANVAS_API_TOKEN "your_token_here"
+```
+
+To generate a token: Canvas → Account → Settings → New Access Token.
+
+## How It Works
+
+```
+MyCourse/
+├── config.toml                    # Course settings + Canvas API config
+├── _quarto.yml                    # Quarto rendering config
+├── 01_Introduction/               # → Canvas module "Introduction"
+│   ├── 01_Welcome.qmd            #   → Canvas page
+│   ├── 02_Lab_Setup.qmd          #   → Canvas assignment
+│   └── graphics/                  #   → Images (auto-uploaded)
+├── 02_Fundamentals/               # → Canvas module "Fundamentals"
+│   ├── 01_Theory.qmd             #   → Canvas page
+│   └── 02_Quiz.json              #   → Canvas quiz
+└── 01_Course_Info/
+    └── 01_StudyGuide.qmd          #   → Study guide + PDF export
+```
+
+- **Folders** starting with `NN_` become Canvas **modules**
+- **Files** starting with `NN_` become **module items** (pages, assignments, quizzes)
+- **YAML frontmatter** in each `.qmd` controls the Canvas type and settings
+- **Images and PDFs** are auto-uploaded and linked
+- **Cross-references** between `.qmd` files are resolved to Canvas URLs
+
+## Config Reference
+
+`config.toml` in the course root:
+
+```toml
+course_id = 12345
+course_name = "Mechatronics"
+course_code = "TMRK16"
+credits = "7.5 ECTS"
+semester = "Spring 2026"
+canvas_api_url = "https://canvas.university.edu/api/v1"
+canvas_token_path = "C:/Users/you/privateCanvasToken"
+language = "english"
+```
+
+## Frontmatter Examples
+
+**Page:**
+```yaml
+---
+title: "Welcome"
+canvas:
+  type: page
+  published: true
+---
+```
+
+**Assignment:**
+```yaml
+---
+title: "Lab 1: LED Circuit"
+canvas:
+  type: assignment
+  published: true
+  points: 10
+  due_at: "2024-05-10T23:59:00"   # course-local time; DST handled at sync
+  submission_types: [online_upload]
+  allowed_extensions: [pdf]
+---
+```
+
+**Study guide with PDF export:**
+```yaml
+---
+title: "Course PM"
+canvas:
+  type: study_guide
+  preprocess: true
+  published: true
+  pdf:
+    target_module: "Course Documents"
+    filename: "KursPM.pdf"
+---
+```
+
+## Authoring with an AI Assistant
+
+Course content is usually written in a separate folder, with an AI assistant open on it,
 which by default knows nothing about this tool's conventions. Scaffold that folder once:
 
 ```powershell
@@ -123,72 +133,63 @@ python init_content_project.py C:\Courses\MECH201
 
 This installs a Claude Code skill plus reference documentation into the folder, so a
 fresh session starts out knowing the `NN_` naming rules, the `canvas.*` frontmatter
-schema, and the quiz syntax — without reading this repository. It also drops in
+schema, and the quiz syntax, without reading this repository. It also drops in
 `check_content.bat`, an offline validator:
 
 ```powershell
 check_content.bat 01_Introduction\02_Welcome.qmd
 ```
 
-It needs no Canvas connection and reports what each file **will become in Canvas**, plus
-the mistakes that otherwise only surface after a sync — missing `NN_` prefixes,
-misspelled settings, broken image paths, cross-references that would render as
-`?@fig-x`, quiz questions that won't grade.
+It needs no Canvas connection and reports what each file will become in Canvas, plus the
+mistakes that otherwise only surface after a sync: missing `NN_` prefixes, misspelled
+settings, broken image paths, cross-references that would render as `?@fig-x`, quiz
+questions that will not grade.
 
-The kit instructs assistants **never to sync**: pushing to a live course stays your call.
+The kit instructs assistants never to sync. Pushing to a live course stays your call.
 Full details in the [User Guide](Guides/Canvas_Sync_User_Guide.md#8-authoring-with-an-ai-assistant).
 
-## 📂 File Organization
+## VS Code Extension Features
 
-The system enforces a **Module-based** structure using a `NN_Name` naming convention.
+The extension adds a full GUI on top of the Python sync tool:
 
-*   **Folders** starting with `NN_` (e.g., `01_Intro`) become **Canvas Modules**.
-*   **Files** starting with `NN_` inside those folders become **Module Items**.
+- **Sidebar panel**: New Project, Sync, Import, Diff, Preview
+- **Live QMD preview**: Canvas-matching styling with math, code highlighting, Mermaid diagrams, callouts
+- **Sync menu**: Sync All or Sync Current File, with Force/Calendar/Drift toggles and a **Cancel** button to abort mid-sync
+- **Right-click sync**: Sync a single file from editor or file explorer
+- **Inline comments**: Select text in preview to add review comments
+- **Import from Canvas**: Pull existing Canvas content into local `.qmd` files
+- **Diff with Canvas**: Check if someone edited content directly on Canvas
+- **New Project wizard**: Full-page form to scaffold a new course
+- **Module Structure panel**: Browse Canvas modules side-by-side with the local repo
+  - **Create modules** directly from the panel (Draft or Published)
+  - **Create new items** (Page, Assignment, Quiz, External URL) inside any module — auto-numbered, with auto-suffixed titles (`New Page`, `New Page 2`, …)
+  - **Publish/unpublish toggles** on every module and item
+  - **Batch delete** modules and items via per-row checkboxes with a modal confirm dialog (removes Canvas content and matched local files)
+  - **Sticky header** with quick Refresh and `+ New Module` actions
 
-**Example Structure:**
-```text
-MyCourse/
-├── course_id.txt           # Target Course ID
-├── schedule.yaml           # (Optional) Calendar Events
-├── 01_Introduction/        # -> Module: "Introduction"
-│   ├── 01_Welcome.qmd      # -> Page
-│   ├── 02_Syllabus.qmd     # -> Page
-│   └── 03_Resources.pdf    # -> Solo File (Synced to module)
-├── 02_Python_Basics/       # -> Module: "Python_Basics"
-│   ├── 01_Lab.qmd          # -> Assignment
-│   └── 05_Quiz.json        # -> Quiz
-└── 99_Hidden.qmd           # -> Page (Synced but NOT added to module)
+## CLI Usage
+
+You can also use the Python tools directly:
+
+```bash
+python sync_to_canvas.py ./MyCourse              # Sync everything
+python sync_to_canvas.py ./MyCourse --only 01_Intro/01_Welcome.qmd  # Sync one file
+python sync_to_canvas.py ./MyCourse --force       # Re-render all (ignore cache)
+python sync_to_canvas.py ./MyCourse --check-drift # Check for external edits
+python sync_to_canvas.py ./MyCourse --sync-calendar # Include calendar events
+python import_from_canvas.py ./output             # Import from Canvas
 ```
 
-## 📝 Content Metadata
+## Example Project
 
-Control Canvas settings using YAML frontmatter in your `.qmd` or `.md` files.
+The [Mechatronics course](https://github.com/cenmir/Mechatronics) is a real-world example showing the full folder structure, frontmatter conventions, and content types.
 
-**Page Example (`01_Welcome.qmd`)**:
-```yaml
----
-title: "Welcome to the Course"
-canvas:
-  type: page
-  published: true
-  indent: 0
----
-```
+## Documentation
 
-**Assignment Example (`01_Lab.qmd`)**:
-```yaml
----
-title: "Lab 1: Hello World"
-canvas:
-  type: assignment
-  published: true
-  points: 10
-  due_at: "2024-05-10T23:59:00"   # course-local time; DST handled at sync
-  submission_types: [online_upload]
-  allowed_extensions: [py, ipynb]
----
-```
+- [User Guide](Guides/Canvas_Sync_User_Guide.md): Full documentation on all features
+- [Canvas Token Setup](Guides/Canvas_token_setup.md): How to generate an API token
+- [Extension Dev Guide](extension/devInstructions.md): Building and debugging the extension
 
-## 📄 License
+## License
 
-This project is open source and available under the [MIT License](LICENSE).
+[MIT](LICENSE)

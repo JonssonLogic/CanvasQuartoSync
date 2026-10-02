@@ -2,18 +2,301 @@ import os
 import sys
 import json
 import argparse
+import json
+import sys
+import re
 from canvasapi import Canvas
 
 from handlers.log import logger, setup_logging
 from handlers.calendar_handler import CalendarHandler
 from handlers.subheader_handler import SubHeaderHandler
 from handlers.external_link_handler import ExternalLinkHandler
-from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name, verify_sync_map_course
+from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name, verify_sync_map_course, load_sync_map, save_sync_map
 from handlers.single_sync import build_handlers, find_or_create_module, sync_single_file
 from handlers.module_structure import fetch_module_structure
 from handlers import __version__
 from handlers.config import get_api_credentials, get_course_id
-from handlers.drift_detector import check_all_drift, drift_report
+from handlers.drift_detector import check_all_drift, drift_report, forget_synced_file, forget_synced_dir
+
+
+def _normalize_name(name: str) -> str:
+    """Normalize a name for fuzzy matching: lowercase, strip special chars, collapse spaces."""
+    name = re.sub(r'^\d+_', '', name)  # strip leading NN_ prefix
+    name = os.path.splitext(name)[0]   # strip file extension
+    name = re.sub(r'[^a-z0-9åäöéü]', '', name.lower())  # keep only alphanumeric + common Swedish
+    return name
+
+
+def _import_single_item(course, content_root: str, item_json: str) -> dict:
+    """Import a single Canvas item to a local QMD file."""
+    from import_from_canvas import (
+        HtmlToMarkdown, generate_page_qmd, generate_assignment_qmd,
+        generate_external_link_qmd, generate_subheader_qmd, sanitize_filename
+    )
+
+    try:
+        item = json.loads(item_json)
+    except json.JSONDecodeError as e:
+        return {'success': False, 'error': f'Invalid JSON: {e}'}
+
+    module_dir = item.get('module_dir', '')
+    item_type = item.get('item_type', '')
+    title = item.get('title', 'Untitled')
+    content_id = item.get('content_id')
+    page_url = item.get('page_url')
+    published = item.get('published', False)
+    indent = item.get('indent', 0)
+    external_url = item.get('external_url', '')
+
+    # Ensure module dir exists
+    mod_path = os.path.join(content_root, module_dir)
+    os.makedirs(mod_path, exist_ok=True)
+
+    converter = HtmlToMarkdown(
+        sync_map=load_sync_map(content_root),
+        content_root=content_root
+    )
+
+    # Determine next file index
+    existing = sorted(f for f in os.listdir(mod_path) if is_valid_name(f))
+    if existing:
+        last_num = int(re.match(r'^(\d+)', existing[-1]).group(1))
+        next_idx = last_num + 1
+    else:
+        next_idx = 1
+    prefix = f'{next_idx:02d}'
+    safe_name = sanitize_filename(title)
+
+    content = ''
+    ext = '.qmd'
+
+    try:
+        if item_type == 'Page' and page_url:
+            page = course.get_page(page_url)
+            body_html = getattr(page, 'body', '') or ''
+            body_md = converter.convert(body_html)
+            content = generate_page_qmd(title, body_md, published)
+
+        elif item_type == 'Assignment' and content_id:
+            assignment = course.get_assignment(content_id)
+            body_html = getattr(assignment, 'description', '') or ''
+            body_md = converter.convert(body_html)
+            content = generate_assignment_qmd(title, body_md, assignment)
+
+        elif item_type == 'ExternalUrl':
+            new_tab = item.get('new_tab', False)
+            content = generate_external_link_qmd(title, external_url, published, new_tab)
+
+        elif item_type == 'SubHeader':
+            content = generate_subheader_qmd(title, published, indent)
+            ext = '.md'
+
+        elif item_type == 'File' and content_id:
+            # Download file
+            try:
+                file_obj = course.get_file(content_id)
+                original_name = getattr(file_obj, 'filename', safe_name)
+                file_path = os.path.join(mod_path, f'{prefix}_{original_name}')
+                file_obj.download(file_path)
+                rel = os.path.relpath(file_path, content_root).replace('\\', '/')
+                return {'success': True, 'file': rel}
+            except Exception as e:
+                return {'success': False, 'error': f'File download failed: {e}'}
+
+        else:
+            return {'success': False, 'error': f'Unsupported item type: {item_type}'}
+
+    except Exception as e:
+        return {'success': False, 'error': f'Canvas API error: {e}'}
+
+    if not content:
+        return {'success': False, 'error': 'No content generated'}
+
+    filename = f'{prefix}_{safe_name}{ext}'
+    filepath = os.path.join(mod_path, filename)
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+    rel = os.path.relpath(filepath, content_root).replace('\\', '/')
+    return {'success': True, 'file': rel}
+
+
+def _set_published(course, pub_json: str) -> dict:
+    """Set published state for a module or module item."""
+    try:
+        data = json.loads(pub_json)
+    except json.JSONDecodeError as e:
+        return {'success': False, 'error': f'Invalid JSON: {e}'}
+
+    target = data.get('target', '')
+    published = data.get('published', False)
+
+    try:
+        if target == 'module':
+            module_id = data.get('module_id')
+            if not module_id:
+                return {'success': False, 'error': 'Missing module_id'}
+            module = course.get_module(module_id)
+            module.edit(module={'published': published})
+            state = 'published' if published else 'unpublished'
+            return {'success': True, 'message': f'Module {state}'}
+
+        elif target == 'item':
+            module_id = data.get('module_id')
+            item_id = data.get('item_id')
+            if not module_id or not item_id:
+                return {'success': False, 'error': 'Missing module_id or item_id'}
+            module = course.get_module(module_id)
+            item = module.get_module_item(item_id)
+            item.edit(module_item={'published': published})
+            state = 'published' if published else 'unpublished'
+            return {'success': True, 'message': f'Item {state}'}
+
+        else:
+            return {'success': False, 'error': f'Unknown target: {target}'}
+
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+def _create_module(course, content_root: str, payload_json: str) -> dict:
+    """Create a new Canvas module and matching local directory."""
+    try:
+        data = json.loads(payload_json)
+    except json.JSONDecodeError as e:
+        return {'success': False, 'error': f'Invalid JSON: {e}'}
+
+    name = (data.get('name') or '').strip()
+    published = bool(data.get('published', False))
+    if not name:
+        return {'success': False, 'error': 'Missing module name'}
+
+    norm_new = _normalize_name(name)
+
+    # Refuse if a Canvas module with the same (normalized) name already exists
+    try:
+        for m in course.get_modules():
+            if _normalize_name(getattr(m, 'name', '')) == norm_new:
+                return {'success': False, 'error': f'Canvas already has a module named "{m.name}"'}
+    except Exception as e:
+        return {'success': False, 'error': f'Could not list Canvas modules: {e}'}
+
+    # Refuse if a local folder normalizes to the same name
+    try:
+        for d in os.listdir(content_root):
+            if os.path.isdir(os.path.join(content_root, d)) and is_valid_name(d):
+                if _normalize_name(d) == norm_new:
+                    return {'success': False, 'error': f'Local folder "{d}" already matches that name'}
+    except Exception:
+        pass
+
+    try:
+        # Create the Canvas module
+        module_obj = course.create_module(module={'name': name, 'published': published})
+    except Exception as e:
+        return {'success': False, 'error': f'Canvas create failed: {e}'}
+
+    # Determine next local prefix by scanning content_root for NN_* dirs
+    next_idx = 1
+    try:
+        existing = [d for d in os.listdir(content_root)
+                    if os.path.isdir(os.path.join(content_root, d)) and re.match(r'^\d{2,}_', d)]
+        max_idx = 0
+        for d in existing:
+            m = re.match(r'^(\d+)_', d)
+            if m:
+                max_idx = max(max_idx, int(m.group(1)))
+        next_idx = max_idx + 1
+    except Exception:
+        pass
+
+    safe = re.sub(r'[^A-Za-z0-9åäöÅÄÖ _-]', '', name).strip()
+    safe = re.sub(r'\s+', ' ', safe)
+    if not safe:
+        safe = 'Module'
+    prefix = f'{next_idx:02d}'
+    dir_name = f'{prefix}_{safe}'
+    dir_path = os.path.join(content_root, dir_name)
+    try:
+        os.makedirs(dir_path, exist_ok=True)
+    except Exception as e:
+        return {'success': False, 'error': f'Could not create local dir: {e}', 'module_id': module_obj.id}
+
+    return {
+        'success': True,
+        'message': f'Module "{name}" created',
+        'module_id': module_obj.id,
+        'module_dir': dir_name,
+    }
+
+
+def _delete_items(course, content_root: str, payload_json: str) -> dict:
+    """Delete a batch of Canvas items/modules and optionally their local files.
+
+    Payload: {"items":[{target,module_id,item_id?,local_path?,local_dir?}, ...]}
+    """
+    try:
+        data = json.loads(payload_json)
+    except json.JSONDecodeError as e:
+        return {'success': False, 'error': f'Invalid JSON: {e}'}
+
+    items = data.get('items') or []
+    deleted = 0
+    failed = 0
+    errors = []
+    import shutil
+
+    for entry in items:
+        target = entry.get('target')
+        try:
+            if target == 'item':
+                module_id = entry.get('module_id')
+                item_id = entry.get('item_id')
+                if module_id and item_id:
+                    module = course.get_module(module_id)
+                    mi = module.get_module_item(item_id)
+                    mi.delete()
+                local_path = entry.get('local_path')
+                if local_path:
+                    abs_p = os.path.join(content_root, local_path.replace('/', os.sep))
+                    if os.path.isfile(abs_p):
+                        os.remove(abs_p)
+                    # Unconditionally, even when the file was already gone: it
+                    # is the sync map entry, not the file, that makes a deleted
+                    # page keep showing up as synced in the module panel.
+                    forget_synced_file(content_root, local_path)
+                deleted += 1
+
+            elif target == 'module':
+                module_id = entry.get('module_id')
+                if module_id:
+                    module = course.get_module(module_id)
+                    module.delete()
+                local_dir = entry.get('local_dir')
+                if local_dir:
+                    abs_d = os.path.join(content_root, local_dir)
+                    if os.path.isdir(abs_d):
+                        shutil.rmtree(abs_d)
+                    forget_synced_dir(content_root, local_dir)
+                deleted += 1
+
+            elif target == 'local_file':
+                local_path = entry.get('local_path')
+                if local_path:
+                    abs_p = os.path.join(content_root, local_path.replace('/', os.sep))
+                    if os.path.isfile(abs_p):
+                        os.remove(abs_p)
+                    forget_synced_file(content_root, local_path)
+                    deleted += 1
+
+            else:
+                failed += 1
+                errors.append(f'Unknown target: {target}')
+        except Exception as e:
+            failed += 1
+            errors.append(str(e))
+
+    return {'success': failed == 0, 'deleted': deleted, 'failed': failed, 'errors': errors}
 
 
 def main():
@@ -29,6 +312,11 @@ def main():
     parser.add_argument("--exit-code", action="store_true", help="With --check-drift, exit 2 when drift is found. Without it the check reports and exits 0, as git diff does.")
     parser.add_argument("--only", help="Sync only a specific file (relative path from content dir, e.g. '01_Intro/02_Welcome.qmd').")
     parser.add_argument("--module-structure", action="store_true", help="Print the Canvas module structure as JSON, reconciled with local files. Reads only, syncs nothing.")
+    parser.add_argument("--with-drift", action="store_true", help="With --module-structure: also report whether Canvas has been edited since the last sync. Costs one request per synced item.")
+    parser.add_argument("--import-item", help="Import a single Canvas item as JSON: {\"module_dir\":...,\"item_type\":...,\"content_id\":...,\"page_url\":...,\"title\":...,\"published\":...,\"indent\":...,\"external_url\":...}")
+    parser.add_argument("--set-published", help="Set published state as JSON: {\"target\":\"module\"|\"item\",\"module_id\":N,\"item_id\":N,\"published\":bool}")
+    parser.add_argument("--create-module", help="Create a new Canvas module as JSON: {\"name\":\"...\",\"published\":bool}")
+    parser.add_argument("--delete", help="Batch delete items/modules as JSON: {\"items\":[{\"target\":\"item|module|local_file\",...}]}")
 
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument("--verbose", "-v", action="store_true", help="Show detailed debug output.")
@@ -69,12 +357,27 @@ def main():
     except Exception:
         pass
 
-    # Force re-render: delete sync map to clear cached mtimes
+    # Force re-render: clear cached mtimes (but preserve other sync map data)
     if args.force:
-        sync_map_path = os.path.join(content_root, '.canvas_sync_map.json')
-        if os.path.exists(sync_map_path):
-            os.remove(sync_map_path)
-            logger.info("[yellow]Force mode:[/yellow] cleared sync map, all files will re-render")
+        sync_map = load_sync_map(content_root)
+        if args.only:
+            # Single-file force: only clear mtime for that file
+            only_rel = args.only.replace('\\', '/')
+            entry = sync_map.get(only_rel)
+            if isinstance(entry, dict) and 'mtime' in entry:
+                del entry['mtime']
+                save_sync_map(content_root, sync_map)
+                logger.info("[yellow]Force mode:[/yellow] cleared mtime for %s", only_rel)
+        else:
+            # Full force: clear all mtimes
+            changed = False
+            for entry in sync_map.values():
+                if isinstance(entry, dict) and 'mtime' in entry:
+                    del entry['mtime']
+                    changed = True
+            if changed:
+                save_sync_map(content_root, sync_map)
+            logger.info("[yellow]Force mode:[/yellow] cleared cached mtimes, all files will re-render")
 
     # Resolve Context
     API_URL, API_TOKEN = get_api_credentials(content_root)
@@ -91,7 +394,7 @@ def main():
     logger.info("[cyan]Connecting to Canvas...[/cyan]")
     try:
         canvas = Canvas(API_URL, API_TOKEN)
-        course = canvas.get_course(course_id)
+        course = canvas.get_course(course_id, include=['total_students', 'term'])
         logger.info("[green]Connected to course:[/green] [bold]%s[/bold] (ID: %s)", course.name, course.id)
     except Exception as e:
         logger.error("[red]Connection failed:[/red] %s", e)
@@ -105,13 +408,46 @@ def main():
     # Structure mode: report what Canvas holds and how it lines up with local
     # files, then exit. Read-only, and JSON on stdout so a caller can parse it.
     if args.module_structure:
-        print(json.dumps(fetch_module_structure(course, content_root), ensure_ascii=False))
+        print(json.dumps(
+            fetch_module_structure(course, content_root,
+                                   with_drift=args.with_drift),
+            ensure_ascii=False))
         return 0
+
+    # Import single item mode
+    if args.import_item:
+        result = _import_single_item(course, content_root, args.import_item)
+        print(f'IMPORT_RESULT_JSON:{json.dumps(result, ensure_ascii=False)}')
+        return
+
+    # Publish/unpublish mode
+    if args.set_published:
+        result = _set_published(course, args.set_published)
+        print(f'PUBLISH_RESULT_JSON:{json.dumps(result, ensure_ascii=False)}')
+        return
+
+    if args.create_module:
+        result = _create_module(course, content_root, args.create_module)
+        print(f'CREATE_MODULE_JSON:{json.dumps(result, ensure_ascii=False)}')
+        return
+
+    if args.delete:
+        result = _delete_items(course, content_root, args.delete)
+        print(f'DELETE_RESULT_JSON:{json.dumps(result, ensure_ascii=False)}')
+        return
 
     # Drift check mode: only check for Canvas-side modifications, then exit
     if args.check_drift:
         logger.info("[bold cyan]Checking for Canvas-side modifications...[/bold cyan]")
         drifted = check_all_drift(course, content_root)
+
+        # --only was accepted and then ignored here, so "check just this file"
+        # checked every synced item and offered the caller a list of all of
+        # them. The flag means the same thing for a drift check as it does for
+        # a sync: act on this one file.
+        if args.only:
+            wanted = args.only.replace('\\', '/')
+            drifted = [d for d in drifted if d['file'] == wanted]
 
         if args.json:
             print(json.dumps(

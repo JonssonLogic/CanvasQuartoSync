@@ -21,6 +21,7 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 from html import unescape
 
 from handlers.content_utils import load_sync_map, save_sync_map
@@ -138,19 +139,23 @@ def store_canvas_hash(content_root: str, file_path: str, canvas_html: str):
 
     Call this after a successful sync to record what Canvas should contain.
     """
+    from datetime import datetime, timezone
     content_hash = compute_content_hash(canvas_html)
+    now_iso = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
-    # 1. Update hash in sync map
+    # 1. Update hash and last_synced_at in sync map
     sync_map = load_sync_map(content_root)
     rel_path = os.path.relpath(file_path, content_root).replace('\\', '/')
     entry = sync_map.get(rel_path)
 
     if isinstance(entry, dict):
         entry['canvas_hash'] = content_hash
+        entry['last_synced_at'] = now_iso
     else:
         sync_map[rel_path] = {
             'id': entry,
-            'canvas_hash': content_hash
+            'canvas_hash': content_hash,
+            'last_synced_at': now_iso,
         }
 
     save_sync_map(content_root, sync_map)
@@ -162,6 +167,67 @@ def store_canvas_hash(content_root: str, file_path: str, canvas_html: str):
             f.write(canvas_html)
     except Exception as e:
         logger.debug("    Could not write snapshot: %s", e)
+
+
+def _remove_snapshot(content_root: str, rel_path: str) -> bool:
+    """Delete the stored snapshot for a relative path, if there is one."""
+    # Built by hand rather than through _snapshot_path, which creates the
+    # snapshot directory as a side effect. Forgetting a file should never
+    # bring one into existence.
+    snap = os.path.join(content_root, SNAPSHOT_DIR,
+                        rel_path.replace('/', '__').replace(' ', '_') + '.html')
+    if not os.path.isfile(snap):
+        return False
+    try:
+        os.remove(snap)
+        return True
+    except OSError as e:
+        logger.debug("    Could not remove snapshot %s: %s", snap, e)
+        return False
+
+
+def forget_synced_file(content_root: str, rel_path: str) -> bool:
+    """Drop everything we remember about a file: sync map entry and snapshot.
+
+    The mirror of :func:`store_canvas_hash`. Without it, deleting content left
+    both behind, and the module panel went on reporting a file that is no
+    longer on disk as synced. The sharper failure is a stale entry that shares
+    a Canvas id with a live file: the reverse id lookup in module_structure is
+    last-write-wins, so the dead path could win and hide the real one.
+
+    Returns True if anything was removed.
+    """
+    rel_path = rel_path.replace('\\', '/')
+    removed = False
+
+    sync_map = load_sync_map(content_root)
+    if rel_path in sync_map:
+        del sync_map[rel_path]
+        save_sync_map(content_root, sync_map)
+        removed = True
+
+    if _remove_snapshot(content_root, rel_path):
+        removed = True
+
+    return removed
+
+
+def forget_synced_dir(content_root: str, local_dir: str) -> int:
+    """Forget every tracked file under a directory. Returns how many were dropped."""
+    prefix = local_dir.replace('\\', '/').rstrip('/') + '/'
+    sync_map = load_sync_map(content_root)
+    doomed = [k for k in sync_map if k.startswith(prefix)]
+    if not doomed:
+        return 0
+
+    for rel_path in doomed:
+        del sync_map[rel_path]
+    save_sync_map(content_root, sync_map)
+
+    for rel_path in doomed:
+        _remove_snapshot(content_root, rel_path)
+
+    return len(doomed)
 
 
 def check_drift(content_root: str, file_path: str, current_canvas_html: str) -> dict:
@@ -228,6 +294,81 @@ def _compute_diff(content_root: str, file_path: str, current_html: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Canvas → QMD markdown conversion (for diff display)
+# ---------------------------------------------------------------------------
+
+def _build_frontmatter(item_type: str, canvas_obj) -> str:
+    """Build YAML frontmatter from a Canvas API object for diff comparison."""
+    import yaml
+
+    meta = {'canvas': {'type': item_type}}
+    if item_type == 'page':
+        meta['title'] = getattr(canvas_obj, 'title', '')
+        meta['canvas']['published'] = getattr(canvas_obj, 'published', False)
+    elif item_type == 'assignment':
+        meta['title'] = getattr(canvas_obj, 'name', '')
+        meta['canvas']['published'] = getattr(canvas_obj, 'published', False)
+        pts = getattr(canvas_obj, 'points_possible', None)
+        if pts is not None:
+            meta['canvas']['points'] = pts
+        sub_types = getattr(canvas_obj, 'submission_types', None)
+        if sub_types:
+            meta['canvas']['submission_types'] = list(sub_types)
+        allowed_ext = getattr(canvas_obj, 'allowed_extensions', None)
+        if allowed_ext:
+            meta['canvas']['allowed_extensions'] = list(allowed_ext)
+        grading = getattr(canvas_obj, 'grading_type', None)
+        if grading:
+            meta['canvas']['grading_type'] = grading
+        for date_field in ('due_at', 'unlock_at', 'lock_at'):
+            val = getattr(canvas_obj, date_field, None)
+            if val:
+                meta['canvas'][date_field] = val
+        if getattr(canvas_obj, 'omit_from_final_grade', False):
+            meta['canvas']['omit_from_final_grade'] = True
+        # Group assignment detection
+        group_id = getattr(canvas_obj, 'group_category_id', None)
+        if group_id:
+            meta['canvas']['group_assignment'] = True
+
+    fm = yaml.dump(meta, default_flow_style=False, allow_unicode=True, sort_keys=False).strip()
+    return f'---\n{fm}\n---\n'
+
+
+def _canvas_html_to_qmd(html: str, item_type: str, canvas_obj,
+                         sync_map: dict, content_root: str) -> str:
+    """Convert Canvas HTML + API metadata into a .qmd-like string for diff comparison."""
+    from import_from_canvas import HtmlToMarkdown
+
+    converter = HtmlToMarkdown(sync_map=sync_map, content_root=content_root)
+    body_md = converter.convert(html)
+    frontmatter = _build_frontmatter(item_type, canvas_obj)
+    return frontmatter + '\n' + body_md
+
+
+DIFF_TEMP_DIR = '.canvas_diff_temp'
+
+
+def _write_diff_temp(content_root: str, rel_path: str, content: str) -> str:
+    """Write Canvas markdown to a temp file for VS Code diff editor."""
+    diff_dir = os.path.join(content_root, DIFF_TEMP_DIR)
+    os.makedirs(diff_dir, exist_ok=True)
+    safe_name = rel_path.replace('/', '__').replace('\\', '__')
+    temp_path = os.path.join(diff_dir, f'canvas__{safe_name}')
+    with open(temp_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    return temp_path
+
+
+def cleanup_diff_temp(content_root: str):
+    """Remove the temp diff directory."""
+    diff_dir = os.path.join(content_root, DIFF_TEMP_DIR)
+    if os.path.exists(diff_dir):
+        import shutil
+        shutil.rmtree(diff_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
 # Batch check (all items)
 # ---------------------------------------------------------------------------
 
@@ -237,8 +378,11 @@ def drift_report(course, drifted, content_root, include_diff=False):
     Kept here rather than inline in main() so it can be tested without a
     Canvas connection, and so sync_to_canvas.py stays thin.
 
-    The diff is opt-in because it can be long, matching the human report where
-    --show-diff controls the same thing.
+    The diff *text* is opt-in because it can be long, matching the human report
+    where --show-diff controls the same thing. ``canvas_qmd_path`` is not: it
+    is one path, and it is the only way a caller can open a diff editor on the
+    Canvas side. Leaving it out meant the extension read undefined, threw
+    inside an async handler, and showed the user nothing at all.
     """
     items = []
     for item in drifted:
@@ -251,6 +395,9 @@ def drift_report(course, drifted, content_root, include_diff=False):
             'stored_hash': item.get('stored_hash', ''),
             'current_hash': item.get('current_hash', ''),
         }
+        # Absent when the drift check ran without building diffs.
+        if item.get('canvas_qmd_path'):
+            entry['canvas_qmd_path'] = item['canvas_qmd_path']
         if include_diff:
             entry['diff'] = item.get('diff', '')
         items.append(entry)
@@ -262,11 +409,21 @@ def drift_report(course, drifted, content_root, include_diff=False):
     }
 
 
-def check_all_drift(course, content_root: str) -> list:
+def check_all_drift(course, content_root: str, include_diff: bool = True) -> list:
     """Check drift for all synced items.
 
     Returns a list of dicts for items that have drifted:
-        [{'file': str, 'type': str, 'title': str, 'diff': str, ...}]
+        [{'file': str, 'type': str, 'title': str, 'diff': str,
+          'canvas_qmd_path': str, ...}]
+
+    canvas_qmd_path is a temp file containing the Canvas content converted
+    to .qmd format, suitable for opening in VS Code's diff editor.
+
+    ``include_diff=False`` answers only *whether* each item drifted, and
+    writes nothing. A caller that just wants a status light should use it:
+    building the diff costs an HTML-to-text conversion per item and leaves
+    files in .canvas_diff_temp/, which is wasted work when nobody is going
+    to open a diff editor. ``diff`` and ``canvas_qmd_path`` are then absent.
     """
     sync_map = load_sync_map(content_root)
     drifted_items = []
@@ -288,6 +445,7 @@ def check_all_drift(course, content_root: str) -> list:
                 current_html = None
                 item_type = 'unknown'
                 title = rel_path
+                canvas_obj = None
 
                 # Try as page
                 try:
@@ -295,6 +453,7 @@ def check_all_drift(course, content_root: str) -> list:
                     current_html = getattr(page, 'body', '') or ''
                     item_type = 'page'
                     title = page.title
+                    canvas_obj = page
                 except Exception:
                     pass
 
@@ -305,24 +464,35 @@ def check_all_drift(course, content_root: str) -> list:
                         current_html = getattr(assignment, 'description', '') or ''
                         item_type = 'assignment'
                         title = assignment.name
+                        canvas_obj = assignment
                     except Exception:
                         pass
 
                 if current_html is not None:
                     current_hash = compute_content_hash(current_html)
                     if current_hash != stored_hash:
-                        # Build diff
-                        abs_path = os.path.join(content_root, rel_path.replace('/', os.sep))
-                        diff_text = _compute_diff(content_root, abs_path, current_html)
-
-                        drifted_items.append({
+                        item = {
                             'file': rel_path,
                             'type': item_type,
                             'title': title,
                             'stored_hash': stored_hash,
                             'current_hash': current_hash,
-                            'diff': diff_text,
-                        })
+                        }
+
+                        if include_diff:
+                            abs_path = os.path.join(content_root, rel_path.replace('/', os.sep))
+                            item['diff'] = _compute_diff(content_root, abs_path, current_html)
+
+                            # Canvas QMD for VS Code's diff editor
+                            canvas_qmd = _canvas_html_to_qmd(
+                                current_html, item_type, canvas_obj,
+                                sync_map, content_root
+                            )
+                            item['canvas_qmd_path'] = _write_diff_temp(
+                                content_root, rel_path, canvas_qmd
+                            )
+
+                        drifted_items.append(item)
 
         except Exception as e:
             logger.debug("  Could not check drift for %s: %s", rel_path, e)

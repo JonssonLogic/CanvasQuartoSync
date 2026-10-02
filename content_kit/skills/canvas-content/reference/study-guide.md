@@ -49,6 +49,19 @@ semester    = "Spring 2026"
 language    = "english"     # or "swedish"
 ```
 
+Optional:
+
+```toml
+syllabus_url = "https://canvas.example.edu/courses/1/files/42"
+```
+
+The study guide links to the official syllabus from both the HTML page and the PDF
+cover. Without this key the link is built from the course code as
+`https://kursinfoweb.hj.se/course_syllabuses/<course_code>.pdf`, which is Jonkoping's
+public syllabus service. Set `syllabus_url` to point somewhere else: a PDF uploaded to
+Canvas, another institution's register, or the syllabus kept in the course repo. Set it
+to `""` to leave the link out entirely.
+
 `_quarto.yml` must also exist in the content root - it supplies the LaTeX packages and
 colour definitions the PDF needs.
 

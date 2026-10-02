@@ -175,9 +175,9 @@ def preprocess_study_guide(qmd_content: str, config: dict, config_dir: str = '.'
     parts.append("")
 
     # 4. HTML syllabus link
-    course_code = config.get('course_code', '')
-    if course_code:
-        parts.append(_generate_syllabus_link(course_code, labels))
+    syllabus_url = _syllabus_url(config)
+    if syllabus_url:
+        parts.append(_generate_syllabus_link(syllabus_url, labels))
         parts.append("")
 
     # 5. Process each section
@@ -300,13 +300,32 @@ def _find_first_image(content: str):
 # Front page generation
 # ---------------------------------------------------------------------------
 
+def _syllabus_url(config: dict) -> str:
+    """Where the official syllabus lives.
+
+    Defaults to Jonkoping's public course-syllabus service, derived from the
+    course code, which is where this started. That URL is not stable: syllabuses
+    move, get withdrawn, or were never published there for a given course, and
+    a hardcoded pattern leaves the reader at a dead link with no way to correct
+    it from the course folder.
+
+    ``syllabus_url`` in config.toml overrides it with anything: a Canvas file,
+    another institution's register, or a link to the PDF kept in the course
+    repo itself. Set it to an empty string to leave the link out altogether.
+    """
+    if 'syllabus_url' in config:
+        return (config.get('syllabus_url') or '').strip()
+    course_code = config.get('course_code', '')
+    return f"https://kursinfoweb.hj.se/course_syllabuses/{course_code}.pdf" if course_code else ''
+
+
 def _generate_front_page(config: dict, labels: dict, colors: dict = None) -> str:
     """Generate the PDF-only front page from config values."""
     course_name = config.get('course_name', 'Course')
     course_code = config.get('course_code', '')
     credits = config.get('credits', '')
     semester = config.get('semester', '')
-    syllabus_url = f"https://kursinfoweb.hj.se/course_syllabuses/{course_code}.pdf" if course_code else ''
+    syllabus_url = _syllabus_url(config)
 
     image_block = "\n\\vspace{2cm}\n"
 
@@ -356,8 +375,7 @@ def _generate_front_page(config: dict, labels: dict, colors: dict = None) -> str
 # Syllabus link (HTML-only)
 # ---------------------------------------------------------------------------
 
-def _generate_syllabus_link(course_code: str, labels: dict) -> str:
-    url = f"https://kursinfoweb.hj.se/course_syllabuses/{course_code}.pdf"
+def _generate_syllabus_link(url: str, labels: dict) -> str:
     text = labels['syllabus_link_text']
     return f"""::: {{.content-visible when-format="html"}}
 

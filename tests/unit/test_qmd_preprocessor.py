@@ -9,6 +9,10 @@ from handlers.qmd_preprocessor import (
     _latex_escape,
     _markdown_to_latex_inline,
     _find_first_image,
+    _generate_front_page,
+    _generate_syllabus_link,
+    LABELS,
+    _syllabus_url,
     preprocess_study_guide,
 )
 
@@ -218,3 +222,48 @@ class TestPreprocessStudyGuide:
         content = "Just plain text"
         result = preprocess_study_guide(content, {})
         assert result == content
+
+
+# --- Syllabus link ----------------------------------------------------------
+
+class TestSyllabusUrl:
+    """Where the official syllabus link points.
+
+    The default was hardcoded to Jonkoping's public syllabus service, derived
+    from the course code. That URL is not stable: syllabuses move, get
+    withdrawn, or were never published there for a given course, and until now
+    a course folder had no way to correct it. Reported from a live course whose
+    link 404s.
+    """
+
+    def test_defaults_to_the_course_code_pattern(self):
+        assert _syllabus_url({'course_code': 'MECH201'}) == (
+            'https://kursinfoweb.hj.se/course_syllabuses/MECH201.pdf')
+
+    def test_no_course_code_means_no_link(self):
+        assert _syllabus_url({}) == ''
+
+    def test_config_overrides_the_default(self):
+        url = _syllabus_url({
+            'course_code': 'MECH201',
+            'syllabus_url': 'https://canvas.test/courses/1/files/42',
+        })
+        assert url == 'https://canvas.test/courses/1/files/42'
+
+    def test_empty_string_removes_the_link(self):
+        """Explicitly blank is a choice, not a fallback to the default."""
+        assert _syllabus_url({'course_code': 'MECH201', 'syllabus_url': ''}) == ''
+
+    def test_the_html_link_and_the_pdf_front_page_agree(self):
+        """Two call sites, one resolver: they cannot drift apart."""
+        config = {'course_code': 'MECH201', 'course_name': 'Mechanics',
+                  'syllabus_url': 'https://example.test/syllabus.pdf'}
+        labels = LABELS['english']
+
+        front = _generate_front_page(config, labels)
+        link = _generate_syllabus_link(_syllabus_url(config), labels)
+
+        assert 'https://example.test/syllabus.pdf' in front
+        assert 'https://example.test/syllabus.pdf' in link
+        assert 'kursinfoweb' not in front
+        assert 'kursinfoweb' not in link

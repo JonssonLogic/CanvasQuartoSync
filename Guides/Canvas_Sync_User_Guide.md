@@ -321,6 +321,7 @@ If `preprocess` is not set to `true`, you manage dual-format content yourself us
       submission_types: [online_upload] # (optional: [online_upload, online_text_entry, online_url, media_recording, student_annotation, none, external_tool])
       allowed_extensions: [py, txt]     # (optional)
       omit_from_final_grade: true       # (optional, Default: false) — do not count towards final grade
+      allowed_attempts: -1              # (optional, Default: -1 = unlimited; use a positive integer for a finite cap)
       hide_in_gradebook: true           # (optional, Default: false) — no gradebook column at all; requires points 0/unset
       indent: 1                       # (optional)
       group_assignment: true            # (optional, Default: false) — group submission

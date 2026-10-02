@@ -1,0 +1,52 @@
+name: Build VSIX
+
+# Triggers:
+#   - Push a tag like v0.1.0, v1.2.3, etc. → builds and creates a GitHub Release
+#   - Manual trigger from Actions tab → builds and uploads as artifact (no release)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: extension
+        run: npm ci
+
+      - name: Build extension
+        working-directory: extension
+        run: npm run build:extension
+
+      - name: Package VSIX
+        working-directory: extension
+        run: npx @vscode/vsce package --no-dependencies
+        # --no-dependencies: skip bundling node_modules since esbuild
+        # already bundles everything into dist/extension.js
+
+      - name: Upload VSIX as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: canvasquartosync-vsix
+          path: extension/*.vsix
+
+      # Only create a GitHub Release when triggered by a version tag
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: extension/*.vsix
+          generate_release_notes: true

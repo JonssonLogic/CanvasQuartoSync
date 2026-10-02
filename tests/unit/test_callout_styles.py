@@ -33,6 +33,26 @@ class TestInlineCalloutStyles:
         result = BaseHandler._inline_callout_styles(html, _DEFAULT_CALLOUT_STYLES)
         assert result == html
 
+    def test_screen_reader_span_stripped_from_title(self):
+        # Quarto injects <span class="screen-reader-only">Note</span> before the
+        # custom title. Without Quarto's CSS, Canvas renders it as visible text,
+        # causing "Note Syftet med peer-review" to appear on the same line.
+        callout_with_sr_span = (
+            '<div class="callout callout-style-default callout-note callout-titled">\n'
+            '<div class="callout-header d-flex align-content-center">\n'
+            '<div class="callout-icon-container">\n<i class="callout-icon"></i>\n</div>\n'
+            '<div class="callout-title-container flex-fill">\n'
+            '<span class="screen-reader-only">Note</span>Syftet med peer-review\n'
+            '</div>\n'
+            '</div>\n'
+            '<div class="callout-body-container callout-body">\n<p>Body text</p>\n</div>\n'
+            '</div>'
+        )
+        result = BaseHandler._inline_callout_styles(callout_with_sr_span, _DEFAULT_CALLOUT_STYLES)
+        assert "Syftet med peer-review" in result
+        assert "screen-reader-only" not in result
+        assert ">Note<" not in result  # the sr-only span text must not appear as visible text
+
     def test_custom_styles_applied(self):
         custom = {
             "callout-tip": {"border": "#FF0000", "bg": "#FFCCCC", "icon": "!"},
