@@ -353,6 +353,11 @@ class NewQuizHandler(BaseHandler):
                     if var_pattern:
                         text = var_pattern.sub(r'QVAR_START_\1_QVAR_END', text)
                     chunks.append((f"q{qi}_a{ai}", text))
+                if ans.get('answer_comments'):
+                    text = ans['answer_comments']
+                    if var_pattern:
+                        text = var_pattern.sub(r'QVAR_START_\1_QVAR_END', text)
+                    chunks.append((f"q{qi}_a{ai}_comment", text))
 
             for comment_key in ['correct_comments', 'incorrect_comments']:
                 if q.get(comment_key):
@@ -449,6 +454,9 @@ class NewQuizHandler(BaseHandler):
                     if ans_key in rendered_map:
                         ans['answer_html'] = rendered_map[ans_key]
                         ans.pop('answer_text', None)
+                    comment_key = f"{ans_key}_comment"
+                    if comment_key in rendered_map:
+                        ans['answer_comments'] = rendered_map[comment_key]
                     rendered_answers.append(ans)
                 q['answers'] = rendered_answers
 
@@ -597,6 +605,9 @@ class NewQuizHandler(BaseHandler):
         if interaction_slug in ['choice', 'multi-answer']:
             choices = []
             correct_values = []
+            # Per-answer feedback, keyed by choice id. The API only offers it
+            # on 'choice' items; multi-answer silently ignores it.
+            answer_feedback = {}
 
             for index, ans in enumerate(answers):
                 choice_id = str(uuid.uuid4())
@@ -613,7 +624,12 @@ class NewQuizHandler(BaseHandler):
                 if ans.get('weight', 0) == 100 or ans.get('answer_weight', 0) == 100:
                     correct_values.append(choice_id)
 
+                if ans.get('answer_comments'):
+                    answer_feedback[choice_id] = ans['answer_comments']
+
             item_data['entry']['interaction_data']['choices'] = choices
+            if answer_feedback and interaction_slug == 'choice':
+                item_data['entry']['answer_feedback'] = answer_feedback
 
             if interaction_slug == 'choice':
                 if correct_values:
