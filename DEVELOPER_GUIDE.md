@@ -40,8 +40,7 @@ CanvasQuartoSync/
 │   ├── CLAUDE.md.template     # Lands in the content folder root
 │   ├── skills/canvas-content/ # Claude Code skill: SKILL.md + reference/*.md
 │   ├── check_content.bat      # Double-click validator (finds the tool at run time)
-│   ├── update_kit.bat         # Double-click kit refresh
-│   ├── *.sh                   # macOS/Linux twins, no longer written into new courses (cqs replaces them)
+│   ├── update_kit.bat         # Double-click kit refresh (Windows; macOS/Linux use cqs)
 │   ├── starter/               # config.toml, _quarto.yml, branding.css, .gitignore
 │   └── example/               # Sample module for --with-example
 ├── Guides/

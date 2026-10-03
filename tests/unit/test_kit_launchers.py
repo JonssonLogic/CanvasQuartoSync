@@ -3,7 +3,10 @@
 check_content looks the tool up at run time instead of carrying a stamped
 path. These tests build fake installs (a stub validate_content.py plus a real,
 empty venv) under a temporary home and check which one the launcher picks.
-The .bat runs on Windows only, the .sh wherever bash is available.
+
+The launchers are Windows .bat files for double-clicking, so these run on
+Windows only. On macOS and Linux the cqs command does the same job; its shim
+is tested in test_cqs.py.
 
 update_kit and run_sync_here carry the same lookup; test_doc_consistency
 keeps the copies identical, so testing check_content covers all of them.
@@ -20,7 +23,7 @@ import pytest
 from init_content_project import install
 
 IS_WINDOWS = os.name == "nt"
-BASH = shutil.which("bash")
+
 
 STUB = "import sys\nprint('STUB ' + __file__)\nprint('ARGS ' + ' '.join(sys.argv[1:]))\n"
 
@@ -77,15 +80,12 @@ def _run(course, home, extra_env=None):
     env["USERPROFILE"] = str(home)
     env["LOCALAPPDATA"] = str(home / "AppData" / "Local")
     env.update(extra_env or {})
-    if IS_WINDOWS:
-        cmd = ["cmd", "/c", str(course / "check_content.bat")]
-    else:
-        cmd = [BASH, str(course / "check_content.sh")]
+    cmd = ["cmd", "/c", str(course / "check_content.bat")]
     return subprocess.run(cmd, env=env, capture_output=True, text=True,
                           stdin=subprocess.DEVNULL, timeout=60)
 
 
-pytestmark = pytest.mark.skipif(not IS_WINDOWS and not BASH, reason="needs cmd or bash")
+pytestmark = pytest.mark.skipif(not IS_WINDOWS, reason="the launchers are Windows .bat files")
 
 
 class TestLookup:

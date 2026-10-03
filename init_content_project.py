@@ -17,9 +17,10 @@ Three ways to work, and what each needs in the course folder:
 - Double-click on Windows: check_content.bat and update_kit.bat, written here.
 - A terminal, on any OS: the cqs command, which lives with the tool.
 
-So only the .bat launchers are written. The .sh ones are not: macOS and Linux
-users are in a terminal already, and cqs does the same job there. A course
-that already has them keeps them; nothing here deletes a file.
+So the launchers are Windows .bat files only. There are no .sh ones: macOS and
+Linux users are in a terminal already, and cqs does the same job there. A
+course that got .sh launchers from an earlier kit keeps them; nothing here
+deletes a file.
 
 The launchers carry no paths. They look the tool up at run time
 (CANVAS_QUARTO_SYNC_DIR, then the install location, then older layouts), so
@@ -50,8 +51,7 @@ _STARTER_FILES = {
     "gitignore.template": ".gitignore",
 }
 
-# Double-click launchers for Windows. The .sh twins in content_kit/ are no
-# longer written: on macOS and Linux, cqs does the same from the terminal.
+# Double-click launchers for Windows. On macOS and Linux, cqs does the same.
 _WRAPPERS = ["check_content.bat", "update_kit.bat"]
 
 
@@ -68,12 +68,10 @@ def _read(path):
         return f.read()
 
 
-def _write(path, text, executable=False):
+def _write(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as f:
         f.write(text)
-    if executable and os.name != "nt":
-        os.chmod(path, 0o755)
 
 
 def verify_interpreter(python_exe):
@@ -180,15 +178,13 @@ def copy_skill(target, log):
 
 
 def copy_wrappers(target, log):
-    """Copy the wrappers with the line endings their shell needs.
+    """Copy the .bat launchers with CRLF line endings.
 
-    cmd.exe misreads ``call :label`` in an LF-only .bat, and bash chokes on
-    CRLF, so neither may depend on how git checked the source out."""
+    cmd.exe misreads ``call :label`` in an LF-only .bat, so the endings may
+    not depend on how git checked the source out."""
     for name in _WRAPPERS:
-        text = _read(os.path.join(KIT_SRC, name)).replace("\r\n", "\n")
-        if name.endswith(".bat"):
-            text = text.replace("\n", "\r\n")
-        _write(os.path.join(target, name), text, executable=name.endswith(".sh"))
+        text = _read(os.path.join(KIT_SRC, name)).replace("\r\n", "\n").replace("\n", "\r\n")
+        _write(os.path.join(target, name), text)
     log.append(f"  wrappers   {', '.join(_WRAPPERS)}")
 
 
