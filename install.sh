@@ -250,6 +250,6 @@ if [ "${#found[@]}" -gt 0 ]; then
     echo ""
     echo "   Refresh each course folder once, so its check_content and update_kit"
     echo "   find this install (they look it up themselves from then on):"
-    echo "     \"$VENV_DIR/bin/python\" \"$CLONE_DIR/init_content_project.py\" <course folder> --update"
+    echo "     cqs -C <course folder> kit update"
     echo ""
 fi

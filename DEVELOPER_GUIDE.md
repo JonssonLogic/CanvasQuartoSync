@@ -39,8 +39,9 @@ CanvasQuartoSync/
 ├── content_kit/               # Source of the kit copied into content folders
 │   ├── CLAUDE.md.template     # Lands in the content folder root
 │   ├── skills/canvas-content/ # Claude Code skill: SKILL.md + reference/*.md
-│   ├── check_content.bat/.sh  # Validator wrappers (find the tool at run time)
-│   ├── update_kit.bat/.sh     # One-click kit refresh
+│   ├── check_content.bat      # Double-click validator (finds the tool at run time)
+│   ├── update_kit.bat         # Double-click kit refresh
+│   ├── *.sh                   # macOS/Linux twins, no longer written into new courses (cqs replaces them)
 │   ├── starter/               # config.toml, _quarto.yml, branding.css, .gitignore
 │   └── example/               # Sample module for --with-example
 ├── Guides/
@@ -81,8 +82,11 @@ CanvasQuartoSync/
 │   ├── e2e/                   # Real Canvas course tests
 │   └── fixtures/
 │       └── e2e_content/       # Stable test content for E2E tests
+├── cqs.py                     # The cqs command: one verb per script (check, sync, diff, rollup, ...)
+├── bin/                       # cqs.cmd / cqs shims; the installers put this folder on the PATH
 ├── install.ps1                # One-line installer (Python + Git + packages + VS Code extension)
-└── run_sync_here.bat          # Portable launcher (copy to content folder, double-click)
+├── run_sync_here.bat          # Double-click sync (copied into a content folder)
+└── init_course.bat            # Double-click scaffolder (copied into an empty folder)
 ```
 
 ---

@@ -1,17 +1,27 @@
 """
 Scaffold a course content folder with the AI authoring kit.
 
-Copies the Claude Code skill, its reference documentation, and the offline
-validator wrappers into a content folder, so a fresh AI session opened on that
-folder knows how to write CanvasQuartoSync content without reading this repo's
-source.
+Copies the Claude Code skill, its reference documentation, and two
+double-click launchers into a content folder, so a fresh AI session opened on
+that folder knows how to write CanvasQuartoSync content without reading this
+repo's source.
 
 Usage:
-    python init_content_project.py C:\\Courses\\MECH201             # scaffold
-    python init_content_project.py C:\\Courses\\MECH201 --update    # refresh kit
-    python init_content_project.py . --with-example                 # + sample module
+    cqs init C:\\Courses\\MECH201       # scaffold
+    cqs kit update                     # refresh the kit, from inside a course
+    cqs init . --with-example          # + sample module
 
-The wrappers carry no paths. They look the tool up at run time
+Three ways to work, and what each needs in the course folder:
+
+- VS Code with the extension, the recommended way: nothing.
+- Double-click on Windows: check_content.bat and update_kit.bat, written here.
+- A terminal, on any OS: the cqs command, which lives with the tool.
+
+So only the .bat launchers are written. The .sh ones are not: macOS and Linux
+users are in a terminal already, and cqs does the same job there. A course
+that already has them keeps them; nothing here deletes a file.
+
+The launchers carry no paths. They look the tool up at run time
 (CANVAS_QUARTO_SYNC_DIR, then the install location, then older layouts), so
 moving or reinstalling the tool never breaks a content folder.
 """
@@ -40,7 +50,9 @@ _STARTER_FILES = {
     "gitignore.template": ".gitignore",
 }
 
-_WRAPPERS = ["check_content.bat", "check_content.sh", "update_kit.bat", "update_kit.sh"]
+# Double-click launchers for Windows. The .sh twins in content_kit/ are no
+# longer written: on macOS and Linux, cqs does the same from the terminal.
+_WRAPPERS = ["check_content.bat", "update_kit.bat"]
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +118,7 @@ def kit_status(content_root):
         return None
     return (
         f"Authoring kit in this folder is v{installed}, tool is v{__version__}. "
-        f"Refresh it by running update_kit.bat here."
+        f"Refresh it: double-click update_kit.bat, or run cqs kit update."
     )
 
 
@@ -312,7 +324,7 @@ def main():
         print("\nNext steps:")
         print("  1. Set course_id and course_name in config.toml")
         print(f"  2. Open {target} in VS Code and start Claude Code")
-        print("  3. Check content any time with:  check_content.bat")
+        print("  3. Check content any time: double-click check_content.bat, or run cqs check")
     return 0
 
 

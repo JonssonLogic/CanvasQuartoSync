@@ -11,7 +11,7 @@ when_to_use: >-
   Triggers include: add or edit a page, assignment, quiz, module, study guide,
   syllabus, or course PM; embed a video or image; link a PDF; set a due date,
   points, or attempts; "why isn't this showing up in Canvas".
-allowed-tools: Bash(check_content.bat:*), Bash(./check_content.sh:*), PowerShell(check_content.bat:*)
+allowed-tools: Bash(cqs check:*), PowerShell(cqs check:*), Bash(check_content.bat:*), Bash(./check_content.sh:*), PowerShell(check_content.bat:*)
 ---
 
 # Authoring content for CanvasQuartoSync
@@ -22,8 +22,9 @@ correctly; the developer runs the sync.
 
 ## Rules of engagement
 
-1. **Never sync.** Do not run `sync_to_canvas.py`, `import_from_canvas.py`,
-   `purge_course.py`, `run_sync_here.bat`, or anything else that contacts Canvas.
+1. **Never sync.** Do not run `cqs sync`, `cqs import`, `cqs purge`, `cqs rollup`,
+   `sync_to_canvas.py`, `import_from_canvas.py`, `purge_course.py`,
+   `run_sync_here.bat`, or anything else that contacts Canvas.
    Pushing to a live course is always the developer's call. Write files and stop.
 2. **Match the scope of the request.** "Add a video to the welcome page" is one edit.
    "Draft the statics module" may be several files. Don't create files nobody asked
@@ -38,9 +39,13 @@ correctly; the developer runs the sync.
 After writing or editing any content file, run the checker on it:
 
 ```
-check_content.bat 01_Introduction/02_Welcome.qmd     # Windows
-./check_content.sh 01_Introduction/02_Welcome.qmd    # macOS/Linux
+cqs check 01_Introduction/02_Welcome.qmd
 ```
+
+Paths are relative to where you stand, and `cqs check` with no path checks the whole
+course from anywhere inside it. If `cqs` is not found (an older install), run
+`check_content.bat <path>` on Windows, or `./check_content.sh <path>` if the folder has
+one. They are the same checker.
 
 It runs offline - no Canvas, no credentials, about a second. It reports what each
 file **will become in Canvas**, and catches the mistakes that otherwise only surface

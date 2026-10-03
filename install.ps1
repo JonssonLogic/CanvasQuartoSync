@@ -377,6 +377,6 @@ if ($found.Count -gt 0) {
     Write-Host ""
     Write-Host "   Refresh each course folder once, so its check_content and update_kit" -ForegroundColor Yellow
     Write-Host "   find this install (they look it up themselves from then on):"        -ForegroundColor Yellow
-    Write-Host "     & `"$VENV_DIR\Scripts\python.exe`" `"$CLONE_DIR\init_content_project.py`" <course folder> --update" -ForegroundColor White
+    Write-Host "     cqs -C <course folder> kit update" -ForegroundColor White
     Write-Host ""
 }

@@ -130,17 +130,22 @@ Course content is usually written in a separate folder, with an AI assistant ope
 which by default knows nothing about this tool's conventions. Scaffold that folder once:
 
 ```powershell
-python init_content_project.py C:\Courses\MECH201
+cqs init C:\Courses\MECH201
 ```
 
 This installs a Claude Code skill plus reference documentation into the folder, so a
 fresh session starts out knowing the `NN_` naming rules, the `canvas.*` frontmatter
-schema, and the quiz syntax, without reading this repository. It also drops in
-`check_content.bat`, an offline validator:
+schema, and the quiz syntax, without reading this repository. Content is checked with
+an offline validator: double-click `check_content.bat` in the folder, or from a
+terminal:
 
 ```powershell
-check_content.bat 01_Introduction\02_Welcome.qmd
+cqs check 01_Introduction\02_Welcome.qmd
 ```
+
+There are three ways to run the tool: the VS Code extension (recommended), the
+double-click `.bat` files on Windows, and the `cqs` command in a terminal on any OS.
+See [Three Ways to Run the Tool](Guides/Canvas_Sync_User_Guide.md#6-three-ways-to-run-the-tool).
 
 It needs no Canvas connection and reports what each file will become in Canvas, plus the
 mistakes that otherwise only surface after a sync: missing `NN_` prefixes, misspelled

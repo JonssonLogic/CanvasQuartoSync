@@ -27,15 +27,24 @@ class TestScaffold:
         assert ".claude/canvas-kit.json" in files
         assert {"CLAUDE.md", "config.toml", "_quarto.yml", "branding.css",
                 ".gitignore"} <= files
-        assert {"check_content.bat", "check_content.sh",
-                "update_kit.bat", "update_kit.sh"} <= files
+        assert {"check_content.bat", "update_kit.bat"} <= files
+
+    def test_no_sh_launchers(self, tmp_path):
+        """macOS and Linux users are in a terminal already; cqs does the job."""
+        install(str(tmp_path))
+        assert not any(name.endswith(".sh") for name in _files(str(tmp_path)))
+
+    def test_existing_sh_launchers_are_left_alone(self, tmp_path):
+        install(str(tmp_path))
+        (tmp_path / "check_content.sh").write_text("old", encoding="utf-8")
+        install(str(tmp_path), update=True)
+        assert (tmp_path / "check_content.sh").read_text(encoding="utf-8") == "old"
 
     def test_wrappers_carry_no_machine_paths(self, tmp_path):
         """The wrappers look the tool up at run time; a stamped path would
         break the folder the moment the tool moves."""
         install(str(tmp_path), python_exe=r"C:\some\venv\python.exe")
-        for name in ("check_content.bat", "check_content.sh",
-                     "update_kit.bat", "update_kit.sh"):
+        for name in ("check_content.bat", "update_kit.bat"):
             text = (tmp_path / name).read_text(encoding="utf-8")
             assert r"C:\some\venv" not in text, name
             assert os.path.dirname(os.path.abspath(__file__)) not in text, name
@@ -46,8 +55,15 @@ class TestScaffold:
         for name in ("check_content.bat", "update_kit.bat"):
             data = (tmp_path / name).read_bytes()
             assert data.count(b"\n") == data.count(b"\r\n"), f"{name} must be CRLF"
-        for name in ("check_content.sh", "update_kit.sh"):
-            assert b"\r\n" not in (tmp_path / name).read_bytes(), f"{name} must be LF"
+
+    def test_both_launchers_stay_open_on_a_double_click(self, tmp_path):
+        """A double-clicked window closes when the script ends; the result has
+        to be readable first. update_kit always pauses; check_content pauses
+        only when double-clicked, so a terminal or an agent is not stopped."""
+        install(str(tmp_path))
+        for name in ("check_content.bat", "update_kit.bat"):
+            assert "pause" in (tmp_path / name).read_text(encoding="utf-8"), name
+        assert "cmdcmdline" in (tmp_path / "check_content.bat").read_text(encoding="utf-8")
 
     def test_stamp_records_version(self, tmp_path):
         install(str(tmp_path))
@@ -176,4 +192,4 @@ class TestKitStatus:
         stamp_path.write_text(json.dumps(data), encoding="utf-8")
 
         message = kit_status(str(tmp_path))
-        assert message and "0.0.1" in message and "update_kit" in message
+        assert message and "0.0.1" in message and "update_kit.bat" in message and "cqs kit update" in message

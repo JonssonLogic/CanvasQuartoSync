@@ -27,7 +27,7 @@
   - [C. Cross-Linking (Smart Navigation)](#c-cross-linking-smart-navigation)
   - [D. Asset Namespacing & Optimization](#d-asset-namespacing--optimization)
   - [E. Orphan Asset Cleanup (Pruning)](#e-orphan-asset-cleanup-pruning)
-- [6. Portable Syncing (Batch Script)](#6-portable-syncing-batch-script)
+- [6. Three Ways to Run the Tool](#6-three-ways-to-run-the-tool)
   - [Usage](#usage-1)
 - [7. Synchronization Strategy & Tracking](#7-synchronization-strategy--tracking)
   - [The Sync Map (.canvas_sync_map.json)](#the-sync-map-canvas_sync_mapjson)
@@ -874,17 +874,47 @@ Over time, course storage can get cluttered with old images you no longer use.
 
 ---
 
-## 6. Portable Syncing (Batch Script)
+## 6. Three Ways to Run the Tool
 
-A helper script `run_sync_here.bat` is available to execute the sync from any directory (e.g., if you keep your content separate from the code).
+Pick whichever fits how you work. They run the same tool and give the same results.
 
-### Usage
-1.  Copy `run_sync_here.bat` into your content folder.
-2.  **Basic Sync**: Double-click the file to sync the content in that folder.
-3.  **Shortcuts & Arguments** (e.g., for Calendar Sync):
-    *   Create a shortcut to the `.bat` file.
-    *   Right-click the Shortcut -> **Properties**.
-    *   In the **Target** field, append the argument: 
+| | How | What the course folder needs |
+|:--|:--|:--|
+| **VS Code** (recommended) | The CanvasQuartoSync extension: sidebar, Module Structure, Grade Rollup | Nothing |
+| **Double-click** (Windows) | `.bat` files in the course folder | `check_content.bat`, `update_kit.bat`, optionally `run_sync_here.bat` |
+| **Terminal** (any OS) | The `cqs` command | Nothing |
+
+### Double-click (Windows)
+
+*   **`check_content.bat`** — check the course offline. The window stays open so you can
+    read the result.
+*   **`update_kit.bat`** — refresh the authoring kit after updating the tool.
+*   **`run_sync_here.bat`** — sync the course to Canvas. VS Code's **New Project** adds
+    it; otherwise copy it from the tool's folder into the course folder.
+    For options such as calendar sync, make a shortcut to it, open the shortcut's
+    **Properties**, and append the option to **Target**, e.g. `--sync-calendar`.
+
+The `.bat` files find the installed tool themselves, so they keep working after the tool
+moves or updates.
+
+### Terminal: `cqs`
+
+The installer puts `cqs` on your PATH. Run it anywhere inside a course folder:
+
+```
+cqs check                     # check the whole course, offline
+cqs check 01_Intro/02_x.qmd   # one file; paths are relative to where you stand
+cqs sync                      # sync to Canvas
+cqs sync 02_x.qmd             # sync one file
+cqs diff                      # has anyone edited Canvas since the last sync? Reads only
+cqs rollup --status           # grade rollups: who qualifies
+cqs kit update                # refresh the authoring kit
+cqs where                     # which tool, Python and course cqs is using
+```
+
+`cqs` on its own prints the list and does nothing else. Anything that writes to Canvas
+takes a command you typed. On macOS and Linux this replaces the `.sh` launchers; courses
+that already have them keep them.
 
 ---
 
@@ -922,10 +952,11 @@ this tool's source code.
 
 ### Setting up a content folder
 
-Run the scaffolder once per course, pointing it at the content folder:
+In VS Code, use **New Project** in the sidebar. From a terminal, run the scaffolder once
+per course, pointing it at the content folder:
 
 ```powershell
-python init_content_project.py C:\Courses\MECH201
+cqs init C:\Courses\MECH201
 ```
 
 It creates:
@@ -934,8 +965,8 @@ It creates:
 MECH201/
 ├── CLAUDE.md                      # Loaded automatically by Claude Code every session
 ├── .claude/skills/canvas-content/ # The authoring skill + reference documentation
-├── check_content.bat / .sh        # Offline content validator
-├── update_kit.bat / .sh           # One-click kit refresh
+├── check_content.bat              # Offline content validator (double-click)
+├── update_kit.bat                 # Kit refresh (double-click)
 ├── config.toml                    # Course id and metadata (edit this first)
 ├── _quarto.yml                    # Quarto format config (HTML + PDF)
 ├── branding.css                   # Brand colours and callout styling
@@ -944,11 +975,13 @@ MECH201/
 
 Add `--with-example` for a sample module to copy from.
 
-The wrappers contain **no paths**: each run looks the tool up, first in
+Only the Windows `.bat` launchers are written; on macOS and Linux, `cqs` does the same
+from the terminal. A folder that already has `.sh` launchers keeps them.
+
+The launchers contain **no paths**: each run looks the tool up, first in
 `CANVAS_QUARTO_SYNC_DIR` (a clone with its own `.venv`, for development), then in the
 install location (`%LOCALAPPDATA%\CanvasQuartoSync` on Windows), then in the layouts
 earlier installers used. Moving or reinstalling the tool never breaks a content folder.
-If you later move the tool or the venv, re-run with `--update`.
 
 Existing content is never overwritten — running the scaffolder on a folder that already
 has content is safe.
@@ -960,8 +993,8 @@ has content is safe.
 3. Ask for what you want — a page, a quiz, an embedded video, a whole module. The
    assistant writes the files, validates them, and reports back.
 4. Review the result and iterate.
-5. **You run the sync** when it's ready — `run_sync_here.bat`, or
-   `python sync_to_canvas.py <folder>`.
+5. **You run the sync** when it's ready — from the VS Code sidebar, `run_sync_here.bat`,
+   or `cqs sync`.
 
 The kit deliberately instructs the assistant **never to sync to Canvas**. Pushing to a
 live course stays a human decision, so an assistant cannot reach your students by
@@ -969,11 +1002,12 @@ accident.
 
 ### Checking content yourself
 
-The validator is useful on its own, assistant or not:
+The validator is useful on its own, assistant or not. Double-click `check_content.bat`,
+or from a terminal:
 
 ```powershell
-check_content.bat                                  # everything
-check_content.bat 01_Introduction\02_Welcome.qmd   # one file
+cqs check                                  # everything
+cqs check 01_Introduction\02_Welcome.qmd   # one file
 ```
 
 It runs offline — no Canvas connection, no credentials, no Quarto — and reports what
@@ -996,7 +1030,8 @@ It exits non-zero if it found errors, so it also works in a pre-commit hook or C
 The kit ships with the tool, so upgrading the tool can leave a content folder's copy
 behind. Two things keep them aligned, and neither rewrites files behind your back:
 
-*   **`update_kit.bat`** in the content folder — double-click to refresh. Your content,
+*   **`update_kit.bat`** in the content folder — double-click to refresh, or run
+    `cqs kit update`. Your content,
     `config.toml`, and any edits you made to `CLAUDE.md` are preserved; if `CLAUDE.md`
     has been edited the refresh skips it and says so.
 *   **A notice on sync** — `sync_to_canvas.py` prints a one-line warning when the
