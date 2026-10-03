@@ -98,6 +98,12 @@ PDF_KEYS = {
     "published": Key("bool"),
 }
 
+# Nested under ``rollup:``. See handlers/rollup.py.
+ROLLUP_KEYS = {
+    "requires": Key("list", note="paths relative to this file"),
+    "pass_at": Key("number", note="score at or above which a requirement counts"),
+}
+
 CANVAS_SCHEMA = {
     "page": {
         **_COMMON,
@@ -116,6 +122,7 @@ CANVAS_SCHEMA = {
         "hide_in_gradebook": Key("bool"),
         "group_assignment": Key("bool"),
         "group_set": Key("str"),
+        "rollup": Key("dict"),
     },
     "study_guide": {
         **_COMMON,
@@ -408,7 +415,9 @@ def _check_keys(report, meta, schema, prefix="", tz=None):
         _check_value(report, dotted, key, value, tz=tz)
 
         if key.kind == "dict" and isinstance(value, dict):
-            nested = PDF_KEYS if name == "pdf" else RESULT_VIEW_KEYS if name == "result_view" else None
+            nested = ({"pdf": PDF_KEYS,
+                       "result_view": RESULT_VIEW_KEYS,
+                       "rollup": ROLLUP_KEYS}.get(name))
             if nested:
                 _check_keys(report, value, nested, prefix=f"{dotted}.", tz=tz)
 
@@ -816,12 +825,53 @@ def validate_file(file_path, content_root=None, handlers=None):
                     f"sync as its own page. Remove the prefix."
                 )
 
+    rollup = canvas_meta.get("rollup")
+    if isinstance(rollup, dict):
+        _check_rollup(report, rollup, base_path, file_path)
+
     if raw_text is not None:
         body = frontmatter.loads(raw_text).content
         _check_links(report, body, base_path)
         _check_crossrefs(report, body, raw_text)
 
     return report
+
+
+def _check_rollup(report, rollup, base_path, file_path):
+    """Check that a rollup can actually be run before anyone tries.
+
+    A rollup that names a file which does not exist fails silently at run
+    time: no student ever satisfies the requirement, and the tool has nothing
+    to complain about because it did exactly what it was told. Catching the
+    typo here is the whole reason the rule lives in frontmatter.
+    """
+    requires = rollup.get("requires")
+    if not requires:
+        report.error("canvas.rollup.requires is missing - a rollup with no "
+                     "requirements can never be satisfied.")
+        return
+    if not isinstance(requires, list):
+        report.error("canvas.rollup.requires must be a list of paths.")
+        return
+
+    for item in requires:
+        if not isinstance(item, str):
+            report.error(f"canvas.rollup.requires: not a path: {item!r}")
+            continue
+        target = os.path.normpath(os.path.join(base_path, item))
+        if not os.path.exists(target):
+            report.error(
+                f"canvas.rollup.requires: file not found: {item}. Paths are "
+                f"relative to this file, the same as links in the body."
+            )
+        elif os.path.normcase(target) == os.path.normcase(os.path.abspath(file_path)):
+            report.error("canvas.rollup.requires lists the rollup's own file, "
+                         "which can never be satisfied.")
+        elif not is_valid_name(os.path.basename(item)):
+            report.warn(
+                f"canvas.rollup.requires: '{item}' has no NN_ prefix, so the sync "
+                f"never creates it in Canvas and it can hold no grade."
+            )
 
 
 # ---------------------------------------------------------------------------

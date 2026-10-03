@@ -96,6 +96,11 @@ export function registerSidebarViews(
       command: 'cqs.showModuleStructure',
     },
     {
+      label: 'Grade Rollup',
+      icon: 'checklist',
+      command: 'cqs.showGradeRollup',
+    },
+    {
       label: 'Open Preview',
       icon: 'open-preview',
       command: 'cqs.openPreview',

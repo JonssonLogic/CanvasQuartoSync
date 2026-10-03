@@ -5,6 +5,10 @@ import { resolvePython, resolveCqsRoot } from '../python/venvResolver';
 import { getWorkspaceRoot } from '../config/configLoader';
 import { diffFileWithCanvas } from '../commands/diffWithCanvas';
 import { setSyncing } from './statusBar';
+import {
+  rollups, rollupKey, loadRollups, handleRollup, subscribeRollups,
+  renderRollupCtl, renderRollupSummary, ROLLUP_CSS, ROLLUP_SCRIPT,
+} from './rollups';
 
 // ── Module Structure Panel ──────────────────────────────────────────
 //
@@ -15,6 +19,7 @@ import { setSyncing } from './statusBar';
 
 let currentPanel: vscode.WebviewPanel | undefined;
 const log = vscode.window.createOutputChannel('CQS Module Structure');
+
 
 interface ModuleItem {
   title: string;
@@ -155,10 +160,14 @@ export async function openModuleStructurePanel(extensionPath: string): Promise<v
       await handleCreateModule(extensionPath);
     } else if (msg.type === 'batchDelete') {
       await handleBatchDelete(extensionPath, msg.items);
+    } else if (msg.type === 'rollup') {
+      await handleRollup(extensionPath, msg.action, msg.target);
     }
   });
 
-  currentPanel.onDidDispose(() => { currentPanel = undefined; });
+  const panel = currentPanel;
+  const rollupSub = subscribeRollups((m) => { panel.webview.postMessage(m); });
+  currentPanel.onDidDispose(() => { currentPanel = undefined; rollupSub.dispose(); });
 
   // Show loading, then fetch and render
   currentPanel.webview.html = wrapHtml('<div class="loading">Fetching module structure from Canvas...</div>');
@@ -167,7 +176,11 @@ export async function openModuleStructurePanel(extensionPath: string): Promise<v
 
 async function refreshPanel(extensionPath: string, withDrift = false): Promise<void> {
   if (!currentPanel) return;
-  const result = await fetchStructure(extensionPath, withDrift);
+  // The rollup scan is local and cheap, so it rides along with every load.
+  const [result] = await Promise.all([
+    fetchStructure(extensionPath, withDrift),
+    loadRollups(extensionPath),
+  ]);
   if (!currentPanel) return;
 
   if (result.type === 'error') {
@@ -839,7 +852,17 @@ function renderBody(data: StructureData): string {
       h += '<div class="item' + clickCls + '" data-kind="' + dataKind + '" data-value="' + dataVal.replace(/"/g, '&quot;') + '">';
       h += '<span class="cb-cell"><input type="checkbox" class="item-cb" onclick="event.stopPropagation();onCheckChanged()" data-kind="' + dataKind + '" data-value="' + dataVal.replace(/"/g, '&quot;') + '" data-delete="' + deleteVal.replace(/"/g, '&quot;') + '"></span>';
       h += '<span class="icon">' + icon + '</span>';
-      h += '<span class="title"' + titleClick + '>' + esc(item.title) + '</span>';
+      // A rollup target carries its button inside the title cell, at the
+      // right edge, so it sits left of the type badge without adding a grid
+      // column that every other row would have to leave empty.
+      const ru = hasLocal ? rollups.get(rollupKey(item.local_path!)) : undefined;
+      if (ru) {
+        h += '<span class="title has-rollup"><span class="title-text"' + titleClick + '>' + esc(item.title) + '</span>'
+          + '<span class="rollup-ctl" data-rollup="' + esc(rollupKey(item.local_path!)) + '">'
+          + renderRollupCtl(ru) + '</span></span>';
+      } else {
+        h += '<span class="title"' + titleClick + '>' + esc(item.title) + '</span>';
+      }
       h += '<span class="type-badge' + badgeCls + '">' + badgeText + '</span>';
       const updatedText = item.updated_at ? relativeTime(item.updated_at) : '';
       const updatedFull = item.updated_at || '';
@@ -885,6 +908,10 @@ function renderBody(data: StructureData): string {
       }
       h += '</span>';
       h += '</div>';
+      if (ru) {
+        h += '<div class="rollup-summary" data-ctx="row" data-rollup="' + esc(rollupKey(item.local_path!)) + '">'
+          + renderRollupSummary(ru, 'row') + '</div>';
+      }
     }
 
     h += '</div></div>';
@@ -1034,6 +1061,10 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);backgr
 .batch-bar{position:fixed;bottom:0;left:0;right:0;background:var(--vscode-sideBar-background);border-top:2px solid var(--vscode-focusBorder);padding:10px 24px;display:flex;align-items:center;gap:12px;z-index:100;font-size:13px}
 .batch-bar.hidden{display:none}
 #batch-count{font-weight:600;min-width:90px}
+.item .title.has-rollup{display:flex;align-items:center;gap:8px;min-width:0}
+.item .title-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rollup-summary{grid-column:1/-1;padding:2px 10px 8px 52px;font-size:12px}
+${ROLLUP_CSS}
 </style>
 </head>
 <body>
@@ -1130,6 +1161,7 @@ function clearSelection(){
   document.querySelectorAll('.item-cb:checked').forEach(function(cb){cb.checked=false;});
   onCheckChanged();
 }
+${ROLLUP_SCRIPT}
 </script>
 </body>
 </html>`;

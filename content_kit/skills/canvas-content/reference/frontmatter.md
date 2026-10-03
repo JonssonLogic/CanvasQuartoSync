@@ -42,6 +42,23 @@ Putting `title:` at the top level of a quiz file does **not** work - it is ignor
 | `hide_in_gradebook` | bool | `false` | No gradebook column at all. Canvas requires `points: 0` (or unset); the sync sets `omit_from_final_grade` for you. Removing the key puts the column back |
 | `group_assignment` | bool | `false` | Marks this as group work. Without `group_set`, the sync **prompts interactively** and writes your answer back into this file |
 | `group_set` | string | unset | Name of an existing Canvas group set. Must already exist in the course |
+| `rollup` | block | unset | Derive this assignment's grade from several others. Nested settings below |
+
+Nested under `rollup:`
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `requires` | list | **required** | Paths to the assignments that must be passed, relative to **this file** - the same rule as links in the body |
+| `pass_at` | number | `1` | Score at or above which a requirement counts as passed. A `pass_fail` requirement counts on `complete` regardless, and an excused one always counts |
+
+A rollup is for the case where a student records system wants **one** result but
+teaching wants **several** assignments. Declaring it here marks this assignment
+for every student who has passed all of `requires`. Nothing else is graded, and
+a grade is only ever raised, never withdrawn.
+
+It is not applied by a sync. Run `python rollup.py <content_root> --status` to
+see who qualifies and `--apply` to mark them. A course may declare as many
+rollups as it likes, each in the frontmatter of its own target.
 
 ## study_guide
 

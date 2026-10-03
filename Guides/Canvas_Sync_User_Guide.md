@@ -326,8 +326,80 @@ If `preprocess` is not set to `true`, you manage dual-format content yourself us
       indent: 1                       # (optional)
       group_assignment: true            # (optional, Default: false) — group submission
       group_set: "Project Groups"       # (optional) — name of an existing Canvas group set
+      rollup:                           # (optional) — grade derived from other assignments
+        requires: [01_Lab.qmd, 02_Lab.qmd]
+        pass_at: 1
     ---
     ```
+
+#### Grade Rollups: One Result From Several Assignments
+
+Some student records systems want **one** result per examination module, while
+teaching wants **several** assignments that are examined separately. A Swedish
+LADOK module such as "Laboratory 3 hp" is a single pass/fail column, but the
+course may run five labs that students demonstrate one at a time.
+
+A **rollup** bridges the two. Declare it in the frontmatter of the assignment
+that reports the result:
+
+```yaml
+---
+title: "Laboratory"
+canvas:
+  type: assignment
+  grading_type: pass_fail
+  points: 0
+  submission_types: [none]
+  omit_from_final_grade: true
+  rollup:
+    requires:
+      - 01_Tensile_Test.qmd
+      - 02_Beam_Solver.qmd
+      - 03_Truss.qmd
+    pass_at: 1
+---
+```
+
+*   **`requires`** lists the assignments that must be passed. Paths are relative
+    to the file declaring the rollup, the same rule as links in the body. There
+    is no central registry: declare as many rollups as you like, each in its own
+    target's frontmatter.
+*   **`pass_at`** is the score at or above which a requirement counts. A
+    `pass_fail` requirement counts on `complete` whatever its points are, and an
+    excused one always counts. That matters: a `pass_fail` assignment worth 0
+    points has a *score* of 0 even when the student passed, so the score alone
+    would be misleading.
+
+**A sync never applies a rollup.** Content sync is routine; writing grades is
+not, so they are separate commands:
+
+```bash
+python rollup.py .                  # what is declared — no Canvas calls at all
+python rollup.py . --status         # who qualifies — reads Canvas, writes nothing
+python rollup.py . --apply          # mark them
+```
+
+Running it with no flags is an offline check of the declaration itself: does
+every path resolve, has each requirement been synced, does the target have a
+Canvas id. That is where a typo shows up, and it needs no credentials.
+`check_content` reports the same path errors while you author.
+
+Grades are only ever **raised**. A student who already holds a pass but no
+longer qualifies is reported as a conflict and left untouched, and Canvas's own
+"Test Student" and inactive enrolments are skipped.
+
+**In VS Code**, the target's row in the Module Structure panel has a
+**Rollup** button, just left of its type. It shows **✓** when the offline
+check passes and **⚠** when it does not; hover it for the rule and the
+options. Clicking it asks Canvas who qualifies and shows the counts under the
+row. The **▾** menu has *Check setup* and *Mark complete…*, which asks first
+with the number and names, then marks only those students: anyone who
+qualified after you confirmed waits for the next run.
+
+**Tools → Grade Rollup** in the sidebar shows every rollup in the course on one
+page, each with the same button. Opening it reads local files only: it lists
+each requirement with its Canvas id, so a requirement that was never synced is
+visible before anything is asked of Canvas.
 
 #### Keeping an Assignment Out of the Gradebook
 

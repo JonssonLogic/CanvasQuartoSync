@@ -17,7 +17,8 @@ import re
 
 import pytest
 
-from validate_content import CANVAS_SCHEMA, PDF_KEYS, RESULT_VIEW_KEYS
+from validate_content import (CANVAS_SCHEMA, PDF_KEYS, RESULT_VIEW_KEYS,
+                              ROLLUP_KEYS)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 KIT_REFERENCE = os.path.join(
@@ -30,7 +31,7 @@ def _schema_keys():
     keys = set()
     for type_schema in CANVAS_SCHEMA.values():
         keys |= set(type_schema)
-    keys |= set(PDF_KEYS) | set(RESULT_VIEW_KEYS)
+    keys |= set(PDF_KEYS) | set(RESULT_VIEW_KEYS) | set(ROLLUP_KEYS)
     return keys
 
 

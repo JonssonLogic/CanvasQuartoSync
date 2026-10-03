@@ -10,6 +10,7 @@ import { createToggleButtons, registerToggleCommands } from './providers/syncOpt
 import { registerSidebarViews } from './providers/sidebarTreeView';
 import { openNewProjectPanel } from './providers/newProjectPanel';
 import { openModuleStructurePanel } from './providers/moduleStructurePanel';
+import { openGradeRollupPanel } from './providers/gradeRollupPanel';
 import { showWelcomeIfNeeded } from './providers/welcomePanel';
 
 export function activate(context: vscode.ExtensionContext) {
@@ -56,6 +57,9 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand('cqs.showModuleStructure', () =>
       openModuleStructurePanel(context.extensionPath)
+    ),
+    vscode.commands.registerCommand('cqs.showGradeRollup', () =>
+      openGradeRollupPanel(context.extensionPath)
     )
   );
 
