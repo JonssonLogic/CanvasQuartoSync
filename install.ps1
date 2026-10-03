@@ -301,7 +301,10 @@ $cqsBin = Join-Path $CLONE_DIR "bin"
 if (Test-Path (Join-Path $cqsBin "cqs.cmd")) {
     Write-Step "Putting the cqs command on your PATH..."
     if (Add-CqsToUserPath $cqsBin) {
-        Write-Ok "Added $cqsBin to your PATH. Open a new terminal (restart VS Code) to use cqs."
+        # A new tab in VS Code or Windows Terminal inherits the app's environment
+        # from when it started, so "open a new terminal" is not enough there.
+        Write-Ok "Added $cqsBin to your PATH."
+        Write-Warn "Close VS Code / Windows Terminal completely (all windows) and reopen them to use cqs."
     } else {
         Write-Ok "cqs is already on your PATH."
     }

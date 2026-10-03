@@ -57,7 +57,10 @@ if (-not ($pathParts | Where-Object { $_.TrimEnd('\') -ieq $cqsBin })) {
     Set-ItemProperty -Path 'HKCU:\Environment' -Name Path -Value ((@($pathParts) + $cqsBin) -join ';') -Type ExpandString
     [Environment]::SetEnvironmentVariable('CQS_PATH_REFRESH', '1', 'User')
     [Environment]::SetEnvironmentVariable('CQS_PATH_REFRESH', $null, 'User')
-    Write-Ok "Added $cqsBin to your PATH. New terminals have cqs."
+    # A new tab in VS Code or Windows Terminal inherits the app's environment
+    # from when it started, so "open a new terminal" is not enough there.
+    Write-Ok "Added $cqsBin to your PATH."
+    Write-Host "   Close VS Code / Windows Terminal completely and reopen them to use cqs." -ForegroundColor Yellow
 } else {
     Write-Ok "cqs is on your PATH."
 }
