@@ -31,6 +31,25 @@ function Write-Ok    { param([string]$msg) Write-Host "   [OK] $msg" -Foreground
 function Write-Warn  { param([string]$msg) Write-Host "   [!] $msg" -ForegroundColor Yellow }
 function Write-Err   { param([string]$msg) Write-Host "   [ERROR] $msg" -ForegroundColor Red }
 
+# Put the install's bin folder, which holds only cqs, on the user PATH.
+# Written straight to the registry as REG_EXPAND_SZ: SetEnvironmentVariable
+# would rewrite the whole value as REG_SZ and break every other entry that
+# uses a %VARIABLE%. Returns $true when it changed something.
+# Keep in step with dev-deploy.ps1.
+function Add-CqsToUserPath {
+    param([string]$BinDir)
+    $key = Get-Item 'HKCU:\Environment'
+    $raw = $key.GetValue('Path', '', 'DoNotExpandEnvironmentNames')
+    $parts = @($raw -split ';' | Where-Object { $_ })
+    if ($parts | Where-Object { $_.TrimEnd('\') -ieq $BinDir.TrimEnd('\') }) { return $false }
+    Set-ItemProperty -Path 'HKCU:\Environment' -Name Path -Value ((@($parts) + $BinDir) -join ';') -Type ExpandString
+    # A registry write alone does not tell Explorer; this round trip broadcasts
+    # the change, so terminals opened from now on see the new PATH.
+    [Environment]::SetEnvironmentVariable('CQS_PATH_REFRESH', '1', 'User')
+    [Environment]::SetEnvironmentVariable('CQS_PATH_REFRESH', $null, 'User')
+    return $true
+}
+
 # ============================================================================
 #  Interactive Selection Menu (arrow keys + spacebar)
 # ============================================================================
@@ -276,6 +295,21 @@ if ($doVenv) {
 }
 
 # ============================================================================
+#  Step 5b - cqs on the PATH
+# ============================================================================
+$cqsBin = Join-Path $CLONE_DIR "bin"
+if (Test-Path (Join-Path $cqsBin "cqs.cmd")) {
+    Write-Step "Putting the cqs command on your PATH..."
+    if (Add-CqsToUserPath $cqsBin) {
+        Write-Ok "Added $cqsBin to your PATH. Open a new terminal (restart VS Code) to use cqs."
+    } else {
+        Write-Ok "cqs is already on your PATH."
+    }
+    # This window too, so cqs works before the terminal is reopened.
+    if (-not (($env:Path -split ';') -contains $cqsBin)) { $env:Path = "$env:Path;$cqsBin" }
+}
+
+# ============================================================================
 #  Step 6 - VS Code Extension
 # ============================================================================
 if ($doVSCode) {
@@ -328,6 +362,8 @@ Write-Host "   Next steps:"                                -ForegroundColor Cyan
 Write-Host "     1. Restart VS Code (close all windows and reopen)" -ForegroundColor White
 Write-Host "     2. Click the graduation cap icon in the sidebar"   -ForegroundColor White
 Write-Host "     3. Click 'New Project' to set up your course"      -ForegroundColor White
+Write-Host ""
+Write-Host "   From a terminal in a course folder:  cqs check, cqs sync, cqs where" -ForegroundColor White
 Write-Host ""
 
 # ============================================================================

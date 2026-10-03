@@ -1,0 +1,26 @@
+#!/bin/sh
+# cqs on the PATH. install.sh links this into ~/.local/bin. Git Bash on
+# Windows finds it in the install's bin folder. CANVAS_QUARTO_SYNC_DIR (a dev
+# clone with a .venv inside) wins, the same rule as check_content.
+if [ -n "$CANVAS_QUARTO_SYNC_DIR" ]; then
+    TOOL="$CANVAS_QUARTO_SYNC_DIR"
+else
+    # Follow the ~/.local/bin symlink back to the install.
+    self="$0"
+    while [ -L "$self" ]; do
+        link="$(readlink "$self")"
+        case "$link" in
+            /*) self="$link" ;;
+            *) self="$(dirname "$self")/$link" ;;
+        esac
+    done
+    TOOL="$(cd "$(dirname "$self")/.." && pwd)"
+fi
+for py in "$TOOL/.venv/bin/python" "$TOOL/.venv/Scripts/python.exe"; do
+    if [ -x "$py" ] && [ -f "$TOOL/cqs.py" ]; then
+        exec "$py" "$TOOL/cqs.py" "$@"
+    fi
+done
+echo "[cqs] No CanvasQuartoSync with a .venv at $TOOL" >&2
+[ -n "$CANVAS_QUARTO_SYNC_DIR" ] && echo "[cqs] CANVAS_QUARTO_SYNC_DIR is set; unset it to use the installed copy." >&2
+exit 1

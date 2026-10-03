@@ -175,6 +175,23 @@ if $do_venv; then
 fi
 
 # ============================================================================
+#  Step 5b — cqs on the PATH
+# ============================================================================
+# A link in ~/.local/bin, which most shells already have on the PATH. The
+# script follows the link back to the install, so updates need no relinking.
+if [ -f "$CLONE_DIR/bin/cqs" ]; then
+    step "Putting the cqs command on your PATH..."
+    chmod +x "$CLONE_DIR/bin/cqs"
+    mkdir -p "$HOME/.local/bin"
+    ln -sf "$CLONE_DIR/bin/cqs" "$HOME/.local/bin/cqs"
+    case ":$PATH:" in
+        *":$HOME/.local/bin:"*) ok "cqs is linked into ~/.local/bin." ;;
+        *) warn "~/.local/bin is not on your PATH. Add this to your shell profile:"
+           echo '      export PATH="$HOME/.local/bin:$PATH"' ;;
+    esac
+fi
+
+# ============================================================================
 #  Step 6 — VS Code Extension
 # ============================================================================
 if $do_vscode; then
