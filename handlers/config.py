@@ -50,7 +50,7 @@ def get_course_id(content_root, arg_course_id=None):
     Determine course ID.  Priority:
       1. CLI argument
       2. config.toml  course_id
-      3. Legacy course_id.txt
+      3. course_id.txt (deprecated, warns; to be removed)
     """
     if arg_course_id:
         return str(arg_course_id)
@@ -58,20 +58,64 @@ def get_course_id(content_root, arg_course_id=None):
     cfg = load_config(content_root)
     cid = cfg.get("course_id")
     if cid:
+        _warn_course_id_txt(content_root)
         return str(cid)
 
     # Legacy fallback
-    txt = os.path.join(content_root, "course_id.txt")
-    if os.path.exists(txt):
-        try:
-            with open(txt, "r") as f:
-                val = f.read().strip()
-                if val:
-                    return val
-        except Exception:
-            pass
+    val = _read_course_id_txt(content_root)
+    if val:
+        _warn_course_id_txt(content_root)
+        return val
 
     return None
+
+
+# course_id.txt predates config.toml and is on its way out. Both the sync and
+# check_content say so, in the same words, so nobody is surprised when it goes.
+_warned_roots = set()
+
+
+def _read_course_id_txt(content_root):
+    txt = os.path.join(content_root, "course_id.txt")
+    if not os.path.exists(txt):
+        return None
+    try:
+        with open(txt, "r") as f:
+            return f.read().strip() or None
+    except Exception:
+        return None
+
+
+def course_id_txt_notice(content_root):
+    """The deprecation message for this course's course_id.txt, or None.
+
+    Two cases, because they need different advice: the file is what supplies
+    the course id (move it into config.toml), or config.toml already has one
+    and the file is silently ignored (just delete it).
+    """
+    if not os.path.exists(os.path.join(content_root, "course_id.txt")):
+        return None
+    txt_id = _read_course_id_txt(content_root)
+    toml_id = _read_toml(content_root).get("course_id")
+    if toml_id:
+        differs = f" (it says {txt_id})" if txt_id and str(txt_id) != str(toml_id) else ""
+        return (f"course_id.txt is ignored{differs}: config.toml already sets "
+                f"course_id = {toml_id}. Support for course_id.txt will be removed "
+                f"in a future version; delete the file.")
+    return ("course_id.txt is deprecated and support will be removed in a future "
+            f"version. Move the id into config.toml as course_id = {txt_id or '<id>'}, "
+            "then delete course_id.txt.")
+
+
+def _warn_course_id_txt(content_root):
+    key = os.path.abspath(content_root)
+    if key in _warned_roots:
+        return
+    msg = course_id_txt_notice(content_root)
+    if msg:
+        _warned_roots.add(key)
+        from handlers.log import logger
+        logger.warning("[yellow]%s[/yellow]", msg)
 
 
 def _read_toml(content_root):

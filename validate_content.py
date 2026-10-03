@@ -907,6 +907,15 @@ def validate_path(target, content_root=None):
             if name in _IGNORED_FILES or name.startswith(("_temp_", "tmp-")):
                 continue
             reports.append(validate_file(os.path.join(dirpath, name), root, handlers))
+
+    # Course-level, so only on a whole-course check: one file's check should
+    # not repeat it every time.
+    from handlers.config import course_id_txt_notice
+    notice = course_id_txt_notice(root)
+    if notice:
+        report = FileReport(path=os.path.join(root, "course_id.txt"), kind="legacy setting")
+        report.warn(notice)
+        reports.append(report)
     return reports
 
 

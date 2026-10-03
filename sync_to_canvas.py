@@ -388,7 +388,7 @@ def main():
          return 1
 
     if not course_id:
-        logger.error("[red]Course ID not specified.[/red] Provide it via --course-id, config.toml, or a 'course_id.txt' file in the content directory.")
+        logger.error("[red]Course ID not specified.[/red] Set course_id in config.toml, or pass --course-id.")
         return 1
 
     logger.info("[cyan]Connecting to Canvas...[/cyan]")

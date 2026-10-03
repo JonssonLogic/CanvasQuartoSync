@@ -1168,7 +1168,7 @@ def main():
         return
 
     if not course_id:
-        logger.error("[red]Course ID not specified.[/red] Provide it via --course-id, config.toml, or a 'course_id.txt' file.")
+        logger.error("[red]Course ID not specified.[/red] Set course_id in config.toml, or pass --course-id.")
         return
 
     # Parse include filter
