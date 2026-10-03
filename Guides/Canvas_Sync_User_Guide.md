@@ -53,9 +53,17 @@ This system automates the synchronization of local course content to a Canvas co
     *   `CANVAS_API_TOKEN` (Your generated API Access Token)
 
 ### Configuration
-The **Course ID** must be specified in one of two ways (in order of priority):
-1.  **Command Line Argument**: `--course-id 12345`
-2.  **File**: Create a `course_id.txt` file in your content folder containing only the numeric ID.
+The **Course ID** is set in `config.toml` in the content folder:
+
+```toml
+course_id = 12345
+```
+
+`--course-id 12345` on the command line overrides it for one run.
+
+A `course_id.txt` holding only the id still works but is **deprecated**: the
+sync and `check_content` warn about it, and support will be removed in a future
+version. Move the id into `config.toml` and delete the file.
 
 ### Dates and time zones
 

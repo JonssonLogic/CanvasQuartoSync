@@ -1,8 +1,11 @@
 """Tests for handlers/config.py — configuration resolution."""
 
+import logging
 import os
 import pytest
-from handlers.config import load_config, get_course_id, get_api_credentials, _config_cache
+from handlers.config import (load_config, get_course_id, get_api_credentials, _config_cache,
+                             course_id_txt_notice)
+from validate_content import validate_path
 
 
 class TestLoadConfig:
@@ -48,6 +51,46 @@ class TestGetCourseId:
 
     def test_nothing_configured(self, tmp_path):
         assert get_course_id(str(tmp_path)) is None
+
+
+class TestCourseIdTxtDeprecation:
+    """course_id.txt still works, but says it is going away."""
+
+    def test_no_file_no_notice(self, tmp_path):
+        (tmp_path / "config.toml").write_text('course_id = 42\n')
+        assert course_id_txt_notice(str(tmp_path)) is None
+
+    def test_used_file_says_move_it(self, tmp_path):
+        (tmp_path / "course_id.txt").write_text("1434")
+        msg = course_id_txt_notice(str(tmp_path))
+        assert "deprecated" in msg
+        assert "course_id = 1434" in msg
+
+    def test_ignored_file_says_delete_it(self, tmp_path):
+        (tmp_path / "config.toml").write_text('course_id = 42\n')
+        (tmp_path / "course_id.txt").write_text("42")
+        msg = course_id_txt_notice(str(tmp_path))
+        assert "ignored" in msg and "delete" in msg
+        assert "it says" not in msg
+
+    def test_ignored_file_with_a_different_id_says_so(self, tmp_path):
+        (tmp_path / "config.toml").write_text('course_id = 42\n')
+        (tmp_path / "course_id.txt").write_text("1434")
+        assert "(it says 1434)" in course_id_txt_notice(str(tmp_path))
+
+    def test_sync_warns_once(self, tmp_path, caplog):
+        (tmp_path / "course_id.txt").write_text("1434")
+        with caplog.at_level(logging.WARNING, logger="canvas_sync"):
+            get_course_id(str(tmp_path))
+            get_course_id(str(tmp_path))
+        assert len([r for r in caplog.records if "course_id.txt" in r.getMessage()]) == 1
+
+    def test_check_content_flags_it(self, tmp_path):
+        (tmp_path / "course_id.txt").write_text("1434")
+        reports = validate_path(str(tmp_path))
+        flagged = [r for r in reports if r.path.endswith("course_id.txt")]
+        assert len(flagged) == 1
+        assert flagged[0].issues[0].level == "WARN"
 
 
 class TestGetApiCredentials:
