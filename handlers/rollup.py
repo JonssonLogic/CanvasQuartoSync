@@ -328,6 +328,28 @@ def evaluate_rollup(course, rollup: dict) -> dict:
     return result
 
 
+def restrict_to_students(evaluated: dict, student_ids) -> tuple:
+    """Narrow ``to_mark`` to the students someone actually confirmed.
+
+    A GUI shows a count, asks, and then calls ``--apply``, which evaluates
+    again. A student who qualified in between would be marked without having
+    been shown to anyone. Intersecting with the confirmed ids means the write
+    can only ever be a subset of what was approved.
+
+    Returns ``(evaluated, skipped)``: the narrowed rollup, and the confirmed
+    ids that are no longer on the list (marked meanwhile, or no longer
+    qualifying). ``evaluated`` is returned unchanged when it has no status.
+    """
+    status = evaluated.get('status')
+    if status is None:
+        return evaluated, []
+    wanted = set(student_ids)
+    kept = [s for s in status['to_mark'] if s['id'] in wanted]
+    kept_ids = {s['id'] for s in kept}
+    skipped = sorted(wanted - kept_ids)
+    return {**evaluated, 'status': {**status, 'to_mark': kept}}, skipped
+
+
 def apply_rollup(course, evaluated: dict) -> dict:
     """Mark the qualifying students. The only function here that writes.
 

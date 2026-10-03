@@ -104,6 +104,12 @@
         "title": "Show Module Structure",
         "category": "Canvas Quarto Sync",
         "icon": "$(list-tree)"
+      },
+      {
+        "command": "cqs.showGradeRollup",
+        "title": "Grade Rollup",
+        "category": "Canvas Quarto Sync",
+        "icon": "$(checklist)"
       }
     ],
     "menus": {

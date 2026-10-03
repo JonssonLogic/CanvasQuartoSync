@@ -20,7 +20,7 @@ import pytest
 
 from handlers.content_utils import save_sync_map
 from handlers.rollup import (RollupConfigError, apply_rollup, discover_rollups,
-                             evaluate_rollup)
+                             evaluate_rollup, restrict_to_students)
 
 
 TARGET_ID = 500
@@ -339,3 +339,52 @@ class TestApply:
 
         assert len(result["failed"]) == 1
         assert len(result["marked"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Confirmed students
+#
+# A GUI shows a count, asks, and then runs --apply, which evaluates again. A
+# student who qualified in between must not be marked without being shown.
+# ---------------------------------------------------------------------------
+
+class TestRestrictToStudents:
+
+    def _evaluated(self, tmp_path):
+        root = _course_dir(tmp_path, ["01_Lab_One.qmd", "02_Lab_Two.qmd"])
+        rollup = discover_rollups(root)[0]
+        both = [_sub(1, grade="complete"), _sub(2, grade="complete")]
+        course = _course(lab_subs=[both, both], target_subs=[], students=(1, 2))
+        return course, evaluate_rollup(course, rollup)
+
+    def test_a_student_who_qualified_after_confirming_is_not_marked(self, tmp_path):
+        course, evaluated = self._evaluated(tmp_path)
+        assert [s["id"] for s in evaluated["status"]["to_mark"]] == [1, 2]
+
+        narrowed, skipped = restrict_to_students(evaluated, [1])
+
+        assert [s["id"] for s in narrowed["status"]["to_mark"]] == [1]
+        assert skipped == []
+        course._target.get_submission.return_value = MagicMock()
+        result = apply_rollup(course, narrowed)
+        assert [s["id"] for s in result["marked"]] == [1]
+
+    def test_a_confirmed_student_no_longer_to_mark_is_reported(self, tmp_path):
+        _, evaluated = self._evaluated(tmp_path)
+
+        narrowed, skipped = restrict_to_students(evaluated, [1, 7])
+
+        assert [s["id"] for s in narrowed["status"]["to_mark"]] == [1]
+        assert skipped == [7]
+
+    def test_the_original_is_left_alone(self, tmp_path):
+        _, evaluated = self._evaluated(tmp_path)
+
+        restrict_to_students(evaluated, [])
+
+        assert len(evaluated["status"]["to_mark"]) == 2
+
+    def test_a_rollup_without_status_passes_through(self):
+        broken = {"name": "x", "status": None}
+
+        assert restrict_to_students(broken, [1]) == (broken, [])

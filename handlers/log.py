@@ -20,7 +20,7 @@ class _RichMarkupStrippingFormatter(logging.Formatter):
         return result
 
 
-def setup_logging(verbose=False, quiet=False, log_file=None):
+def setup_logging(verbose=False, quiet=False, log_file=None, to_stderr=False):
     """
     Configure logging for the application. Call once from main() after arg parsing.
 
@@ -28,7 +28,11 @@ def setup_logging(verbose=False, quiet=False, log_file=None):
         verbose: Show DEBUG messages with timestamps and level labels.
         quiet: Only show ERROR messages.
         log_file: Optional path to write a full DEBUG log (plain text).
+        to_stderr: Log to stderr instead of stdout, for a command whose stdout
+            is a JSON document. Quiet alone still lets errors into stdout,
+            where they break the document they were meant to explain.
     """
+    from rich.console import Console
     from rich.logging import RichHandler
 
     # Determine console level
@@ -44,6 +48,7 @@ def setup_logging(verbose=False, quiet=False, log_file=None):
 
     # Console handler (Rich)
     rich_handler = RichHandler(
+        console=Console(stderr=True) if to_stderr else None,
         level=console_level,
         show_time=verbose,
         show_path=False,

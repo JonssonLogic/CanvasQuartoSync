@@ -388,6 +388,19 @@ Grades are only ever **raised**. A student who already holds a pass but no
 longer qualifies is reported as a conflict and left untouched, and Canvas's own
 "Test Student" and inactive enrolments are skipped.
 
+**In VS Code**, the target's row in the Module Structure panel has a
+**Rollup** button, just left of its type. It shows **✓** when the offline
+check passes and **⚠** when it does not; hover it for the rule and the
+options. Clicking it asks Canvas who qualifies and shows the counts under the
+row. The **▾** menu has *Check setup* and *Mark complete…*, which asks first
+with the number and names, then marks only those students: anyone who
+qualified after you confirmed waits for the next run.
+
+**Tools → Grade Rollup** in the sidebar shows every rollup in the course on one
+page, each with the same button. Opening it reads local files only: it lists
+each requirement with its Canvas id, so a requirement that was never synced is
+visible before anything is asked of Canvas.
+
 #### Keeping an Assignment Out of the Gradebook
 
 Two settings, doing different things:

@@ -31,7 +31,7 @@ from handlers.log import logger, setup_logging
 from handlers.config import get_api_credentials, get_course_id
 from handlers.content_utils import verify_sync_map_course
 from handlers.rollup import (RollupConfigError, apply_rollup, discover_rollups,
-                             evaluate_rollup)
+                             evaluate_rollup, restrict_to_students)
 
 
 def _connect(content_root, course_id_arg):
@@ -115,6 +115,9 @@ def main():
                         help="Mark the qualifying students. The only mode that writes.")
     parser.add_argument("--only", metavar="PATH",
                         help="Act on the single rollup declared by this file")
+    parser.add_argument("--students", metavar="IDS",
+                        help="With --apply: mark only these Canvas user ids "
+                             "(comma-separated), the ones a GUI showed and had confirmed")
     parser.add_argument("--json", action="store_true",
                         help="Print the result as JSON on stdout")
     parser.add_argument("--course-id", help="Override the course id")
@@ -122,9 +125,20 @@ def main():
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args()
 
-    # Machine output implies quiet: the logger writes to stdout, so a banner in
-    # front of the document would make it unparseable. Same rule as the sync.
-    setup_logging(verbose=args.verbose, quiet=args.quiet or args.json)
+    student_ids = None
+    if args.students is not None:
+        try:
+            student_ids = [int(s) for s in args.students.split(',') if s.strip()]
+        except ValueError:
+            parser.error("--students takes comma-separated Canvas user ids")
+        if not args.apply:
+            parser.error("--students only means something with --apply")
+
+    # Machine output implies quiet, and goes to stderr: stdout is the JSON
+    # document, and an error printed in front of it would make it unparseable
+    # exactly when the caller most needs to read it.
+    setup_logging(verbose=args.verbose, quiet=args.quiet or args.json,
+                  to_stderr=args.json)
 
     content_root = os.path.abspath(args.content_path)
     if not os.path.exists(content_root):
@@ -197,12 +211,24 @@ def main():
     for r in evaluated:
         if r.get('status') is None:
             continue
+        skipped = []
+        if student_ids is not None:
+            r, skipped = restrict_to_students(r, student_ids)
+            if skipped:
+                logger.warning("[yellow]%s: %d confirmed student(s) no longer to mark, "
+                               "skipped[/yellow]", r['name'], len(skipped))
         if not r['status']['to_mark']:
             logger.info("[dim]%s: nothing to mark[/dim]", r['name'])
+            # Still reported when ids were confirmed: "you approved 29 and
+            # none were marked" is something the caller has to be able to say.
+            if skipped:
+                results.append({'target': r['target'], 'name': r['name'], 'grade': None,
+                                'marked': [], 'failed': [],
+                                'conflicts': r['status']['conflicts'], 'skipped': skipped})
             continue
         logger.info("[cyan]%s: marking %d student(s)...[/cyan]",
                     r['name'], len(r['status']['to_mark']))
-        results.append(apply_rollup(course, r))
+        results.append({**apply_rollup(course, r), 'skipped': skipped})
 
     if args.json:
         print(json.dumps({'applied': results}, ensure_ascii=False))
