@@ -46,6 +46,22 @@ uv pip install --quiet --python $venvPython -r (Join-Path $CLONE_DIR "requiremen
 if ($LASTEXITCODE -ne 0) { Write-Err "Package install failed."; exit 1 }
 Write-Ok "Python packages up to date."
 
+# cqs on the user PATH: the install's bin folder, which holds only cqs.
+# Same as Add-CqsToUserPath in install.ps1: written as REG_EXPAND_SZ so other
+# entries keep their %VARIABLES%, then a round trip that broadcasts the change.
+$cqsBin = Join-Path $CLONE_DIR "bin"
+$envKey = Get-Item 'HKCU:\Environment'
+$userPath = $envKey.GetValue('Path', '', 'DoNotExpandEnvironmentNames')
+$pathParts = @($userPath -split ';' | Where-Object { $_ })
+if (-not ($pathParts | Where-Object { $_.TrimEnd('\') -ieq $cqsBin })) {
+    Set-ItemProperty -Path 'HKCU:\Environment' -Name Path -Value ((@($pathParts) + $cqsBin) -join ';') -Type ExpandString
+    [Environment]::SetEnvironmentVariable('CQS_PATH_REFRESH', '1', 'User')
+    [Environment]::SetEnvironmentVariable('CQS_PATH_REFRESH', $null, 'User')
+    Write-Ok "Added $cqsBin to your PATH. New terminals have cqs."
+} else {
+    Write-Ok "cqs is on your PATH."
+}
+
 # ---- Step 2: Build VSIX ----
 Write-Step "Building VSIX..."
 
