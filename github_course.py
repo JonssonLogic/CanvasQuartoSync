@@ -101,6 +101,22 @@ NO_TOKEN = (
     "  macOS: brew install gh) and run 'gh auth login' once.")
 
 
+def _forbidden(response, org, scope, action):
+    """Why GitHub said 403: a missing token scope, or a missing role.
+
+    A classic or OAuth token lists its scopes in X-OAuth-Scopes. If the scope
+    the call needs is not there, that is the reason, whatever the person's role.
+    """
+    scopes = response.headers.get('X-OAuth-Scopes')
+    if scopes is not None:
+        have = {x.strip() for x in scopes.split(',') if x.strip()}
+        if scope not in have:
+            return (f"your GitHub sign-in may not {action}: it lacks the '{scope}' permission.\n"
+                    f"  In VS Code: run the command again and allow it when asked.\n"
+                    f"  In a terminal: gh auth refresh -h github.com -s {scope}")
+    return f"you may not {action} in {org}: that takes an owner of the organisation."
+
+
 class GitHub:
     def __init__(self, token):
         import requests
@@ -168,8 +184,7 @@ class GitHub:
             'has_wiki': False, 'has_projects': False,
         })
         if r.status_code == 403:
-            raise GithubError(f"you may not create repositories in {org}. "
-                              "Ask an owner of the organisation.")
+            raise GithubError(_forbidden(r, org, 'repo', 'create repositories'))
         return self._ok(r, f'Creating {org}/{name}')
 
     def make_private(self, org, name):
@@ -182,10 +197,19 @@ class GitHub:
     def user_exists(self, login):
         return self._call('GET', f'/users/{login}').status_code == 200
 
+    def membership(self, org, login):
+        """{'state': 'active'|'pending', 'role': ...} if ``login`` is in or invited to ``org``, else None."""
+        r = self._call('GET', f'/orgs/{org}/memberships/{login}')
+        if r.status_code == 404:
+            return None
+        return self._ok(r, f'Reading the membership of {login} in {org}')
+
     def invite_to_org(self, org, login):
+        # Only ever called for people who are not members yet: this endpoint
+        # also *sets* the role, so calling it for an owner demotes them.
         r = self._call('PUT', f'/orgs/{org}/memberships/{login}', json={'role': 'member'})
         if r.status_code == 403:
-            raise GithubError(f"only an owner of {org} can invite people.")
+            raise GithubError(_forbidden(r, org, 'admin:org', 'invite people'))
         return self._ok(r, f'Inviting {login} to {org}')
 
     def add_collaborator(self, org, name, login):
@@ -513,9 +537,14 @@ def invite(root, logins, gh=None):
     for login in logins:
         if not gh.user_exists(login):
             raise GithubError(f"there is no GitHub user '{login}'.")
-        m = gh.invite_to_org(org, login)
-        state = 'already a member' if m.get('state') == 'active' else 'invitation sent by e-mail'
-        print(f"{login}: {state} ({org}).")
+        current = gh.membership(org, login)
+        if current is None:
+            gh.invite_to_org(org, login)
+            print(f"{login}: invitation sent by e-mail ({org}).")
+        elif current.get('state') == 'pending':
+            print(f"{login}: already invited to {org}, waiting for them to accept.")
+        else:
+            print(f"{login}: already a member of {org} ({current.get('role', 'member')}).")
         # Members get write access to every repo when the org's base permission
         # is write. Otherwise give them this repository explicitly.
         if base not in ('write', 'admin'):

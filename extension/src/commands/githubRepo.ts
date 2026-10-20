@@ -21,10 +21,15 @@ interface OrgList {
   orgs: { login: string; role: string }[];
 }
 
-async function githubToken(): Promise<string | undefined> {
+// Creating a repository needs repo and read:org. Inviting needs admin:org on
+// top, asked for only when someone invites, since it is a wide permission.
+const CREATE_SCOPES = ['repo', 'read:org'];
+const INVITE_SCOPES = ['repo', 'read:org', 'admin:org'];
+
+async function githubToken(scopes: string[]): Promise<string | undefined> {
   try {
     const session = await vscode.authentication.getSession(
-      'github', ['repo', 'read:org'], { createIfNone: true });
+      'github', scopes, { createIfNone: true });
     return session.accessToken;
   } catch {
     vscode.window.showErrorMessage('Sign-in to GitHub was cancelled.');
@@ -108,7 +113,7 @@ export async function createGithubRepo(context: vscode.ExtensionContext): Promis
     return;
   }
 
-  const token = await githubToken();
+  const token = await githubToken(CREATE_SCOPES);
   if (!token) return;
 
   const listed = await runScript(s.python, [s.script, s.root, 'orgs', '--json'], s.root, token);
@@ -184,7 +189,7 @@ export async function inviteToGithub(context: vscode.ExtensionContext): Promise<
   if (!input) return;
   const users = input.split(/[\s,]+/).filter(Boolean);
 
-  const token = await githubToken();
+  const token = await githubToken(INVITE_SCOPES);
   if (!token) return;
   await runInTerminal(s.python, [s.script, s.root, 'invite', ...users], s.root, token,
                       `Inviting ${users.join(', ')}`);

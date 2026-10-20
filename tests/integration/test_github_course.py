@@ -31,6 +31,7 @@ class FakeGitHub:
         self.creates_public = creates_public
         self.invited, self.collaborators = [], []
         self.base_permission = "write"
+        self.members = {}          # login -> {"state": ..., "role": ...}
 
     def user(self):
         return {"login": "cenmir", "id": 1, "name": "Mirza Cenanovic"}
@@ -66,6 +67,9 @@ class FakeGitHub:
 
     def user_exists(self, login):
         return login != "nobody"
+
+    def membership(self, org, login):
+        return self.members.get(login)
 
     def invite_to_org(self, org, login):
         self.invited.append((org, login))
@@ -187,6 +191,24 @@ class TestInvite:
         assert fake.invited == [("jth-crunch", "fredrik")]
         assert fake.collaborators == [], "org base permission is write, no per-repo access needed"
 
+    def test_an_owner_is_never_demoted(self, course, tmp_path, capsys):
+        # The membership endpoint also sets the role. Calling it for an owner
+        # with role=member would demote them, so members are left alone.
+        self._connected(course)
+        fake = FakeGitHub(str(tmp_path))
+        fake.members["cenmir"] = {"state": "active", "role": "admin"}
+        gc.invite(str(course), ["cenmir"], gh=fake)
+        assert fake.invited == []
+        assert "already a member of jth-crunch (admin)" in capsys.readouterr().out
+
+    def test_a_pending_invitation_is_not_sent_again(self, course, tmp_path, capsys):
+        self._connected(course)
+        fake = FakeGitHub(str(tmp_path))
+        fake.members["fredrik"] = {"state": "pending", "role": "member"}
+        gc.invite(str(course), ["fredrik"], gh=fake)
+        assert fake.invited == []
+        assert "waiting for them to accept" in capsys.readouterr().out
+
     def test_gives_repo_access_when_the_org_does_not(self, course, tmp_path):
         self._connected(course)
         fake = FakeGitHub(str(tmp_path))
@@ -227,6 +249,26 @@ class TestFiles:
         assert gc.org_and_repo_from_url("https://github.com/jth-crunch/T1H2UO-26.git") == ("jth-crunch", "T1H2UO-26")
         assert gc.org_and_repo_from_url("git@github.com:jth-crunch/T1H2UO-26.git") == ("jth-crunch", "T1H2UO-26")
         assert gc.org_and_repo_from_url("/some/local/path") is None
+
+
+class TestForbidden:
+    """A 403 is explained by what is actually missing."""
+
+    class Resp:
+        def __init__(self, scopes):
+            self.headers = {} if scopes is None else {"X-OAuth-Scopes": scopes}
+
+    def test_missing_scope_is_named_even_for_an_owner(self):
+        msg = gc._forbidden(self.Resp("gist, read:org, repo"), "jth-crunch", "admin:org", "invite people")
+        assert "lacks the 'admin:org' permission" in msg
+        assert "gh auth refresh -h github.com -s admin:org" in msg
+
+    def test_with_the_scope_it_is_the_role(self):
+        msg = gc._forbidden(self.Resp("admin:org, repo"), "jth-crunch", "admin:org", "invite people")
+        assert "owner of the organisation" in msg
+
+    def test_fine_grained_token_without_scope_header(self):
+        assert "owner" in gc._forbidden(self.Resp(None), "jth-crunch", "admin:org", "invite people")
 
 
 class TestToken:
