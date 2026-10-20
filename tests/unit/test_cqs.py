@@ -151,6 +151,16 @@ class TestVerbs:
         run(["sync", "--accept-drift", "all"], course / "04_Labs", monkeypatch)
         assert calls[0][1][-2:] == ["--accept-drift", "all"]
 
+    def test_github_gets_the_root_and_passes_options_through(self, course, calls, monkeypatch):
+        run(["github", "--org", "jth-crunch", "--dry-run"], course / "04_Labs", monkeypatch)
+        name, argv = calls[0]
+        assert name == "github_course"
+        assert argv[1:] == [str(course), "--org", "jth-crunch", "--dry-run"]
+
+    def test_github_invite(self, course, calls, monkeypatch):
+        run(["github", "invite", "fredrik"], course, monkeypatch)
+        assert calls[0][1][1:] == [str(course), "invite", "fredrik"]
+
     def test_rollup_only_is_rewritten(self, course, calls, monkeypatch):
         run(["rollup", "--status", "--only", "01_Tensile.qmd"], course / "04_Labs", monkeypatch)
         name, argv = calls[0]

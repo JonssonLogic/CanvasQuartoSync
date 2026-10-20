@@ -11,6 +11,7 @@ Each verb runs one of the existing scripts, which keep working on their own
     cqs purge               purge_course.py          deletes in Canvas
     cqs init [DIR]          init_content_project.py
     cqs kit update          init_content_project.py --update
+    cqs github              github_course.py         creates a GitHub repo
     cqs where               which tool, which Python, which course
 
 The course is found the way git finds a repository: walk up from the current
@@ -45,6 +46,8 @@ usage: cqs [-C DIR] <command> [options]
   purge              Delete content in Canvas. Try --dry-run first.
   init [DIR]         Set up a new course folder.
   kit update         Refresh the authoring kit in this course folder.
+  github             Put the course on GitHub as a private team course.
+                     'cqs github invite USER' invites a teacher.
   where              Show which tool, Python and course cqs would use.
 
   -C DIR             Run as if started in DIR.
@@ -170,6 +173,10 @@ def _init(args, cwd):
     return 'init_content_project', [os.path.abspath(os.path.join(cwd, target or '.')), *rest]
 
 
+def _github(args, cwd):
+    return 'github_course', [_require_root(cwd), *args]
+
+
 def _kit(args, cwd):
     if not args or args[0] != 'update':
         raise CqsError("usage: cqs kit update")
@@ -185,6 +192,7 @@ VERBS = {
     'purge': _purge,
     'init': _init,
     'kit': _kit,
+    'github': _github,
 }
 
 
