@@ -1,6 +1,10 @@
 # CanvasQuartoSync state - machine-specific, do not commit
+# In team mode (workflow = "team" in config.toml) the sync map MUST be
+# committed: delete the next line. It holds the Canvas ids everyone needs.
 .canvas_sync_map.json
 .canvas_snapshots/
+.canvas_drift/
+.canvas_diff_temp/
 
 # Credentials
 token.txt

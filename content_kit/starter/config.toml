@@ -28,6 +28,13 @@ language    = "english"              # or "swedish"
 # its previous version until the reference is fixed.
 # strict_crossrefs = true
 
+# Several teachers publishing one course from one git repo? Set this to "team".
+# A sync then refuses to run with uncommitted or unpushed changes, takes a lock
+# so two people cannot sync at once, pulls first, refuses to overwrite pages
+# edited in Canvas, and pushes the sync map afterwards. The sync map must be
+# committed (remove it from .gitignore). See Guides/Team_Mode.md in the tool.
+# workflow = "team"                  # default: "solo"
+
 # canvas_api_url    = "https://your-institution.instructure.com"
 # canvas_token_path = "token.txt"
 
