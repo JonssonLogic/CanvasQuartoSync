@@ -45,7 +45,7 @@ def _snapshot_path(content_root: str, file_path: str) -> str:
     """Return the path where we store the last-synced HTML for a given file."""
     rel = os.path.relpath(file_path, content_root).replace('\\', '/')
     safe = rel.replace('/', '__').replace(' ', '_')
-    return os.path.join(_snapshot_dir(content_root), safe + '.html')
+    return os.path.join(content_root, SNAPSHOT_DIR, safe + '.html')
 
 
 # ---------------------------------------------------------------------------
@@ -134,11 +134,88 @@ def resolve_stored_html(obj, attr: str, sent_html: str, refetch=None) -> str:
 # Store / check
 # ---------------------------------------------------------------------------
 
-def store_canvas_hash(content_root: str, file_path: str, canvas_html: str):
+# Assignment settings a person might change in Canvas, and the sync would then
+# silently overwrite. `published` is left out on purpose: the extension's
+# publish toggle changes it directly in Canvas, and that is not an edit to
+# protect. Dates come back from Canvas in one canonical UTC form, so comparing
+# the stored strings is safe.
+ASSIGNMENT_SETTING_FIELDS = (
+    'name', 'points_possible', 'due_at', 'unlock_at', 'lock_at',
+    'grading_type', 'submission_types', 'allowed_extensions',
+    'allowed_attempts', 'omit_from_final_grade',
+)
+
+
+def assignment_settings_hash(obj) -> str:
+    """Fingerprint of an assignment's settings as Canvas reports them."""
+    values = {}
+    for field in ASSIGNMENT_SETTING_FIELDS:
+        v = getattr(obj, field, None)
+        if isinstance(v, (list, tuple)):
+            v = sorted(str(x) for x in v)
+        values[field] = v
+    blob = json.dumps(values, sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode('utf-8')).hexdigest()[:16]
+
+
+# Quizzes have no single HTML body, so their Canvas state is written out as one
+# canonical text: the settings a person could change, then every question. It
+# goes through the same hash, snapshot and diff as a page body, so nothing
+# downstream needs to know it is not HTML. Built from what Canvas returns after
+# a sync, never from what was sent, for the reason given in resolve_stored_html.
+CLASSIC_QUIZ_FIELDS = (
+    'title', 'description', 'quiz_type', 'due_at', 'unlock_at', 'lock_at',
+    'time_limit', 'allowed_attempts', 'shuffle_answers', 'show_correct_answers',
+    'one_question_at_a_time', 'cant_go_back',
+)
+CLASSIC_QUESTION_FIELDS = (
+    'question_name', 'question_type', 'question_text', 'points_possible', 'answers',
+)
+NEW_QUIZ_FIELDS = ('title', 'instructions', 'due_at', 'unlock_at', 'lock_at')
+NEW_QUIZ_ENTRY_FIELDS = (
+    'title', 'item_body', 'interaction_type_slug', 'interaction_data',
+    'scoring_data', 'scoring_algorithm',
+)
+QUIZ_KINDS = ('classic_quiz', 'new_quiz')
+
+
+def _canonical(data) -> str:
+    return json.dumps(data, sort_keys=True, ensure_ascii=False, indent=1, default=str)
+
+
+def classic_quiz_text(quiz, questions) -> str:
+    """A classic quiz and its questions as one stable text."""
+    data = {f: getattr(quiz, f, None) for f in CLASSIC_QUIZ_FIELDS}
+    ordered = sorted(questions, key=lambda q: (getattr(q, 'position', None) or 0,
+                                               str(getattr(q, 'id', ''))))
+    data['questions'] = [{f: getattr(q, f, None) for f in CLASSIC_QUESTION_FIELDS}
+                         for q in ordered]
+    return _canonical(data)
+
+
+def new_quiz_text(quiz: dict, items: list) -> str:
+    """A New Quiz and its items, as returned by the New Quizzes API, as one stable text."""
+    quiz = quiz if isinstance(quiz, dict) else {}
+    data = {f: quiz.get(f) for f in NEW_QUIZ_FIELDS}
+    ordered = sorted(items or [], key=lambda i: (i.get('position') or 0, str(i.get('id'))))
+    data['items'] = [{
+        'position': it.get('position'),
+        'points_possible': it.get('points_possible'),
+        'entry': {f: (it.get('entry') or {}).get(f) for f in NEW_QUIZ_ENTRY_FIELDS},
+    } for it in ordered]
+    return _canonical(data)
+
+
+def store_canvas_hash(content_root: str, file_path: str, canvas_html: str,
+                      settings_hash: str = None, kind: str = None):
     """Store the hash AND full snapshot of the content we just pushed.
 
     Call this after a successful sync to record what Canvas should contain.
+    ``settings_hash`` (assignments) records the settings too, so a due date
+    changed in Canvas is caught like an edited description. ``kind`` records
+    what the id refers to, so a later check does not have to guess.
     """
+    from handlers.content_utils import sync_identity
     from datetime import datetime, timezone
     content_hash = compute_content_hash(canvas_html)
     now_iso = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -148,19 +225,22 @@ def store_canvas_hash(content_root: str, file_path: str, canvas_html: str):
     rel_path = os.path.relpath(file_path, content_root).replace('\\', '/')
     entry = sync_map.get(rel_path)
 
-    if isinstance(entry, dict):
-        entry['canvas_hash'] = content_hash
-        entry['last_synced_at'] = now_iso
-    else:
-        sync_map[rel_path] = {
-            'id': entry,
-            'canvas_hash': content_hash,
-            'last_synced_at': now_iso,
-        }
+    if not isinstance(entry, dict):
+        entry = {'id': entry}
+        sync_map[rel_path] = entry
+    entry['canvas_hash'] = content_hash
+    entry['last_synced_at'] = now_iso
+    if sync_identity():
+        entry['last_synced_by'] = sync_identity()
+    if settings_hash is not None:
+        entry['canvas_settings_hash'] = settings_hash
+    if kind:
+        entry['canvas_kind'] = kind
 
     save_sync_map(content_root, sync_map)
 
     # 2. Store full HTML snapshot for diffing
+    _snapshot_dir(content_root)
     snap_path = _snapshot_path(content_root, file_path)
     try:
         with open(snap_path, 'w', encoding='utf-8') as f:
@@ -171,9 +251,8 @@ def store_canvas_hash(content_root: str, file_path: str, canvas_html: str):
 
 def _remove_snapshot(content_root: str, rel_path: str) -> bool:
     """Delete the stored snapshot for a relative path, if there is one."""
-    # Built by hand rather than through _snapshot_path, which creates the
-    # snapshot directory as a side effect. Forgetting a file should never
-    # bring one into existence.
+    # Forgetting a file should never bring a snapshot directory into
+    # existence, so this only computes the path.
     snap = os.path.join(content_root, SNAPSHOT_DIR,
                         rel_path.replace('/', '__').replace(' ', '_') + '.html')
     if not os.path.isfile(snap):
@@ -261,8 +340,50 @@ def check_drift(content_root: str, file_path: str, current_canvas_html: str) -> 
     return {'drifted': drifted, 'stored_hash': stored_hash, 'current_hash': current_hash, 'diff': diff_text}
 
 
-def _compute_diff(content_root: str, file_path: str, current_html: str) -> str:
-    """Compute a readable diff between the last-synced snapshot and current Canvas content."""
+def check_settings_drift(content_root: str, file_path: str, current_settings_hash: str) -> bool:
+    """True if the settings recorded at the last publish differ from Canvas now.
+
+    Entries written before settings were recorded have no hash, and are
+    reported as unchanged until their next publish records one.
+    """
+    sync_map = load_sync_map(content_root)
+    rel_path = os.path.relpath(file_path, content_root).replace('\\', '/')
+    entry = sync_map.get(rel_path)
+    stored = entry.get('canvas_settings_hash') if isinstance(entry, dict) else None
+    return stored is not None and stored != current_settings_hash
+
+
+def baseline_from_revisions(page, stored_hash: str, limit: int = 10):
+    """The page body as we last published it, found in Canvas's own history.
+
+    The local snapshot only exists on the machine that published. A colleague
+    checking the same page has none, but Canvas keeps every revision of a page,
+    so the one whose hash matches the map's canvas_hash is what we published.
+    Returns None if it is not among the last ``limit`` revisions.
+    """
+    try:
+        revisions = list(page.get_revisions())[:limit]
+    except Exception as e:
+        logger.debug("    Could not list page revisions: %s", e)
+        return None
+    for rev in revisions:
+        try:
+            full = page.get_revision_by_id(rev.revision_id)
+            body = getattr(full, 'body', None)
+        except Exception:
+            continue
+        if body is not None and compute_content_hash(body) == stored_hash:
+            return body
+    return None
+
+
+def _compute_diff(content_root: str, file_path: str, current_html: str,
+                  baseline_html: str = None) -> str:
+    """Compute a readable diff between the last-synced snapshot and current Canvas content.
+
+    ``baseline_html`` is used when this machine has no snapshot, e.g. the
+    published version recovered from Canvas's page history.
+    """
     snap_path = _snapshot_path(content_root, file_path)
 
     stored_html = ''
@@ -272,6 +393,9 @@ def _compute_diff(content_root: str, file_path: str, current_html: str) -> str:
                 stored_html = f.read()
         except Exception:
             pass
+
+    if not stored_html and baseline_html:
+        stored_html = baseline_html
 
     if not stored_html:
         return '(no snapshot available — cannot show diff)'
@@ -427,6 +551,7 @@ def check_all_drift(course, content_root: str, include_diff: bool = True) -> lis
     """
     sync_map = load_sync_map(content_root)
     drifted_items = []
+    unchecked = []
 
     for rel_path, entry in sync_map.items():
         if not isinstance(entry, dict):
@@ -439,38 +564,57 @@ def check_all_drift(course, content_root: str, include_diff: bool = True) -> lis
             continue
 
         stored_hash = entry['canvas_hash']
+        kind = entry.get('canvas_kind')
+        settings_changed = False
 
         try:
-            if rel_path.endswith('.qmd') or rel_path.endswith('.md'):
+            if rel_path.endswith(('.qmd', '.md', '.json')):
                 current_html = None
                 item_type = 'unknown'
                 title = rel_path
                 canvas_obj = None
 
-                # Try as page
-                try:
-                    page = course.get_page(canvas_id)
-                    current_html = getattr(page, 'body', '') or ''
-                    item_type = 'page'
-                    title = page.title
-                    canvas_obj = page
-                except Exception:
-                    pass
+                if kind in QUIZ_KINDS:
+                    item_type = 'quiz'
+                    current_html, title, canvas_obj = _fetch_quiz_text(
+                        course, content_root, kind, canvas_id, rel_path)
+                    if current_html is None:
+                        unchecked.append(rel_path)
+                        continue
+
+                # Try as page. Entries without a kind predate it being
+                # recorded, and fall through to the old page-then-assignment
+                # guess.
+                if current_html is None and kind in (None, 'page'):
+                    try:
+                        page = course.get_page(canvas_id)
+                        current_html = getattr(page, 'body', '') or ''
+                        item_type = 'page'
+                        title = page.title
+                        canvas_obj = page
+                    except Exception:
+                        pass
 
                 # Try as assignment
-                if current_html is None:
+                if current_html is None and kind in (None, 'assignment'):
                     try:
                         assignment = course.get_assignment(canvas_id)
                         current_html = getattr(assignment, 'description', '') or ''
                         item_type = 'assignment'
                         title = assignment.name
                         canvas_obj = assignment
+                        settings_changed = check_settings_drift(
+                            content_root, os.path.join(content_root, rel_path),
+                            assignment_settings_hash(assignment))
                     except Exception:
                         pass
 
+                if current_html is None:
+                    unchecked.append(rel_path)
+
                 if current_html is not None:
                     current_hash = compute_content_hash(current_html)
-                    if current_hash != stored_hash:
+                    if current_hash != stored_hash or settings_changed:
                         item = {
                             'file': rel_path,
                             'type': item_type,
@@ -478,10 +622,19 @@ def check_all_drift(course, content_root: str, include_diff: bool = True) -> lis
                             'stored_hash': stored_hash,
                             'current_hash': current_hash,
                         }
+                        if settings_changed:
+                            item['settings_changed'] = True
 
                         if include_diff:
                             abs_path = os.path.join(content_root, rel_path.replace('/', os.sep))
-                            item['diff'] = _compute_diff(content_root, abs_path, current_html)
+                            baseline = None
+                            if (item_type == 'page'
+                                    and not os.path.exists(_snapshot_path(content_root, abs_path))):
+                                # Published from another machine: recover what
+                                # was published from Canvas's page history.
+                                baseline = baseline_from_revisions(canvas_obj, stored_hash)
+                            item['diff'] = _compute_diff(content_root, abs_path, current_html,
+                                                         baseline_html=baseline)
 
                             # Canvas QMD for VS Code's diff editor
                             canvas_qmd = _canvas_html_to_qmd(
@@ -496,8 +649,36 @@ def check_all_drift(course, content_root: str, include_diff: bool = True) -> lis
 
         except Exception as e:
             logger.debug("  Could not check drift for %s: %s", rel_path, e)
+            unchecked.append(rel_path)
+
+    # "Could not check" is not "clean". Saying so is the difference between a
+    # check people can trust and one that quietly passes (#15).
+    if unchecked:
+        logger.warning("[yellow]Could not check %d item(s) against Canvas:[/yellow] %s",
+                       len(unchecked), ', '.join(unchecked))
 
     return drifted_items
+
+
+def _fetch_quiz_text(course, content_root, kind, canvas_id, rel_path):
+    """Canvas's current state of a quiz as canonical text, its title and object.
+
+    Returns (None, rel_path, None) if it could not be fetched.
+    """
+    try:
+        if kind == 'classic_quiz':
+            quiz = course.get_quiz(canvas_id)
+            return (classic_quiz_text(quiz, list(quiz.get_questions())),
+                    getattr(quiz, 'title', rel_path), quiz)
+        from handlers.new_quiz_api import NewQuizAPIClient, resolve_credentials
+        client = NewQuizAPIClient(*resolve_credentials(course, content_root))
+        quiz = client.get_quiz(course.id, canvas_id)
+        items = client.list_items(course.id, canvas_id)
+        return (new_quiz_text(quiz, items if isinstance(items, list) else []),
+                (quiz or {}).get('title', rel_path), None)
+    except Exception as e:
+        logger.debug("  Could not fetch quiz %s: %s", rel_path, e)
+        return None, rel_path, None
 
 
 # ---------------------------------------------------------------------------
@@ -549,7 +730,8 @@ def main():
                         logger.warning("    [cyan]%s[/cyan]", line)
                     else:
                         logger.warning("    %s", line)
-        logger.warning("[yellow]Use --force to overwrite, or import changes first with import_from_canvas.py[/yellow]")
+        logger.warning("[yellow]Bring the change into the .qmd and sync with --accept-drift <file>, "
+                       "or overwrite it with --accept-drift <file> directly.[/yellow]")
     else:
         logger.info("[green]No drift detected. Canvas matches last sync.[/green]")
 

@@ -5,7 +5,10 @@ import re
 import frontmatter
 
 from handlers.base_handler import BaseHandler
-from handlers.content_utils import get_mapped_id, save_mapped_id, parse_module_name, process_content, safe_delete_file, safe_delete_dir
+from handlers.content_utils import get_mapped_id, save_mapped_id, parse_module_name, process_content, safe_delete_file, safe_delete_dir, source_unchanged
+from handlers.drift_detector import check_drift, classic_quiz_text, store_canvas_hash
+from handlers.fingerprint import source_fingerprint
+from handlers.sync_policy import get_policy
 from handlers.dates import resolve_timezone, to_canvas_iso
 from handlers.ip_filter import ip_filter_to_classic
 from handlers.qmd_quiz_parser import parse_qmd_quiz
@@ -132,8 +135,10 @@ class QuizHandler(BaseHandler):
              if os.path.exists(desc_file_path):
                  desc_mtime = os.path.getmtime(desc_file_path)
 
-        # Compound mtime to detect changes in either file
-        current_mtime = json_mtime + desc_mtime
+        # Compound mtime, only to recognise entries written before fingerprints
+        legacy_mtime = json_mtime + desc_mtime
+        source_hash = source_fingerprint(
+            file_path, content_root, extra_paths=[desc_file_path] if desc_file_path else ())
 
         existing_id, map_entry = get_mapped_id(content_root, file_path) if content_root else (None, None)
 
@@ -144,8 +149,9 @@ class QuizHandler(BaseHandler):
         if existing_id:
             try:
                 quiz_obj = course.get_quiz(existing_id)
-                # Smart Sync: Skip if mtime matches
-                if isinstance(map_entry, dict) and map_entry.get('mtime') == current_mtime:
+                # Smart Sync: Skip if the source is unchanged
+                if source_unchanged(content_root, file_path, map_entry, source_hash,
+                                    legacy_mtime=legacy_mtime):
                     logger.debug("    No changes detected, skipping update")
                     needs_update = False
             except:
@@ -158,6 +164,19 @@ class QuizHandler(BaseHandler):
                 if q.title == title:
                     quiz_obj = q
                     break
+
+        # 2c. Has Canvas been edited since the last publish? Costs one request
+        # for the questions, so only made when there is a baseline to compare.
+        if (quiz_obj is not None and content_root and isinstance(map_entry, dict)
+                and map_entry.get('canvas_hash')):
+            try:
+                canvas_text = classic_quiz_text(quiz_obj, list(quiz_obj.get_questions()))
+                needs_update = get_policy().review(
+                    content_root, file_path, title, quiz_obj, canvas_text, needs_update,
+                    body_drifted=check_drift(content_root, file_path, canvas_text)['drifted'],
+                    kind='classic_quiz')
+            except Exception as e:
+                logger.warning("    [yellow]Could not check the quiz against Canvas:[/yellow] %s", e)
 
         if needs_update:
             # Render question/answer markdown content to HTML (for both QMD and JSON)
@@ -259,7 +278,7 @@ class QuizHandler(BaseHandler):
 
             # 2c. Update Sync Map
             if content_root:
-                save_mapped_id(content_root, file_path, quiz_obj.id, mtime=current_mtime)
+                save_mapped_id(content_root, file_path, quiz_obj.id, source_hash=source_hash)
 
             # 3. Add/Update Questions
             logger.info("    [cyan]Syncing %d questions...[/cyan]", len(questions_data))
@@ -337,6 +356,17 @@ class QuizHandler(BaseHandler):
             # 3c. Assignment-level settings, last: Canvas recomputes the backing
             # assignment's points from the questions during the save above.
             self._update_backing_assignment(course, quiz_obj, canvas_meta)
+
+            # 3d. Record what Canvas now holds, as the baseline for spotting
+            # later edits made in Canvas.
+            if content_root:
+                try:
+                    fresh = course.get_quiz(quiz_obj.id)
+                    store_canvas_hash(content_root, file_path,
+                                      classic_quiz_text(fresh, list(fresh.get_questions())),
+                                      kind='classic_quiz')
+                except Exception as e:
+                    logger.debug("    Could not record quiz baseline: %s", e)
 
         # 4. Add to Module
         if module:

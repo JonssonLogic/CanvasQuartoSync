@@ -131,12 +131,13 @@ class TestMappedId:
         assert canvas_id is None
         assert meta is None
 
-    def test_save_with_mtime(self, tmp_path):
+    def test_save_with_source_hash(self, tmp_path):
         file_path = os.path.join(str(tmp_path), "file.qmd")
-        save_mapped_id(str(tmp_path), file_path, 42, mtime=1.5)
+        save_mapped_id(str(tmp_path), file_path, 42, source_hash="abc123")
         sync_map = load_sync_map(str(tmp_path))
         assert sync_map["file.qmd"]["id"] == 42
-        assert sync_map["file.qmd"]["mtime"] == 1.5
+        assert sync_map["file.qmd"]["source_hash"] == "abc123"
+        assert "mtime" not in sync_map["file.qmd"]
 
     def test_save_without_mtime_legacy(self, tmp_path):
         file_path = os.path.join(str(tmp_path), "file.qmd")

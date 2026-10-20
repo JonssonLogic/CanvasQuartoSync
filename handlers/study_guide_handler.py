@@ -6,9 +6,11 @@ from handlers.base_handler import BaseHandler
 from handlers.content_utils import (
     process_content, upload_file, get_mapped_id, save_mapped_id,
     load_sync_map, save_sync_map, parse_module_name, safe_delete_file,
-    FOLDER_FILES, ACTIVE_ASSET_IDS
+    FOLDER_FILES, ACTIVE_ASSET_IDS, source_unchanged
 )
 from handlers.drift_detector import check_drift, store_canvas_hash, resolve_stored_html
+from handlers.fingerprint import source_fingerprint
+from handlers.sync_policy import get_policy
 from handlers.log import logger
 
 
@@ -38,23 +40,17 @@ class StudyGuideHandler(BaseHandler):
         logger.info("  [cyan]Syncing study guide:[/cyan] [bold]%s[/bold]", filename)
 
         # 1. Check for Skip (Smart Sync)
-        current_mtime = os.path.getmtime(file_path)
+        source_hash = source_fingerprint(file_path, content_root)
         existing_id, map_entry = get_mapped_id(content_root, file_path) if content_root else (None, None)
 
         needs_render = True
         page_obj = None
 
         if existing_id and isinstance(map_entry, dict):
-            if map_entry.get('mtime') == current_mtime:
+            if source_unchanged(content_root, file_path, map_entry, source_hash,
+                                legacy_mtime=os.path.getmtime(file_path)):
                 logger.debug("    No changes detected, skipping render")
                 needs_render = False
-
-                # Only in the skip case: nothing re-renders, so no new PDF is
-                # uploaded and the cached one has to be marked active or the
-                # orphan pruner removes it.
-                pdf_file_id = map_entry.get('pdf_file_id')
-                if pdf_file_id:
-                    ACTIVE_ASSET_IDS.add(pdf_file_id)
 
             # Always fetch the page when we have an id, whether or not the file
             # changed. Doing it only in the unchanged branch meant every edited
@@ -80,6 +76,21 @@ class StudyGuideHandler(BaseHandler):
         pdf_filename = pdf_config.get('filename', f"{title}.pdf")
         pdf_title = pdf_config.get('title', pdf_filename)
         pdf_published = pdf_config.get('published', False)
+
+        # 2b. Has Canvas been edited since the last publish? See page_handler.
+        if page_obj is not None and content_root:
+            canvas_body = getattr(page_obj, 'body', '') or ''
+            needs_render = get_policy().review(
+                content_root, file_path, title, page_obj, canvas_body, needs_render,
+                body_drifted=check_drift(content_root, file_path, canvas_body)['drifted'])
+
+        if not needs_render and isinstance(map_entry, dict):
+            # Nothing re-renders, so no new PDF is uploaded and the cached one
+            # has to be marked active or the orphan pruner removes it. That
+            # holds for a refused publish too, not just an unchanged file.
+            pdf_file_id = map_entry.get('pdf_file_id')
+            if pdf_file_id:
+                ACTIVE_ASSET_IDS.add(pdf_file_id)
 
         # Default target module for study guides detected by filename
         if not pdf_target_module_name:
@@ -130,13 +141,6 @@ class StudyGuideHandler(BaseHandler):
             }
 
             if page_obj:
-                # Drift detection
-                if content_root:
-                    canvas_body = getattr(page_obj, 'body', '') or ''
-                    drift = check_drift(content_root, file_path, canvas_body)
-                    if drift['drifted']:
-                        logger.warning("    [yellow]DRIFT DETECTED:[/yellow] '%s' was modified on Canvas since last sync. Overwriting with local version.", title)
-
                 logger.info("    [yellow]Updating page:[/yellow] %s", title)
                 logger.debug("    Matched by cached ID: %s", page_obj.page_id)
                 try:
@@ -189,10 +193,10 @@ class StudyGuideHandler(BaseHandler):
 
             # 8. Update Sync Map and store content hash for drift detection
             if content_root:
-                save_mapped_id(content_root, file_path, page_obj.page_id, mtime=current_mtime)
+                save_mapped_id(content_root, file_path, page_obj.page_id, source_hash=source_hash)
                 store_canvas_hash(content_root, file_path, resolve_stored_html(
                     page_obj, 'body', html_body,
-                    lambda: course.get_page(page_obj.url)))
+                    lambda: course.get_page(page_obj.url)), kind='page')
                 if pdf_file_id:
                     sync_map = load_sync_map(content_root)
                     rel_path = os.path.relpath(file_path, content_root).replace('\\', '/')

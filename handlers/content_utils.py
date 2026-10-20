@@ -4,6 +4,7 @@ import frontmatter
 import json
 import shutil
 from canvasapi import Canvas
+from handlers.fingerprint import file_fingerprint
 from handlers.log import logger
 
 # Global cache for folder names to IDs to avoid redundant API lookups
@@ -170,8 +171,8 @@ def upload_file(course, local_path, target_folder_name="course_files", content_r
 
     filename = os.path.basename(local_path)
 
-    # Smart Upload Logic: Check Sync Map for mtime match
-    mtime = os.path.getmtime(local_path)
+    # Smart Upload Logic: skip if this exact content was uploaded before
+    fingerprint = file_fingerprint(local_path)
     if content_root:
         sync_map = load_sync_map(content_root)
         rel_path = os.path.relpath(local_path, content_root).replace('\\', '/')
@@ -179,7 +180,9 @@ def upload_file(course, local_path, target_folder_name="course_files", content_r
 
         if isinstance(cached_entry, dict):
             # We strictly check url too in case it failed previously
-            if cached_entry.get('mtime') == mtime and cached_entry.get('url'):
+            if cached_entry.get('url') and source_unchanged(
+                    content_root, local_path, cached_entry, fingerprint,
+                    legacy_mtime=os.path.getmtime(local_path)):
                 # Track as active even if cached
                 asset_id = cached_entry.get('id')
                 if asset_id:
@@ -204,7 +207,7 @@ def upload_file(course, local_path, target_folder_name="course_files", content_r
                 sync_map = load_sync_map(content_root)
                 rel_path = os.path.relpath(local_path, content_root).replace('\\', '/')
                 sync_map[rel_path] = {
-                    'mtime': mtime,
+                    'source_hash': fingerprint,
                     'url': file_url,
                     'id': file_id
                 }
@@ -641,17 +644,21 @@ def load_sync_map(content_root):
     return {}
 
 def save_sync_map(content_root, sync_map):
+    # Sorted, UTF-8 and LF so the file is stable under git: two people's syncs
+    # change entries in predictable places, and a diff reads "Föreläsningar"
+    # rather than "Föreläsningar".
     path = get_sync_map_path(content_root)
     try:
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(sync_map, f, indent=4)
+        with open(path, 'w', encoding='utf-8', newline='\n') as f:
+            json.dump(sync_map, f, indent=4, sort_keys=True, ensure_ascii=False)
+            f.write('\n')
     except Exception as e:
         logger.error("    Failed to save sync map: %s", e)
 
 def get_mapped_id(content_root, file_path):
     """
     Returns the Canvas ID for a local file path.
-    Also returns metadata if available (e.g. mtime).
+    Also returns metadata if available (e.g. source_hash).
     """
     rel_path = os.path.relpath(file_path, content_root).replace('\\', '/')
     sync_map = load_sync_map(content_root)
@@ -661,26 +668,78 @@ def get_mapped_id(content_root, file_path):
         return entry.get('id'), entry
     return entry, None
 
-def save_mapped_id(content_root, file_path, canvas_id, mtime=None):
-    """
-    Saves the Canvas ID and optionally the mtime for a local file path.
-    """
+
+# Who is syncing, as Canvas knows them. Set once per run by sync_to_canvas
+# after connecting, and written next to last_synced_at so a shared map can say
+# who published what. Empty when unknown (tests, older callers).
+_SYNC_IDENTITY = ''
+
+
+def set_sync_identity(name):
+    global _SYNC_IDENTITY
+    _SYNC_IDENTITY = name or ''
+
+
+def sync_identity():
+    return _SYNC_IDENTITY
+
+
+def _now_iso():
     from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def save_mapped_id(content_root, file_path, canvas_id, source_hash=None):
+    """
+    Saves the Canvas ID and the source fingerprint it was published from.
+    """
     rel_path = os.path.relpath(file_path, content_root).replace('\\', '/')
     sync_map = load_sync_map(content_root)
-    now_iso = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
-    if mtime is not None:
-        sync_map[rel_path] = {
+    if source_hash is not None:
+        entry = {
             'id': canvas_id,
-            'mtime': mtime,
-            'last_synced_at': now_iso,
+            'source_hash': source_hash,
+            'last_synced_at': _now_iso(),
         }
+        if _SYNC_IDENTITY:
+            entry['last_synced_by'] = _SYNC_IDENTITY
+        sync_map[rel_path] = entry
     else:
         # Backward compatibility / simple ID
         sync_map[rel_path] = canvas_id
 
     save_sync_map(content_root, sync_map)
+
+
+def source_unchanged(content_root, file_path, map_entry, fingerprint, legacy_mtime=None):
+    """Has the source been published exactly as it is now?
+
+    Compares the fingerprint recorded at the last publish (see
+    handlers/fingerprint.py) with the current one.
+
+    Maps written before fingerprints have an ``mtime`` instead. If that still
+    matches, the file is unchanged since it was published on this machine, so
+    its fingerprint is recorded and the mtime dropped, without re-rendering.
+    Otherwise the file renders once and gets a fingerprint the normal way. No
+    user action, and the map converts itself one entry at a time.
+    """
+    if not isinstance(map_entry, dict):
+        return False
+    stored = map_entry.get('source_hash')
+    if stored is not None:
+        return stored == fingerprint
+    if legacy_mtime is not None and map_entry.get('mtime') == legacy_mtime:
+        if content_root:
+            rel_path = os.path.relpath(file_path, content_root).replace('\\', '/')
+            sync_map = load_sync_map(content_root)
+            entry = sync_map.get(rel_path)
+            if isinstance(entry, dict):
+                entry['source_hash'] = fingerprint
+                entry.pop('mtime', None)
+                save_sync_map(content_root, sync_map)
+        return True
+    return False
 
 def prune_orphaned_assets(course):
     """

@@ -6,7 +6,10 @@ import re
 
 import frontmatter
 from handlers.base_handler import BaseHandler
-from handlers.content_utils import get_mapped_id, save_mapped_id, parse_module_name, load_sync_map, save_sync_map, process_content
+from handlers.content_utils import get_mapped_id, save_mapped_id, parse_module_name, load_sync_map, save_sync_map, process_content, source_unchanged
+from handlers.drift_detector import check_drift, new_quiz_text, store_canvas_hash
+from handlers.fingerprint import source_fingerprint
+from handlers.sync_policy import get_policy
 from handlers.dates import resolve_timezone, to_canvas_iso
 from handlers.gradebook import resolve_gradebook_settings, needs_unhide
 from handlers.ip_filter import ip_filter_to_new_quiz
@@ -71,7 +74,7 @@ class NewQuizHandler(BaseHandler):
         indent = canvas_meta.get('indent', 0)
         published = canvas_meta.get('published', False)
 
-        current_mtime = os.path.getmtime(file_path)
+        source_hash = source_fingerprint(file_path, content_root)
         existing_id, map_entry = get_mapped_id(content_root, file_path) if content_root else (None, None)
 
         needs_update = True
@@ -83,7 +86,8 @@ class NewQuizHandler(BaseHandler):
 
         # Check sync map for existing quiz
         if existing_id and isinstance(map_entry, dict):
-            if map_entry.get('mtime') == current_mtime:
+            if source_unchanged(content_root, file_path, map_entry, source_hash,
+                                legacy_mtime=os.path.getmtime(file_path)):
                 logger.debug("    No changes detected, skipping update")
                 needs_update = False
 
@@ -95,6 +99,20 @@ class NewQuizHandler(BaseHandler):
                 logger.warning("    Previously synced new quiz not found in Canvas, re-creating")
                 quiz_obj = None
                 needs_update = True
+
+        # Has Canvas been edited since the last publish? One request for the
+        # items, made only when there is a baseline to compare against.
+        if (quiz_obj and content_root and isinstance(map_entry, dict)
+                and map_entry.get('canvas_hash')):
+            try:
+                items = client.list_items(course_id, existing_id)
+                canvas_text = new_quiz_text(quiz_obj, items if isinstance(items, list) else [])
+                needs_update = get_policy().review(
+                    content_root, file_path, title, None, canvas_text, needs_update,
+                    body_drifted=check_drift(content_root, file_path, canvas_text)['drifted'],
+                    kind='new_quiz')
+            except Exception as e:
+                logger.warning("    [yellow]Could not check the quiz against Canvas:[/yellow] %s", e)
 
         # Build quiz payload with the user's published state directly.
         quiz_payload = self._build_quiz_payload(
@@ -139,7 +157,7 @@ class NewQuizHandler(BaseHandler):
                     map_entry = None  # Clear stale item IDs — new quiz has no items yet
 
                 # Sync questions
-                self._sync_questions(client, course_id, existing_id, questions_data, content_root, file_path, current_mtime, map_entry,
+                self._sync_questions(client, course_id, existing_id, questions_data, content_root, file_path, source_hash, map_entry,
                                      shuffle_choices=bool(canvas_meta.get('shuffle_answers', False)))
 
                 if canvas_meta.get('hide_in_gradebook'):
@@ -147,9 +165,21 @@ class NewQuizHandler(BaseHandler):
                     # validates hide_in_gradebook against the assignment's
                     # *current* points, and those only settle here — a quiz going
                     # from graded to 0-point-and-hidden in one edit is refused on
-                    # the pass above, and the mtime skip means it would never be
+                    # the pass above, and the unchanged-source skip means it would never be
                     # retried on a later sync.
                     self._update_backing_assignment(course, existing_id, canvas_meta)
+
+                # Record what Canvas now holds, as the baseline for spotting
+                # later edits made in Canvas.
+                if content_root:
+                    try:
+                        fresh = client.get_quiz(course_id, existing_id)
+                        items = client.list_items(course_id, existing_id)
+                        store_canvas_hash(content_root, file_path,
+                                          new_quiz_text(fresh, items if isinstance(items, list) else []),
+                                          kind='new_quiz')
+                    except Exception as e:
+                        logger.debug("    Could not record quiz baseline: %s", e)
 
             except NewQuizAPIError as e:
                 logger.exception("    New Quiz API error: %s", e)
@@ -469,7 +499,7 @@ class NewQuizHandler(BaseHandler):
 
         return rendered_questions
 
-    def _sync_questions(self, client, course_id, assignment_id, questions_data, content_root, file_path, mtime, map_entry,
+    def _sync_questions(self, client, course_id, assignment_id, questions_data, content_root, file_path, source_hash, map_entry,
                         shuffle_choices=False):
         logger.info("    [cyan]Syncing %d questions to new quiz...[/cyan]", len(questions_data))
 
@@ -547,7 +577,7 @@ class NewQuizHandler(BaseHandler):
             sync_map = load_sync_map(content_root)
             sync_map[rel_path] = {
                 'id': str(assignment_id),
-                'mtime': mtime,
+                'source_hash': source_hash,
                 'item_ids': new_tracked_item_ids
             }
             save_sync_map(content_root, sync_map)

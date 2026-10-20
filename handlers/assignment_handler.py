@@ -7,9 +7,12 @@ import shutil
 from datetime import datetime
 from canvasapi import Canvas
 from handlers.base_handler import BaseHandler
-from handlers.content_utils import process_content, safe_delete_file, safe_delete_dir, get_mapped_id, save_mapped_id, parse_module_name
+from handlers.content_utils import process_content, safe_delete_file, safe_delete_dir, get_mapped_id, save_mapped_id, parse_module_name, source_unchanged
 from handlers.dates import resolve_timezone, to_canvas_iso
-from handlers.drift_detector import check_drift, store_canvas_hash, resolve_stored_html
+from handlers.drift_detector import (check_drift, check_settings_drift, store_canvas_hash,
+                                     resolve_stored_html, assignment_settings_hash)
+from handlers.fingerprint import source_fingerprint
+from handlers.sync_policy import get_policy
 from handlers.gradebook import resolve_gradebook_settings, needs_unhide
 from handlers.log import logger
 
@@ -33,14 +36,15 @@ class AssignmentHandler(BaseHandler):
         logger.info("  [cyan]Syncing assignment:[/cyan] [bold]%s[/bold]", filename)
 
         # 1. Check for Skip (Smart Sync)
-        current_mtime = os.path.getmtime(file_path)
+        source_hash = source_fingerprint(file_path, content_root)
         existing_id, map_entry = get_mapped_id(content_root, file_path) if content_root else (None, None)
 
         needs_render = True
         assign_obj = None
 
         if existing_id and isinstance(map_entry, dict):
-            if map_entry.get('mtime') == current_mtime:
+            if source_unchanged(content_root, file_path, map_entry, source_hash,
+                                legacy_mtime=os.path.getmtime(file_path)):
                 logger.debug("    No changes detected, skipping render")
                 needs_render = False
 
@@ -74,6 +78,16 @@ class AssignmentHandler(BaseHandler):
         omit_from_final_grade = canvas_meta.get('omit_from_final_grade', False)
         allowed_attempts = canvas_meta.get('allowed_attempts', -1)
         indent = canvas_meta.get('indent', 0)
+
+        # 1b-i. Has Canvas been edited since the last publish? Description and
+        # settings both count: a due date moved in Canvas is an edit too.
+        if assign_obj is not None and content_root:
+            canvas_desc = getattr(assign_obj, 'description', '') or ''
+            needs_render = get_policy().review(
+                content_root, file_path, title, assign_obj, canvas_desc, needs_render,
+                body_drifted=check_drift(content_root, file_path, canvas_desc)['drifted'],
+                settings_drifted=check_settings_drift(
+                    content_root, file_path, assignment_settings_hash(assign_obj)))
 
         # 1b-ii. Resolve group assignment
         group_category_id = None
@@ -127,13 +141,6 @@ class AssignmentHandler(BaseHandler):
                 assignment_args['group_category_id'] = group_category_id
 
             if assign_obj:
-                # Drift detection: warn if Canvas content was modified outside sync
-                if content_root:
-                    canvas_desc = getattr(assign_obj, 'description', '') or ''
-                    drift = check_drift(content_root, file_path, canvas_desc)
-                    if drift['drifted']:
-                        logger.warning("    [yellow]DRIFT DETECTED:[/yellow] '%s' was modified on Canvas since last sync. Overwriting with local version.", title)
-
                 logger.info("    [yellow]Updating assignment:[/yellow] %s", title)
                 logger.debug("    Matched by cached ID: %s", assign_obj.id)
                 if needs_unhide(canvas_meta, getattr(assign_obj, 'hide_in_gradebook', False)):
@@ -162,10 +169,11 @@ class AssignmentHandler(BaseHandler):
 
             # 4c. Update Sync Map and store content hash for drift detection
             if content_root:
-                save_mapped_id(content_root, file_path, assign_obj.id, mtime=current_mtime)
+                save_mapped_id(content_root, file_path, assign_obj.id, source_hash=source_hash)
                 store_canvas_hash(content_root, file_path, resolve_stored_html(
                     edited_obj, 'description', html_body,
-                    lambda: course.get_assignment(assign_obj.id)))
+                    lambda: course.get_assignment(assign_obj.id)),
+                    settings_hash=assignment_settings_hash(edited_obj), kind='assignment')
         else:
             # Render skipped, assign_obj already set
             pass
