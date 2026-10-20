@@ -216,6 +216,14 @@ the git state, takes the lock (`refs/cqs/sync-lock` on the remote) and pulls;
 lock. If the map cannot be pushed, the lock is deliberately kept. The design and its
 reasoning are in [Guides/Team_Mode.md](Guides/Team_Mode.md).
 
+`github_course.py` (`cqs github`) sets a course up for it in one step. It talks
+to the GitHub REST API with a token (`GH_TOKEN`/`GITHUB_TOKEN`, else `gh auth
+token`), so the GitHub CLI is optional, and pushes with that token through a
+one-off credential helper rather than touching git config. Every check runs
+before the first change, and a run that stopped after creating the repository
+resumes into it. The extension passes VS Code's GitHub session as `GH_TOKEN`;
+the org list comes from `github_course.py orgs --json`, so the logic exists once.
+
 ---
 
 ## Dependencies
@@ -442,6 +450,8 @@ The extension has two parts:
 | Purge Canvas Course | Runs `purge_course.py` with confirmation (must type course name) |
 | New Project | Opens a full-page form to scaffold a new course |
 | Open Preview | Opens a side-by-side QMD preview matching Canvas styling |
+| Create GitHub Repository | Runs `github_course.py` (`cqs github`) with VS Code's GitHub sign-in as `GH_TOKEN`: org picker (last choice first), name, confirmation |
+| Invite Teacher to GitHub | Runs `github_course.py invite USER...` |
 
 ### Preview rendering pipeline
 

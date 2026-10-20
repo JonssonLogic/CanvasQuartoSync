@@ -184,17 +184,32 @@ the sync again with `--break-lock` to take it over.
 
 ## Setting up a course for team mode
 
-1. Put the course in a private repo (for us: the `jth-crunch` organisation, one
-   repo per course run, e.g. `THLK16-26`).
-2. Remove `.canvas_sync_map.json` from `.gitignore` and commit it. Add
-   `.canvas_drift/` to `.gitignore`.
-3. Add a `.gitattributes` with `* text=auto`, so line endings are stored the same
-   way for everyone.
-4. Set `workflow = "team"` in `config.toml`, commit and push. This changes a
-   course-wide render input, so the next sync re-publishes everything once.
-5. Each teacher: clone the repo, keep their own Canvas token outside it
-   (`canvas_token_path` or `CANVAS_API_TOKEN`), and have a teacher role in the
-   Canvas course.
+One step, from the course folder:
+
+```
+cqs github --org jth-crunch
+```
+
+or **Create GitHub Repository** in the extension's Project panel. It checks
+everything that could stop it first (signed in, organisation, name free,
+folder not already connected, no student data in the git history), then:
+
+1. makes the folder a git repository, if it is not one;
+2. fixes `.gitignore`: the sync map is committed, `.canvas_drift/`, tokens and
+   student lists (`studenter.*`, `students.*`, `submissions/`) never are;
+3. sets `workflow = "team"` in `config.toml`;
+4. commits everything;
+5. creates the repository **private** in the chosen organisation, checks that
+   it really is private, and pushes.
+
+The GitHub CLI is optional. The extension uses VS Code's own GitHub sign-in;
+in a terminal the token comes from `GH_TOKEN` or `gh auth token`. The
+organisation is never guessed: `--org`, or a list that puts the last choice
+first. Once the repository exists, everything reads it from the git remote.
+
+Then, per teacher: `cqs github invite USERNAME` (an organisation owner runs
+it), a clone in VS Code, their own Canvas token in `CANVAS_API_TOKEN`, and a
+teacher role in the Canvas course.
 
 ## Still open
 

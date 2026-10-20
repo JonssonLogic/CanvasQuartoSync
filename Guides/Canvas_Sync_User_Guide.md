@@ -914,6 +914,8 @@ cqs diff                      # has anyone edited Canvas since the last sync? Re
 cqs rollup --status           # grade rollups: who qualifies
 cqs kit update                # refresh the authoring kit
 cqs where                     # which tool, Python and course cqs is using
+cqs github --org jth-crunch   # put the course on GitHub as a private team course
+cqs github invite USERNAME    # invite a teacher to the course's organisation
 ```
 
 `cqs` on its own prints the list and does nothing else. Anything that writes to Canvas
@@ -956,11 +958,13 @@ The copy goes to `.canvas_drift/` in the course folder: the Canvas HTML, a `.qmd
 
 ### Team mode: several teachers, one course
 
-When more than one person publishes a course, keep the course in a git repository (for example on GitHub) and set this in `config.toml`:
+When more than one person publishes a course, keep the course in a private GitHub repository. One step does all of it, from the course folder:
 
-```toml
-workflow = "team"
 ```
+cqs github --org jth-crunch
+```
+
+or the **Create GitHub Repository** button in the extension's Project panel, which signs in to GitHub for you. It makes the folder a git repository, commits the sync map (and never student data or tokens), sets `workflow = "team"` in `config.toml`, creates the repository **private** in the organisation you choose, and pushes. `cqs github --help` has examples. Then invite the other teachers with `cqs github invite USERNAME` (or **Invite Teacher to GitHub**); each of them clones the repository in VS Code and sets `CANVAS_API_TOKEN` to their own Canvas token.
 
 The idea: **the repository holds the truth, and Canvas is where it is published.** Every sync then:
 
