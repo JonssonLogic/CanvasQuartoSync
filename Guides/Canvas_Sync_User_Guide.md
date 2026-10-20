@@ -31,6 +31,8 @@
   - [Usage](#usage-1)
 - [7. Synchronization Strategy & Tracking](#7-synchronization-strategy--tracking)
   - [The Sync Map (.canvas_sync_map.json)](#the-sync-map-canvas_sync_mapjson)
+  - [When someone edits Canvas directly](#when-someone-edits-canvas-directly)
+  - [Team mode: several teachers, one course](#team-mode-several-teachers-one-course)
 - [8. Authoring with an AI Assistant](#8-authoring-with-an-ai-assistant)
   - [Setting up a content folder](#setting-up-a-content-folder)
   - [The workflow](#the-workflow)
@@ -860,9 +862,11 @@ You can link directly to other Pages, Assignments, or Quizzes by referencing the
 ### D. Asset Namespacing & Optimization
 To keep your course clean and fast, the system uses a specialized strategy for assets:
 *   **Reserved Folders**: All assets from your `.qmd` files are uploaded to `synced-images` and `synced-files`. 
-*   **Smart Render & Upload**: The system checks the "Last Modified" time (`mtime`) of your local files. 
+*   **Smart Render & Upload**: The system records a **fingerprint of the content** it published, and compares it on the next sync.
     *   If a `.qmd` or `.json` file hasn't changed, it **skips Quarto rendering** and the Canvas `edit()` call.
+    *   The fingerprint covers the images and included files a page uses, and the course-wide `_quarto.yml`, `branding.css` and `config.toml`. Replacing an image re-publishes the pages that show it; changing `branding.css` re-publishes everything.
     *   If an asset (image/PDF) hasn't changed, it **skips the upload**.
+    *   Saving a file without changing it, or a `git pull`, does not count as a change. Line endings do not either, so a Windows and a Mac checkout agree.
     *   This makes subsequent syncs for large courses faster.
 *   **Caching**: Folder IDs are cached during the run to minimize API calls.
 
@@ -923,7 +927,7 @@ that already have them keep them.
 To ensure your Canvas course stays in sync through renames and moves, the system uses a **Local Mapping** strategy.
 
 ### The Sync Map (`.canvas_sync_map.json`)
-The first time a file is synced, the system records its unique **Canvas ID** and the local **Last Modified Time (mtime)** in a hidden file called `.canvas_sync_map.json` in your content root.
+The first time a file is synced, the system records its unique **Canvas ID**, a **fingerprint of the source** it was published from, and a **fingerprint of what Canvas showed** right after, in a hidden file called `.canvas_sync_map.json` in your content root. Nothing in it is specific to one computer, so in a shared course it is committed to git (see [Team mode](#team-mode-several-teachers-one-course)).
 
 *   **Persistent Tracking**: Even if you change the `title:` in the metadata or rename the physical `.qmd` file, the system uses this ID to find and update the **existing** object in Canvas.
 *   **Safe Renaming**: You can safely change the title of an assignment; it will be updated in both the Canvas Assignment list and the Module without creating duplicates.
@@ -932,9 +936,49 @@ The first time a file is synced, the system records its unique **Canvas ID** and
 > [!CAUTION]
 > **Do not delete `.canvas_sync_map.json`**. If this file is lost, the system will fall back to "Matching by Title" for all content items. If you then rename a title, it will likely create a duplicate object in Canvas.
 
+### When someone edits Canvas directly
+
+Every sync compares each page, assignment and quiz in Canvas with what was last published. For assignments that includes the settings (due dates, points, submission types), not just the description. When Canvas has been edited:
+
+| The `.qmd` | Canvas | What the sync does |
+|:--|:--|:--|
+| unchanged | edited | Leaves the Canvas version alone, saves a copy, reports it |
+| changed | edited | **Solo:** overwrites, after saving a copy. **Team:** refuses to publish that file |
+
+The copy goes to `.canvas_drift/` in the course folder: the Canvas HTML, a `.qmd` conversion of it for a side-by-side comparison, and who edited it and when (for pages, Canvas records the editor's name).
+
+**To resolve it**, either:
+
+*   **Keep the Canvas edit**: bring the change into the `.qmd`, commit, and sync with `--accept-drift <file>` (`cqs sync --accept-drift 04_Labs/01_Tensile.qmd`).
+*   **Throw it away**: sync with `--accept-drift <file>` directly. The repo version is published over it.
+
+`--accept-drift all` applies to every file. `cqs diff` lists Canvas edits without syncing.
+
+### Team mode: several teachers, one course
+
+When more than one person publishes a course, keep the course in a git repository (for example on GitHub) and set this in `config.toml`:
+
+```toml
+workflow = "team"
+```
+
+The idea: **the repository holds the truth, and Canvas is where it is published.** Every sync then:
+
+1.  Refuses if there are uncommitted changes, so Canvas shows what is in the repo.
+2.  Takes a **lock**, so two people cannot sync at the same time. If a colleague is syncing, you are told who and since when.
+3.  Pulls, and refuses if you have commits that are not pushed. (Publishing something that is not on GitHub would let the next person's sync revert it.)
+4.  Refuses to overwrite anything edited in Canvas, as described above.
+5.  Commits and pushes the sync map, then releases the lock.
+
+The sync map **must be committed** in team mode: remove `.canvas_sync_map.json` from `.gitignore`. It holds the Canvas ids everyone needs; a clone without it creates duplicates.
+
+If a sync crashes, the lock stays for safety. After 30 minutes the message says so; run the sync again with `--break-lock`.
+
+Each teacher uses their own Canvas token, so Canvas records who published what.
+
 ### Troubleshooting Missing Assets or Duplicates
-If you manually delete an image or file on Canvas that was previously synced, the sync tool won't re-upload it automatically because the local file's `mtime` hasn't changed.
-*   **To force a re-upload of a specific asset**: Open the `.canvas_sync_map.json` file, find the block for that specific asset (e.g., `"images/my_chart.png"`), and delete it. Then make a tiny change to the `.qmd` file linking it (like adding a space) and run the sync. The tool will upload the asset fresh.
+If you manually delete an image or file on Canvas that was previously synced, the sync tool won't re-upload it automatically because the local file hasn't changed.
+*   **To force a re-upload of a specific asset**: Run the sync with `--force` for the `.qmd` that uses it (`cqs sync 01_Intro/02_x.qmd --force`).
 *   **To force a full course re-sync**: Delete the `.canvas_sync_map.json` file entirely. The tool will safely adopt existing modules, pages, assignments, and quiz questions by matching their exact titles/names. It will not create duplicates as long as you haven't renamed items locally. It will also clean up any duplicate quiz questions that share the exact same name.
 
 ---

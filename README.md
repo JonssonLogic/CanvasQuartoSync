@@ -195,6 +195,7 @@ The [Mechatronics course](https://github.com/cenmir/Mechatronics) is a real-worl
 
 - [User Guide](Guides/Canvas_Sync_User_Guide.md): Full documentation on all features
 - [Canvas Token Setup](Guides/Canvas_token_setup.md): How to generate an API token
+- [Team Mode](Guides/Team_Mode.md): Several teachers publishing one course from one git repo, and what happens when someone edits Canvas directly
 - [Extension Dev Guide](extension/devInstructions.md): Building and debugging the extension
 
 ## License

@@ -97,7 +97,7 @@ CanvasQuartoSync/
 ```
 sync_to_canvas.py
   │
-  ├── Parse CLI args (content_root, --course-id, --sync-calendar, --force, --check-drift, --only, --verbose, --quiet, --log-file)
+  ├── Parse CLI args (content_root, --course-id, --sync-calendar, --force, --check-drift, --only, --accept-drift, --break-lock, --verbose, --quiet, --log-file)
   ├── Initialize logging (handlers/log.py → setup_logging())
   ├── Load Canvas API via canvasapi library
   ├── Walk content_root for NN_* folders (→ Modules) and NN_* files
@@ -124,10 +124,11 @@ All handlers inherit `BaseHandler` (ABC):
 | Function | What it does |
 |---|---|
 | `process_content()` | Scans HTML/Markdown for images and links; uploads assets, resolves cross-links |
-| `upload_file()` | Uploads a file to Canvas with smart caching (skips if `mtime` unchanged) |
+| `upload_file()` | Uploads a file to Canvas with smart caching (skips if its content fingerprint is unchanged) |
 | `resolve_cross_link()` | Resolves `[text](other.qmd)` → Canvas URL; creates stubs (JIT) for unsynced targets |
 | `prune_orphaned_assets()` | Deletes files in `synced-images`/`synced-files` that are no longer referenced |
-| `load_sync_map()` / `save_sync_map()` | Persist `.canvas_sync_map.json` (maps local path → Canvas ID + mtime) |
+| `load_sync_map()` / `save_sync_map()` | Persist `.canvas_sync_map.json` (maps local path → Canvas ID, `source_hash`, `canvas_hash`); written sorted, UTF-8, LF |
+| `source_unchanged()` | Has this file been published exactly as it is now? Migrates old `mtime` entries |
 | `safe_delete_file/dir()` | Retry-with-backoff deletion (Dropbox/OneDrive lock workaround) |
 
 ### Dates (`dates.py`)
@@ -180,9 +181,40 @@ configured. `tzdata` is a hard requirement on Windows, which ships no tz databas
 
 ---
 
-## Smart Sync (mtime-based Skipping)
+## Smart Sync (fingerprint-based Skipping)
 
-Each handler checks the file's `mtime` against the value stored in `.canvas_sync_map.json`. If unchanged → skip Quarto render and Canvas API update. Always runs `process_content()` to track `ACTIVE_ASSET_IDS` for pruning.
+Each handler computes `source_fingerprint()` (`handlers/fingerprint.py`): the file's
+content with line endings normalised, plus the local files it references and the
+course-wide `_quarto.yml`, `branding.css` and `config.toml`. `source_unchanged()`
+compares it with the entry's `source_hash`. If unchanged → skip Quarto render and
+Canvas API update. Always runs `process_content()` to track `ACTIVE_ASSET_IDS` for
+pruning.
+
+It replaced `mtime`, which differs per machine, so a shared map made two authors
+re-render the whole course on alternate syncs. Entries that still carry an `mtime`
+convert themselves: if it matches, the fingerprint is recorded without rendering.
+
+## Canvas edits (drift) and the sync policy
+
+Every handler that has a Canvas object compares it with the entry's `canvas_hash`
+(and `canvas_settings_hash` for assignments) **before** deciding to render, whether
+or not the source changed. The decision is `get_policy().review()` in
+`handlers/sync_policy.py`: keep the Canvas edit if the source is unchanged; on a
+conflict, overwrite in solo and refuse in team; `--accept-drift` overrides both.
+The Canvas version is saved to `.canvas_drift/` before anything is overwritten.
+
+Quizzes are fingerprinted as canonical text (`classic_quiz_text`, `new_quiz_text`),
+so they go through the same hash, snapshot and diff code as page HTML. Entries
+record `canvas_kind`, so `check_all_drift` never has to guess whether an id is a
+page or an assignment (a New Quiz's id is both a quiz and an assignment id).
+
+## Team mode (`workflow = "team"`)
+
+`handlers/team.py` wraps the content sync in `main()`: `TeamSync.begin()` checks
+the git state, takes the lock (`refs/cqs/sync-lock` on the remote) and pulls;
+`TeamSync.end()` runs in a `finally`, commits and pushes the map, and releases the
+lock. If the map cannot be pushed, the lock is deliberately kept. The design and its
+reasoning are in [Guides/Team_Mode.md](Guides/Team_Mode.md).
 
 ---
 
