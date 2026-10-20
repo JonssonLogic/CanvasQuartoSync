@@ -110,6 +110,18 @@
         "title": "Grade Rollup",
         "category": "Canvas Quarto Sync",
         "icon": "$(checklist)"
+      },
+      {
+        "command": "cqs.createGithubRepo",
+        "title": "Create GitHub Repository",
+        "category": "Canvas Quarto Sync",
+        "icon": "$(github)"
+      },
+      {
+        "command": "cqs.inviteToGithub",
+        "title": "Invite Teacher to GitHub",
+        "category": "Canvas Quarto Sync",
+        "icon": "$(person-add)"
       }
     ],
     "menus": {

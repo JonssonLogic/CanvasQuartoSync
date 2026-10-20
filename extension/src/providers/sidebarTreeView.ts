@@ -8,6 +8,8 @@ import * as vscode from 'vscode';
 //     New Project
 //     Open config.toml
 //     Open Settings
+//     Create GitHub Repository
+//     Invite Teacher to GitHub
 //
 //   SYNC
 //     Sync All Files
@@ -61,6 +63,16 @@ export function registerSidebarViews(
       label: 'Extension Settings',
       icon: 'gear',
       command: 'cqs.openExtensionSettings',
+    },
+    {
+      label: 'Create GitHub Repository',
+      icon: 'github',
+      command: 'cqs.createGithubRepo',
+    },
+    {
+      label: 'Invite Teacher to GitHub',
+      icon: 'person-add',
+      command: 'cqs.inviteToGithub',
     },
   ]);
 

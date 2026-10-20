@@ -5,6 +5,7 @@ import { initCourse } from './commands/initCourse';
 import { importFromCanvas } from './commands/importFromCanvas';
 import { diffWithCanvas } from './commands/diffWithCanvas';
 import { purgeCourse } from './commands/purgeCourse';
+import { createGithubRepo, inviteToGithub } from './commands/githubRepo';
 import { createStatusBar, updateVisibility, dispose as disposeStatusBar } from './providers/statusBar';
 import { createToggleButtons, registerToggleCommands } from './providers/syncOptions';
 import { registerSidebarViews } from './providers/sidebarTreeView';
@@ -60,6 +61,12 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand('cqs.showGradeRollup', () =>
       openGradeRollupPanel(context.extensionPath)
+    ),
+    vscode.commands.registerCommand('cqs.createGithubRepo', () =>
+      createGithubRepo(context)
+    ),
+    vscode.commands.registerCommand('cqs.inviteToGithub', () =>
+      inviteToGithub(context)
     )
   );
 
