@@ -107,14 +107,22 @@ def _split_file_arg(args):
     return None, args
 
 
-def _rewrite_option_path(args, option, cwd, root):
-    """Rewrite the value of ``--option VALUE`` / ``--option=VALUE`` in place."""
+def _rewrite_option_path(args, option, cwd, root, keep=()):
+    """Rewrite the value of ``--option VALUE`` / ``--option=VALUE`` in place.
+
+    Values in ``keep`` are words rather than paths (``--accept-drift all``)
+    and pass through unchanged. Every occurrence is rewritten, so a repeatable
+    option works.
+    """
+    def fix(value):
+        return value if value in keep else _course_relative(value, cwd, root)
+
     out = list(args)
     for i, a in enumerate(out):
         if a == option and i + 1 < len(out):
-            out[i + 1] = _course_relative(out[i + 1], cwd, root)
+            out[i + 1] = fix(out[i + 1])
         elif a.startswith(option + '='):
-            out[i] = option + '=' + _course_relative(a.split('=', 1)[1], cwd, root)
+            out[i] = option + '=' + fix(a.split('=', 1)[1])
     return out
 
 
@@ -133,6 +141,7 @@ def _sync(args, cwd):
     root = _require_root(cwd)
     file, rest = _split_file_arg(args)
     rest = _rewrite_option_path(rest, '--only', cwd, root)
+    rest = _rewrite_option_path(rest, '--accept-drift', cwd, root, keep=('all',))
     if file:
         rest = ['--only', _course_relative(file, cwd, root), *rest]
     return 'sync_to_canvas', [root, *rest]

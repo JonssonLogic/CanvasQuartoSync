@@ -140,6 +140,17 @@ class TestVerbs:
         assert name == "sync_to_canvas"
         assert argv[1:] == [str(course), "--check-drift", "--only", "04_Labs/01_Tensile.qmd", "--show-diff"]
 
+    def test_accept_drift_is_course_relative_and_repeatable(self, course, calls, monkeypatch):
+        run(["sync", "--accept-drift", "01_Tensile.qmd", "--accept-drift", "01_Tensile.qmd"],
+            course / "04_Labs", monkeypatch)
+        argv = calls[0][1]
+        assert argv[1:] == [str(course), "--accept-drift", "04_Labs/01_Tensile.qmd",
+                            "--accept-drift", "04_Labs/01_Tensile.qmd"]
+
+    def test_accept_drift_all_is_a_word_not_a_path(self, course, calls, monkeypatch):
+        run(["sync", "--accept-drift", "all"], course / "04_Labs", monkeypatch)
+        assert calls[0][1][-2:] == ["--accept-drift", "all"]
+
     def test_rollup_only_is_rewritten(self, course, calls, monkeypatch):
         run(["rollup", "--status", "--only", "01_Tensile.qmd"], course / "04_Labs", monkeypatch)
         name, argv = calls[0]

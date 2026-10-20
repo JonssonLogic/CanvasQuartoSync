@@ -11,12 +11,14 @@ from handlers.log import logger, setup_logging
 from handlers.calendar_handler import CalendarHandler
 from handlers.subheader_handler import SubHeaderHandler
 from handlers.external_link_handler import ExternalLinkHandler
-from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name, verify_sync_map_course, load_sync_map, save_sync_map
+from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name, verify_sync_map_course, load_sync_map, save_sync_map, set_sync_identity
 from handlers.single_sync import build_handlers, find_or_create_module, sync_single_file
 from handlers.module_structure import fetch_module_structure
 from handlers import __version__
-from handlers.config import get_api_credentials, get_course_id
+from handlers.config import get_api_credentials, get_course_id, load_config
 from handlers.drift_detector import check_all_drift, drift_report, forget_synced_file, forget_synced_dir
+from handlers.sync_policy import SyncPolicy, set_policy, get_policy, SOLO, TEAM
+from handlers.team import TeamSync, TeamModeError
 
 
 def _normalize_name(name: str) -> str:
@@ -305,7 +307,12 @@ def main():
     parser.add_argument("content_path", nargs="?", default=".", help="Path to the content directory (default: current dir).")
     parser.add_argument("--sync-calendar", action="store_true", help="Enable calendar synchronization (Opt-in).")
     parser.add_argument("--course-id", help="Canvas Course ID (Override).")
-    parser.add_argument("--force", "-f", action="store_true", help="Force re-render all files (ignore cached mtimes).")
+    parser.add_argument("--force", "-f", action="store_true", help="Force re-render all files (ignore recorded source fingerprints).")
+    parser.add_argument("--accept-drift", action="append", default=[], metavar="FILE",
+                        help="Publish FILE even though it was edited in Canvas since the last sync, "
+                             "overwriting that edit. Repeat for several files, or pass 'all'.")
+    parser.add_argument("--break-lock", action="store_true",
+                        help="Team mode: take over the sync lock from a sync that crashed.")
     parser.add_argument("--check-drift", action="store_true", help="Check if Canvas content was modified outside sync (no sync performed).")
     parser.add_argument("--show-diff", action="store_true", help="Show full diff when using --check-drift.")
     parser.add_argument("--json", action="store_true", help="With --check-drift, print the result as JSON on stdout instead of a human report.")
@@ -357,28 +364,6 @@ def main():
     except Exception:
         pass
 
-    # Force re-render: clear cached mtimes (but preserve other sync map data)
-    if args.force:
-        sync_map = load_sync_map(content_root)
-        if args.only:
-            # Single-file force: only clear mtime for that file
-            only_rel = args.only.replace('\\', '/')
-            entry = sync_map.get(only_rel)
-            if isinstance(entry, dict) and 'mtime' in entry:
-                del entry['mtime']
-                save_sync_map(content_root, sync_map)
-                logger.info("[yellow]Force mode:[/yellow] cleared mtime for %s", only_rel)
-        else:
-            # Full force: clear all mtimes
-            changed = False
-            for entry in sync_map.values():
-                if isinstance(entry, dict) and 'mtime' in entry:
-                    del entry['mtime']
-                    changed = True
-            if changed:
-                save_sync_map(content_root, sync_map)
-            logger.info("[yellow]Force mode:[/yellow] cleared cached mtimes, all files will re-render")
-
     # Resolve Context
     API_URL, API_TOKEN = get_api_credentials(content_root)
     course_id = get_course_id(content_root, args.course_id)
@@ -404,6 +389,23 @@ def main():
     # so refuse before touching anything if this folder belongs to another course.
     if not verify_sync_map_course(content_root, course_id, getattr(course, 'name', None)):
         return 1
+
+    workflow = str(load_config(content_root).get('workflow', SOLO)).strip().lower()
+    if workflow not in (SOLO, TEAM):
+        logger.error('[red]Unknown workflow "%s" in config.toml.[/red] Use "solo" or "team".', workflow)
+        return 1
+
+    # Who is syncing, for the shared map and the team lock.
+    identity = ''
+    try:
+        identity = getattr(canvas.get_current_user(), 'name', '') or ''
+    except Exception:
+        pass
+    set_sync_identity(identity)
+
+    accept = {('all' if p.strip().lower() == 'all' else p.replace('\\', '/'))
+              for p in args.accept_drift}
+    set_policy(SyncPolicy(workflow=workflow, accept=accept))
 
     # Structure mode: report what Canvas holds and how it lines up with local
     # files, then exit. Read-only, and JSON on stdout so a caller can parse it.
@@ -472,7 +474,8 @@ def main():
                             logger.warning("    [cyan]%s[/cyan]", line)
                         else:
                             logger.warning("    %s", line)
-            logger.warning("[yellow]Use import_from_canvas.py to pull changes, or --force to overwrite.[/yellow]")
+            logger.warning("[yellow]Bring the change into the .qmd and sync with --accept-drift <file>, "
+                           "or overwrite it with --accept-drift <file> directly.[/yellow]")
             # Findings are not a failure unless the caller asked for that. git
             # diff behaves the same way: reporting is the default, --exit-code
             # opts in. 2 rather than 1 so a caller can still tell "someone
@@ -481,6 +484,59 @@ def main():
         logger.info("[green]No drift detected. Canvas content matches last sync.[/green]")
         return 0
 
+    team = None
+    if workflow == TEAM:
+        team = TeamSync(content_root, who=identity, break_lock=args.break_lock)
+        try:
+            team.begin()
+        except TeamModeError as e:
+            logger.error("[red]Not syncing (team mode).[/red] %s", e)
+            return 1
+
+    rc = 1
+    team_ok = True
+    try:
+        _apply_force(args, content_root)
+        rc = _sync_content(args, course, canvas, content_root)
+        if get_policy().report() and rc == 0:
+            rc = 2
+    finally:
+        if team is not None:
+            team_ok = team.end()
+    if not team_ok and rc == 0:
+        rc = 1
+    return rc
+
+
+def _apply_force(args, content_root):
+    """--force: forget the recorded source fingerprints, so everything re-renders.
+
+    The rest of each entry (Canvas ids, drift baselines) is kept. Runs after the
+    team-mode pull, so it edits the map everyone just agreed on.
+    """
+    if not args.force:
+        return
+    sync_map = load_sync_map(content_root)
+    only_rel = args.only.replace('\\', '/') if args.only else None
+    changed = False
+    for rel, entry in sync_map.items():
+        if only_rel and rel != only_rel:
+            continue
+        if isinstance(entry, dict):
+            for key in ('source_hash', 'mtime'):
+                if key in entry:
+                    del entry[key]
+                    changed = True
+    if changed:
+        save_sync_map(content_root, sync_map)
+    if only_rel:
+        logger.info("[yellow]Force mode:[/yellow] %s will re-render", only_rel)
+    else:
+        logger.info("[yellow]Force mode:[/yellow] all files will re-render")
+
+
+def _sync_content(args, course, canvas, content_root):
+    """Sync one file (--only) or the whole course. Returns the exit code."""
     handlers = build_handlers()
 
     # --only: sync a single asset and exit (delegates to the reusable function
@@ -627,6 +683,8 @@ def main():
     prune_orphaned_assets(course)
 
     logger.info("[bold green]Sync complete.[/bold green] Processed %d modules, synced %d items.", module_count, item_count)
+    return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())
