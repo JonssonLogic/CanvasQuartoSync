@@ -28,6 +28,33 @@ The tool installs to one folder, with its Python environment inside: `%LOCALAPPD
 4. Write content in `.qmd` files
 5. Click **Sync to Canvas** in the status bar
 
+## Working on a Course Together
+
+Several teachers can publish one course. The course lives in a private GitHub
+repository, everyone works in their own clone, and each sync publishes what is
+on GitHub.
+
+**Set up the course (once, by the course owner):**
+
+1. Open the course folder in VS Code.
+2. In the sidebar's Project panel, click **Create GitHub Repository**, pick the
+   organisation and confirm. Or in a terminal: `cqs github --org <organisation>`.
+3. Invite the other teachers: **Invite Teacher to GitHub**, or
+   `cqs github invite <github-username>`.
+
+**Join a course (each teacher):**
+
+1. Accept the invitation to the organisation (sent by e-mail).
+2. In VS Code: **Clone Repository**, and pick the course.
+3. Set the environment variable `CANVAS_API_TOKEN` to your own Canvas token.
+4. Ask for a teacher role in the Canvas course.
+
+Then the daily routine: pull, edit, commit and push, sync. The sync refuses to
+run with uncommitted or unpushed changes, takes a lock so two people cannot sync
+at once, and never overwrites a page someone edited directly in Canvas. More in
+the [User Guide](Guides/Canvas_Sync_User_Guide.md#team-mode-several-teachers-one-course);
+the design is in [Team Mode](Guides/Team_Mode.md).
+
 ## Setting Up Canvas Credentials
 
 You need a Canvas API token to sync. Two options:
@@ -186,6 +213,10 @@ python sync_to_canvas.py ./MyCourse --check-drift # Check for external edits
 python sync_to_canvas.py ./MyCourse --sync-calendar # Include calendar events
 python import_from_canvas.py ./output             # Import from Canvas
 ```
+
+Or, from anywhere inside a course folder, `cqs` (put on the PATH by the
+installer): `cqs check`, `cqs sync`, `cqs diff`, `cqs github --org <org>`,
+`cqs github invite <user>`. Run `cqs` for the full list.
 
 ## Example Project
 
