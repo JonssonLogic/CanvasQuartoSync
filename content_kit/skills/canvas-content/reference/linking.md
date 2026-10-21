@@ -54,7 +54,8 @@ around by touching files.
 
 ## Naming reminder
 
-Images, `branding.css`, and quiz `description_file` targets must **not** carry an `NN_`
-prefix - a prefix makes the sync treat them as module items in their own right. Folders
-without a prefix (`graphics/`, `files/`) are never walked for content, which is exactly
-why they're the right place for assets.
+Images, `branding.css`, and quiz `description_file` targets must not become module items
+in their own right. With order files that means: don't list them in `_order.yml`. With
+`NN_` prefixes: don't give them a prefix. Folders that are not modules (`graphics/`,
+`files/`) are never walked for content, which is exactly why they're the right place
+for assets.

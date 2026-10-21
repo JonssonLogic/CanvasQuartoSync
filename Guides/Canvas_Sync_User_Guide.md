@@ -7,9 +7,10 @@
   - [Configuration](#configuration)
   - [Dates and time zones](#dates-and-time-zones)
   - [Usage](#usage)
-- [2. File Organization & Naming Conventions](#2-file-organization--naming-conventions)
-  - [Modules (Directories)](#modules-directories)
-  - [Content Files](#content-files)
+- [2. File Organization & Module Order](#2-file-organization--module-order)
+  - [Order files](#order-files-_modulesyml-_orderyml)
+  - [NN_ prefixes (older courses)](#nn_-prefixes-older-courses)
+  - [Converting an NN_ course](#converting-an-nn_-course)
 - [3. Content Types & Metadata](#3-content-types--metadata)
   - [Quarto Pages (.qmd)](#quarto-pages-qmd)
   - [Study Guides (.qmd)](#study-guides-qmd)
@@ -152,29 +153,79 @@ python sync_to_canvas.py --log-file sync.log
 
 ---
 
-## 2. File Organization & Naming Conventions
+## 2. File Organization & Module Order
 
-The system uses a **strict naming convention** to identify Modules and Content. 
+The course folder says which modules exist, in what order, and which files are in each.
+There are two ways to say it. New courses use **order files**; courses made before them
+use **`NN_` prefixes** until their owner converts them (see *Converting* below). The
+Course Board in VS Code works with both, and lets you reorder an order-file course by
+dragging.
 
-### Modules (Directories)
-*   **Format**: `NN_Name` (Two digits, underscore, Name).
-*   **Example**: `01_Introduction`, `02_Python Basics`.
-*   **Behavior**: 
-    *   The prefix `01_` determines the module order in Canvas.
-    *   The part after `_` becomes the Module Name (e.g., "Introduction").
-    *   **Clean Look**: The `NN_` prefix is automatically removed from the title in Canvas.
-    *   **Folders NOT matching this pattern are IGNORED.**
+### Order files (`_modules.yml`, `_order.yml`)
 
-### Content Files
-*   **Format**: `NN_Name.ext` (Two digits, underscore, Name, extension).
-*   **Example**: `01_Welcome.qmd`, `02_Assignment.qmd`.
-*   **Behavior**:
-    *   **In a Module Folder**: The file is synced and added to that Module.
-    *   **In Root Folder**: The file is synced to Canvas (as a Page/Assignment/etc.) but is **NOT added to any module**. (Useful for "loose" pages or hidden assignments).
-    *   **Clean Titles**: When added to a module, the `NN_` prefix is stripped from the title (e.g. `01_Intro.pdf` becomes "Intro.pdf").
-    *   **Files NOT matching this pattern are IGNORED.**
+```text
+Course/
+├── _modules.yml            -> the modules, top to bottom
+├── Introduction/           -> Module "Introduction"
+│   ├── _order.yml          -> its items, top to bottom (optional)
+│   ├── Welcome.qmd         -> Page
+│   ├── Syllabus.pdf        -> File item, because _order.yml lists it
+│   └── notes.md            -> not synced: no canvas.type and not listed
+├── Python Basics/          -> Module "Python basics and tools" (name set in _modules.yml)
+│   └── FirstProg.qmd       -> Assignment
+├── Hidden.qmd              -> Page outside any module (listed in _modules.yml)
+└── graphics/               -> not a module: not listed
+```
 
-**Example Structure**:
+`_modules.yml`:
+
+```yaml
+- Introduction
+- Python Basics: Python basics and tools    # folder: name in Canvas
+- Hidden.qmd                                # a file: synced outside any module
+```
+
+`Introduction/_order.yml`:
+
+```yaml
+- Welcome.qmd
+- Syllabus.pdf
+```
+
+*   **Modules**: a folder is a module only if `_modules.yml` lists it, in that order. The
+    module takes the folder's name, or the name after the colon.
+*   **Items**: a file in a module folder is included if `_order.yml` lists it, or if it
+    declares itself as content: a `canvas.type`, or a quiz. Listed files come first, in
+    order; content that is not listed follows, sorted by name. A new page therefore needs
+    no bookkeeping: it appears at the end of its module.
+*   **Other files** (PDFs, notes, images) are synced only when `_order.yml` lists them.
+*   **Names starting with `_`** are kept out unless listed. Use them for drafts.
+*   **Titles** come from the frontmatter `title:`, or the filename. File and folder names
+    are free: no prefix, and renaming a file never changes the order.
+*   **Modules are placed in Canvas in this order.** Modules that exist only in Canvas keep
+    their place relative to the others.
+*   **Moving a file to another module folder** moves its item in Canvas on the next sync:
+    it is added to the new module and taken out of the old one.
+
+**Several teachers.** Both files are one entry per line, so git merges them line by line,
+and the course's `.gitattributes` marks them `merge=union`, so a merge never stops on
+them. Reading is tolerant: a duplicate line keeps its first position, an entry whose file
+is gone is skipped (with a warning from `cqs check`), and a file nobody listed is added
+at the end. If two people reorder the same module at the same time, one order wins and
+the Course Board shows it; drag to fix it.
+
+### `NN_` prefixes (older courses)
+
+A course without `_modules.yml` uses the original rule.
+
+*   **Modules**: folders named `NN_Name` (two digits, underscore, name), for example
+    `01_Introduction`. The prefix sets the order and is removed from the Canvas name.
+    **Folders not matching this pattern are ignored.**
+*   **Files**: `NN_Name.ext`, for example `01_Welcome.qmd`. In a module folder the file is
+    added to that module; at the root it is synced but **not added to any module**. The
+    prefix is stripped from titles (`01_Intro.pdf` becomes "Intro.pdf"). **Files not
+    matching this pattern are ignored.**
+
 ```text
 DailyWork/
 ├── 01_Introduction/        -> Module: "Introduction"
@@ -187,6 +238,32 @@ DailyWork/
 └── handlers/               -> Ignored (no prefix)
 ```
 
+### Converting an `NN_` course
+
+The Course Board offers it when it opens an `NN_` course (*Preview conversion*), and
+`cqs migrate` does the same from a terminal. Start with a preview:
+
+```
+cqs migrate --dry-run
+```
+
+The conversion is local: nothing in Canvas changes, and the next sync shows the same
+module names and item titles. It
+
+*   removes the prefix from each module folder and the files directly in it (a name that
+    is already taken keeps its prefix);
+*   writes `_modules.yml` and one `_order.yml` per module, in the current order;
+*   updates links and paths that point at a renamed file, in every text file of the
+    course (`.qmd`, `.md`, `.yml`, `.json`, ...);
+*   moves the sync map entries and drift snapshots along, so every Canvas id is kept;
+*   gives a leading `_` to a file that was ignored for lacking a prefix but has a
+    `canvas.type`, so it stays out of Canvas;
+*   adds the `merge=union` lines to `.gitattributes`.
+
+It refuses to run with uncommitted changes, so the conversion is one commit of its own
+(`--allow-dirty` overrides). In a team course, have everyone commit and push first, and
+pull afterwards.
+
 ---
 
 ## 3. Content Types & Metadata
@@ -195,7 +272,7 @@ DailyWork/
 > **Safe Updates**: When the system syncs, it checks if an item with the same title or internal ID already exists. 
 > *   **If Found**: It **updates** the existing item (description, points, dates, etc.). This ensures student submissions and grades are **preserved**.
 > *   **Dynamic Renaming**: If you change the `title` in your frontmatter (or JSON), the system will update the title of the existing Page/Assignment in Canvas. The link within the Canvas Module will also be updated to match the new title automatically.
-> *   **File Rename**: Renaming the physical file (e.g., `01_Intro.qmd` -> `01_Introduction.qmd`) while keeping the same `title` in the frontmatter is perfectly safe and will not create a duplicate.
+> *   **File Rename**: Renaming the physical file (e.g., `Intro.qmd` -> `Introduction.qmd`) while keeping the same `title` in the frontmatter is perfectly safe and will not create a duplicate. In a course with order files, rename it in `_order.yml` too if it is listed there.
 
 ### Quarto Pages (`.qmd`)
 *   **Locality**: Place in a module folder.
@@ -398,7 +475,7 @@ Grades are only ever **raised**. A student who already holds a pass but no
 longer qualifies is reported as a conflict and left untouched, and Canvas's own
 "Test Student" and inactive enrolments are skipped.
 
-**In VS Code**, the target's row in the Module Structure panel has a
+**In VS Code**, the target's row in the Course Board has a
 **Rollup** button, just left of its type. It shows **✓** when the offline
 check passes and **⚠** when it does not; hover it for the rule and the
 options. Clicking it asks Canvas who qualifies and shows the counts under the
@@ -513,7 +590,7 @@ JSON is the **concise format** for quizzes. It supports basic question types, La
 `multiple_choice_question`, `true_false_question`, `short_answer_question`, `fill_in_multiple_blanks_question`, `multiple_answers_question`, `multiple_dropdowns_question`, `matching_question`, `numerical_question`, `calculated_question`, `essay_question`, `file_upload_question`, `text_only_question`
 
 > [!IMPORTANT] 
-> **Quiz description files**: You can link a rich `.qmd` description using `"description_file": "Quiz_Description.qmd"`. Do **not** use the `NN_` prefix for description files, or they will be synced as separate pages.
+> **Quiz description files**: You can link a rich `.qmd` description using `"description_file": "Quiz_Description.qmd"`. It must not be a module item itself, or it will also sync as a separate page: don't give it a `canvas.type` or list it in `_order.yml`, and in an `NN_` course don't give it a prefix.
 
 ### Quizzes — QMD Format (`.qmd`)
 
@@ -802,12 +879,11 @@ canvas:
 ```
 
 ### Solo Files (PDFs, ZIPs, etc.)
-*   **Format**: `NN_Name.ext` (where `.ext` is NOT `.qmd` or `.json`).
-*   **Locality**: Place directly inside a module folder.
+*   **Inclusion**: Place directly inside a module folder and list it in that folder's `_order.yml`. In an `NN_` course, name it `NN_Name.ext` instead.
 *   **Behavior**: 
     1.  The file is uploaded to the system-managed `synced-files` folder in Canvas.
     2.  It is automatically added to the Module as a **File** item.
-    3.  **Clean Titles**: The `NN_` prefix is stripped from the module item title (e.g., `05_Syllabus.pdf` becomes "Syllabus.pdf").
+    3.  **Titles**: The module item is titled with the filename, an `NN_` prefix stripped (e.g., `05_Syllabus.pdf` becomes "Syllabus.pdf").
     4.  Because it is a "Module Item", it is protected from the automatic **Orphan Cleanup**.
 
 ---
@@ -884,9 +960,31 @@ Pick whichever fits how you work. They run the same tool and give the same resul
 
 | | How | What the course folder needs |
 |:--|:--|:--|
-| **VS Code** (recommended) | The CanvasQuartoSync extension: sidebar, Module Structure, Grade Rollup | Nothing |
+| **VS Code** (recommended) | The CanvasQuartoSync extension: sidebar, Course Board, Grade Rollup | Nothing |
 | **Double-click** (Windows) | `.bat` files in the course folder | `check_content.bat`, `update_kit.bat`, optionally `run_sync_here.bat` |
 | **Terminal** (any OS) | The `cqs` command | Nothing |
+
+### The Course Board (VS Code)
+
+The Course Board is the extension's main view, and opens by itself when a course folder
+does. It shows every module and item in the order a sync will produce, next to what
+Canvas holds:
+
+*   **Status per item**: in sync, local or Canvas newer, never synced, Canvas only.
+*   **Drag to reorder** modules (by the handle) and items (by the row), or drag an item
+    into another module. It rewrites `_modules.yml`, `_order.yml` and, for a move, the
+    file's folder and the links to it. Nothing reaches Canvas until you sync.
+*   **Sync** one item, a whole module (*Sync all*), or a module Canvas does not have yet
+    (*Create in Canvas*).
+*   **Import**, **publish**, **delete**, **+ New** items and modules, **Check Canvas**
+    for edits made there, and **Config** to open `config.toml`.
+*   Files in a module folder that the sync skips are listed under the module with
+    **+ Add**, and folders with content that are not in the course with **Add to course**.
+
+It opens even when Canvas cannot be reached: with no `config.toml`, no `course_id`, no
+token or no network it shows the local course and a banner saying what is wrong, with
+**Open config.toml** and **Retry**. An `NN_` course gets a banner offering
+**Preview conversion**.
 
 ### Double-click (Windows)
 
@@ -991,7 +1089,7 @@ If you manually delete an image or file on Canvas that was previously synced, th
 
 You will usually write course content in a **separate folder** from this tool, with an
 AI coding assistant (Claude Code, Copilot, Cursor) open on it. A fresh assistant session
-knows nothing about CanvasQuartoSync: not the `NN_` naming rules, not the `canvas.*`
+knows nothing about CanvasQuartoSync: not how modules and their order are declared, not the `canvas.*`
 settings, not the quiz syntax.
 
 The **authoring kit** fixes that. It installs a documentation bundle into your content
@@ -1062,7 +1160,9 @@ It runs offline — no Canvas connection, no credentials, no Quarto — and repo
 each file **will become in Canvas**, plus the mistakes that otherwise only surface after
 a sync:
 
-*   files missing the `NN_` prefix, which the sync silently ignores;
+*   files with `canvas:` metadata that the sync would skip, and why (a folder not in
+    `_modules.yml`, a leading `_`, or a missing `NN_` prefix in an older course);
+*   problems in `_modules.yml` and `_order.yml`: entries whose file is gone, conflict markers;
 *   misspelled settings (`publish:` instead of `published:`);
 *   invalid dates, out-of-range indents, unknown grading types;
 *   broken image and link paths;

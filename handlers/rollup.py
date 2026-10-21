@@ -41,7 +41,8 @@ import os
 import frontmatter as fm
 
 from handlers.log import logger
-from handlers.content_utils import load_sync_map, is_valid_name
+from handlers.content_utils import load_sync_map
+from handlers.course_layout import load_layout
 
 
 # Extensions that can carry a rollup declaration. A rollup target is always a
@@ -64,23 +65,19 @@ def _rel(content_root: str, path: str) -> str:
 def _iter_content_files(content_root: str):
     """Yield (abs_path, rel_path) for every file the sync would look at.
 
-    Mirrors the sync's own rule: only ``NN_`` directories are walked, because
-    a directory without the prefix is never module content. Files at the
+    Mirrors the sync's own rule by asking the course layout: modules and
+    their items from the order files, or NN_ folders and files. Files at the
     content root are included, since those sync too (outside any module).
     """
-    for fname in sorted(os.listdir(content_root)):
-        fpath = os.path.join(content_root, fname)
-        if os.path.isfile(fpath) and fname.endswith(_DECLARABLE):
-            yield fpath, fname
+    layout = load_layout(content_root)
+    for fname in layout.root_items:
+        if fname.endswith(_DECLARABLE):
+            yield os.path.join(content_root, fname), fname
 
-    for entry in sorted(os.listdir(content_root)):
-        mod_dir = os.path.join(content_root, entry)
-        if not os.path.isdir(mod_dir) or not is_valid_name(entry):
-            continue
-        for fname in sorted(os.listdir(mod_dir)):
-            fpath = os.path.join(mod_dir, fname)
-            if os.path.isfile(fpath) and fname.endswith(_DECLARABLE):
-                yield fpath, os.path.join(entry, fname).replace('\\', '/')
+    for mod in layout.modules:
+        for fname in mod.items:
+            if fname.endswith(_DECLARABLE):
+                yield os.path.join(content_root, mod.dir, fname), f"{mod.dir}/{fname}"
 
 
 def _read_declaration(fpath: str):

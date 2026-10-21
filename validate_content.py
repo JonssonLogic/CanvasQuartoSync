@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 import frontmatter
 
 from handlers.content_utils import is_valid_name
+from handlers.course_layout import load_layout, MODULES_FILE, ORDER_FILE
 from handlers.ip_filter import parse_ip_filter
 from handlers.single_sync import build_handlers
 
@@ -426,10 +427,35 @@ def _check_keys(report, meta, schema, prefix="", tz=None):
 # Naming
 # ---------------------------------------------------------------------------
 
+_LAYOUTS = {}
+
+
+def _layout(content_root):
+    """The course layout, read once per root for a whole-course check."""
+    key = os.path.normcase(os.path.abspath(content_root or '.'))
+    if key not in _LAYOUTS:
+        _LAYOUTS[key] = load_layout(content_root or '.')
+    return _LAYOUTS[key]
+
+
+def _included(content_root, path):
+    """Will the sync pick ``path`` up? Asked of the course layout."""
+    if not content_root:
+        return is_valid_name(os.path.basename(path))
+    return _layout(content_root).locate(os.path.abspath(path))[1]
+
+
 def _check_naming(report, file_path, content_root, has_canvas_meta):
     """Flag files that carry canvas metadata but would be skipped by the sync."""
     filename = os.path.basename(file_path)
     if not has_canvas_meta:
+        return
+
+    layout = _layout(content_root) if content_root else None
+    if layout is not None and layout.ordered:
+        why = layout.why_excluded(os.path.abspath(file_path))
+        if why:
+            report.error(f"'{filename}' has canvas metadata but the sync skips it: {why}.")
         return
 
     if not is_valid_name(filename):
@@ -758,9 +784,9 @@ def validate_file(file_path, content_root=None, handlers=None):
                 f"canvas.type '{declared}' is not recognised. Valid types: "
                 f"{', '.join(sorted(CANVAS_SCHEMA))}."
             )
-        elif ext in (".qmd", ".md") and is_valid_name(os.path.basename(file_path)):
-            # Only NN_-prefixed files are walked by the sync; without a canvas
-            # type they fall through to the solo-asset upload path.
+        elif ext in (".qmd", ".md") and _included(content_root, file_path):
+            # Only files in the course layout are walked by the sync; without a
+            # canvas type they fall through to the solo-asset upload path.
             report.warn(
                 "no canvas.type - this file uploads as a downloadable attachment, "
                 "not a Canvas page. Add 'canvas:' with a 'type:' if that wasn't intended."
@@ -819,6 +845,12 @@ def validate_file(file_path, content_root=None, handlers=None):
             desc_path = os.path.join(base_path, desc)
             if not os.path.exists(desc_path):
                 report.error(f"description_file not found: {desc}")
+            elif content_root and _layout(content_root).ordered:
+                if _included(content_root, desc_path):
+                    report.warn(
+                        f"description_file '{desc}' is listed in {ORDER_FILE}, so it will "
+                        f"also sync as its own page. Remove it from the list."
+                    )
             elif is_valid_name(os.path.basename(desc)):
                 report.warn(
                     f"description_file '{desc}' has an NN_ prefix, so it will also "
@@ -835,6 +867,12 @@ def validate_file(file_path, content_root=None, handlers=None):
         _check_crossrefs(report, body, raw_text)
 
     return report
+
+
+def _layout_ordered(base_path):
+    """The course root above ``base_path`` if that course uses order files."""
+    root = _guess_content_root(os.path.join(base_path, 'x'))
+    return root if os.path.isfile(os.path.join(root, MODULES_FILE)) else None
 
 
 def _check_rollup(report, rollup, base_path, file_path):
@@ -867,6 +905,13 @@ def _check_rollup(report, rollup, base_path, file_path):
         elif os.path.normcase(target) == os.path.normcase(os.path.abspath(file_path)):
             report.error("canvas.rollup.requires lists the rollup's own file, "
                          "which can never be satisfied.")
+        elif _layout_ordered(base_path):
+            why = _layout(_layout_ordered(base_path)).why_excluded(target)
+            if why:
+                report.warn(
+                    f"canvas.rollup.requires: '{item}' is not synced ({why}), so it "
+                    f"never exists in Canvas and can hold no grade."
+                )
         elif not is_valid_name(os.path.basename(item)):
             report.warn(
                 f"canvas.rollup.requires: '{item}' has no NN_ prefix, so the sync "
@@ -910,6 +955,13 @@ def validate_path(target, content_root=None):
 
     # Course-level, so only on a whole-course check: one file's check should
     # not repeat it every time.
+    layout = _layout(root)
+    if layout.problems:
+        report = FileReport(path=os.path.join(root, MODULES_FILE), kind="course layout")
+        for p in layout.problems:
+            (report.error if p.level == 'error' else report.warn)(f"{p.path}: {p.message}")
+        reports.append(report)
+
     from handlers.config import course_id_txt_notice
     notice = course_id_txt_notice(root)
     if notice:
@@ -982,7 +1034,30 @@ def main():
     base = args.target if os.path.isdir(args.target) else os.path.dirname(os.path.abspath(args.target))
     text, errors = render(reports, base=base, show_clean=not args.errors_only)
     print(text)
+    note = layout_note(args.content_root or (args.target if os.path.isdir(args.target) else None))
+    if note:
+        print()
+        print(note)
     return 1 if errors else 0
+
+
+def layout_note(root):
+    """Advice for a course still ordered by NN_ prefixes, or None.
+
+    A note, not a warning: nothing is wrong with the course, and it must not
+    count against a clean check.
+    """
+    if not root:
+        return None
+    try:
+        layout = _layout(root)
+    except Exception:
+        return None
+    if layout.ordered or not layout.modules:
+        return None
+    return ("Note: this course orders modules with NN_ prefixes. 'cqs migrate --dry-run' shows "
+            f"how it would move to {MODULES_FILE} and {ORDER_FILE} files, so the order can be "
+            "changed by dragging in the Course Board without renaming anything. Canvas is not affected.")
 
 
 if __name__ == "__main__":

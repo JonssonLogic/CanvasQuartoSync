@@ -17,10 +17,13 @@ The user manages their entire course as a **local code repository** (Git). Runni
 ```
 CanvasQuartoSync/
 ├── sync_to_canvas.py          # Entry point — CLI arg parsing, directory walk, handler dispatch
+├── course_board.py            # Layout edits: NN_ -> order files (cqs migrate), Course Board ops
 ├── handlers/                  # All content-type handlers + shared utilities
 │   ├── __init__.py
 │   ├── base_handler.py        # Abstract base (can_handle, sync, add_to_module)
 │   ├── single_sync.py         # Reusable single-asset sync (GUI-ready entry point)
+│   ├── course_layout.py       # Modules and items in order: _modules.yml/_order.yml or NN_
+│   ├── module_structure.py    # Local course reconciled with Canvas, for the Course Board
 │   ├── study_guide_handler.py  # .qmd → Canvas Page + PDF (dual output)
 │   ├── page_handler.py        # .qmd → Canvas Page
 │   ├── assignment_handler.py  # .qmd → Canvas Assignment
@@ -100,7 +103,7 @@ sync_to_canvas.py
   ├── Parse CLI args (content_root, --course-id, --sync-calendar, --force, --check-drift, --only, --accept-drift, --break-lock, --verbose, --quiet, --log-file)
   ├── Initialize logging (handlers/log.py → setup_logging())
   ├── Load Canvas API via canvasapi library
-  ├── Walk content_root for NN_* folders (→ Modules) and NN_* files
+  ├── Ask handlers/course_layout.py for the modules and items, in order
   │
   └── For each file:
         ├── Handler chain: PageHandler → AssignmentHandler → QuizHandler
@@ -157,9 +160,24 @@ configured. `tzdata` is a hard requirement on Windows, which ships no tz databas
 
 ## Naming Conventions
 
-- **Modules**: Directories named `NN_Name` (e.g., `01_Introduction`). The `NN_` prefix sets order and is stripped for Canvas display.
-- **Content files**: `NN_Name.ext` inside module dirs. Prefix determines module order; stripped from Canvas titles.
-- **Non-prefixed files/dirs**: Ignored by the sync tool (e.g., `graphics/`, `handlers/`).
+Module order lives in one place, `handlers/course_layout.py`. Nothing else lists
+directories to decide what is a module: the sync, single-file sync, the validator,
+rollups and the module structure all call `load_layout()`.
+
+- **Order files** (a course with `_modules.yml`): listed folders are modules, in order,
+  named after the folder or `- Folder: Name`. In a module, files listed in `_order.yml`
+  come first; files a handler claims follow, sorted; anything else is included only when
+  listed. `_`-prefixed names are excluded unless listed. Reading never raises: duplicates
+  keep their first place and missing entries become `Layout.problems`, because the files
+  are merged with `merge=union`.
+- **`NN_` prefixes** (no `_modules.yml`): `NN_` folders are modules and `NN_` files are
+  items, sorted. Unprefixed files and folders are ignored.
+- `course_board.py` changes the layout: `migrate` converts NN_ to order files
+  (renames, link rewriting, sync map and snapshot keys), and `op` applies one Course
+  Board edit. Both are local only.
+- The full sync places modules with `arrange_modules()`, which reuses the slots the
+  course's modules already occupy so Canvas-only modules keep their place, and
+  `remove_stale_placements()` takes an item out of its old module after a move.
 
 ---
 
@@ -310,7 +328,7 @@ A single content file can be synced without walking the whole course, via the
 
 - **Reusable entry point**: `handlers/single_sync.py → sync_single_file(course, content_root, target_abs_path, canvas=None, handlers=None)`. It returns a `SingleSyncResult` dataclass (`success`, `message`, `module_item`, `position`) — no log parsing required.
 - **Same handlers as full sync**: both paths build the handler chain via `build_handlers()` and find/create modules via `find_or_create_module()` (both in `single_sync.py`), so behavior is identical to a full sync. The handler still writes the sync map (`save_mapped_id`), so a later full sync recognizes the item.
-- **Correct placement**: after syncing, `compute_insert_position()` determines the item's slot by counting the syncable sibling files (sorted filename order) that sort before it **and** are already present as module items. It matches files to module items by title via `content_utils.expected_canvas_title()` (a render-free title computation that mirrors the per-handler title rule).
+- **Correct placement**: after syncing, `compute_insert_position()` determines the item's slot by counting the files before it in the module's layout order that are already present as module items. It matches files to module items by title via `content_utils.expected_canvas_title()` (a render-free title computation that mirrors the per-handler title rule).
 - The CLI `--only` branch in `sync_to_canvas.py` simply resolves the path and delegates to `sync_single_file()`.
 
 When adding a new content type, no extra work is needed for single-asset sync as long as the handler follows the standard pattern (returns its module item from `sync()` and updates the sync map). If the handler derives its title differently, update `expected_canvas_title()` to match.

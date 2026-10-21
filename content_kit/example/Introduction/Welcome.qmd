@@ -1,0 +1,25 @@
+---
+title: "Welcome"
+format:
+  html:
+    page-layout: article
+canvas:
+  type: page
+  published: false
+  indent: 0
+---
+
+Welcome to the course.
+
+This file demonstrates the conventions:
+
+- it lives in `Introduction/`, and `_modules.yml` lists that folder, so it
+  becomes an item in the **Introduction** module;
+- `canvas.type: page` makes it a Canvas Page, and declaring a type is also what
+  includes it in the module. Its position comes from `Introduction/_order.yml`,
+  or it goes last if that file does not list it. Drag it in the Course Board to
+  move it;
+- it starts unpublished, so it won't be visible to students until you set
+  `published: true`.
+
+Delete this file once you have real content.

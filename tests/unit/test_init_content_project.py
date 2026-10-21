@@ -71,9 +71,9 @@ class TestScaffold:
 
     def test_example_only_with_flag(self, tmp_path):
         install(str(tmp_path))
-        assert "01_Introduction/01_Welcome.qmd" not in _files(str(tmp_path))
+        assert "Introduction/Welcome.qmd" not in _files(str(tmp_path))
         install(str(tmp_path), with_example=True)
-        assert "01_Introduction/01_Welcome.qmd" in _files(str(tmp_path))
+        assert "Introduction/Welcome.qmd" in _files(str(tmp_path))
 
     def test_scaffolded_example_validates_clean(self, tmp_path):
         """A fresh folder must pass its own checker out of the box."""
@@ -193,3 +193,19 @@ class TestKitStatus:
 
         message = kit_status(str(tmp_path))
         assert message and "0.0.1" in message and "update_kit.bat" in message and "cqs kit update" in message
+
+
+class TestLayout:
+    def test_new_course_starts_with_order_files(self, tmp_path):
+        install(str(tmp_path), with_example=True)
+        from handlers import course_layout as cl
+        layout = cl.load_layout(str(tmp_path))
+        assert layout.mode == cl.ORDER_FILES
+        assert [m.dir for m in layout.modules] == ["Introduction"]
+        assert layout.module("Introduction").items == ["Welcome.qmd"]
+
+    def test_existing_nn_course_is_not_switched(self, tmp_path):
+        (tmp_path / "01_Labs").mkdir()
+        (tmp_path / "01_Labs" / "01_A.qmd").write_text("x", encoding="utf-8")
+        install(str(tmp_path))
+        assert not (tmp_path / "_modules.yml").exists()

@@ -7,6 +7,15 @@ to a file on disk, and what exists on only one side.
 ``sync_to_canvas.py --module-structure`` prints the result as JSON on stdout.
 Nothing here writes to Canvas.
 
+The answer is in **local order**: modules and items come in the order the
+course layout gives them (``handlers/course_layout.py``), because that is the
+order a sync will produce and the order the Course Board lets you change.
+Whatever exists only in Canvas is slotted in after the item it follows there.
+
+Without a Canvas connection (``course=None``) the local half is still
+returned, with the reason in ``problems``, so the board can show the course
+and say what to fix instead of showing nothing.
+
 Matching is deliberately layered, because none of the three signals is
 reliable on its own:
 
@@ -24,7 +33,8 @@ from datetime import datetime, timezone
 
 import frontmatter as fm
 
-from handlers.content_utils import load_sync_map, save_sync_map, is_valid_name
+from handlers.content_utils import load_sync_map, save_sync_map, parse_module_name
+from handlers.course_layout import load_layout
 from handlers.drift_detector import check_all_drift
 
 
@@ -59,8 +69,60 @@ def _backfill_last_synced(sync_map: dict, content_root: str):
         save_sync_map(content_root, sync_map)
 
 
+def _iso_mtime(path):
+    try:
+        mt = os.path.getmtime(path)
+        return datetime.fromtimestamp(mt, tz=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    except Exception:
+        return ''
+
+
+def _title_of(abs_path):
+    """The frontmatter title of a .qmd/.md file, or ''."""
+    if not abs_path.endswith(('.qmd', '.md')):
+        return ''
+    try:
+        return fm.load(abs_path).metadata.get('title', '') or ''
+    except Exception:
+        return ''
+
+
+def _display_title(rel_path, title):
+    stem = os.path.splitext(rel_path.split('/')[-1])[0]
+    return title or parse_module_name(stem).replace('_', ' ')
+
+
+def _interleave(local, canvas, match_of, key=id):
+    """Local entries in local order, Canvas-only ones after what they follow.
+
+    ``canvas`` is in Canvas order. ``match_of(c)`` is the local entry a Canvas
+    entry corresponds to, or None. A Canvas-only entry is anchored to the
+    nearest matched entry before it in Canvas; with none, it goes first.
+    ``key`` identifies a local entry: ``id`` for records, the value itself for
+    paths. Returns ``[(local or None, canvas or None)]``.
+    """
+    after = {}      # key(local entry) -> [canvas-only entries]
+    head = []
+    anchor = None
+    pair = {}
+    for c in canvas:
+        m = match_of(c)
+        if m is not None:
+            pair[key(m)] = c
+            anchor = m
+        elif anchor is None:
+            head.append(c)
+        else:
+            after.setdefault(key(anchor), []).append(c)
+    out = [(None, c) for c in head]
+    for l in local:
+        out.append((l, pair.get(key(l))))
+        out += [(None, c) for c in after.get(key(l), [])]
+    return out
+
+
 def fetch_module_structure(course, content_root: str,
-                          with_drift: bool = False) -> dict:
+                          with_drift: bool = False, problems=None) -> dict:
     """Fetch Canvas module structure and match against local files.
 
     Returns a dict with course info and modules, each with items annotated
@@ -77,11 +139,17 @@ def fetch_module_structure(course, content_root: str,
     fetched for pages alone, because Canvas bumps an assignment's timestamp
     for submissions, grading and due date edits, so it says nothing about
     the content. A content hash does.
+
+    ``course`` may be None: the result then holds the local layout only, and
+    ``problems`` (passed in by the caller) says why Canvas is missing.
     """
+    problems = list(problems or [])
+    layout = load_layout(content_root)
     sync_map = load_sync_map(content_root)
 
-    # Backfill last_synced_at for legacy entries that were synced before this field existed
-    _backfill_last_synced(sync_map, content_root)
+    if course is not None:
+        # Backfill last_synced_at for legacy entries that were synced before this field existed
+        _backfill_last_synced(sync_map, content_root)
 
     # Build reverse map: canvas_id -> local rel_path
     # Build last_synced lookup: rel_path -> last_synced_at ISO string
@@ -119,54 +187,70 @@ def fetch_module_structure(course, content_root: str,
             if last_synced:
                 path_to_last_synced[rel_path] = last_synced
 
-    # Walk local module dirs to find files
-    # local_files_by_module: { dir_name: [rel_path, ...] }
-    # local_name_index: { normalized_module_name: { normalized_file_name: rel_path } }
-    # local_title_index: { normalized_module_name: { normalized_frontmatter_title: rel_path } }
-    # local_path_to_title: { rel_path: frontmatter_title }
-    local_files_by_module = {}
-    local_name_index = {}
-    local_title_index = {}
-    local_path_to_title = {}
-    for entry in sorted(os.listdir(content_root)):
-        mod_dir = os.path.join(content_root, entry)
-        if not os.path.isdir(mod_dir) or not is_valid_name(entry):
-            continue
-        files = []
-        name_map = {}
-        title_map = {}
-        for fname in sorted(os.listdir(mod_dir)):
-            fpath = os.path.join(mod_dir, fname)
-            # Quarto render artefacts, written next to the file being rendered
-            # and deleted when it finishes. A panel refresh during a sync would
-            # otherwise match a Canvas item to 'tmp-pdf-01_Page.qmd' and report
-            # the real file as local-only. Every handler and the validator skip
-            # these already; this walk was the one place that did not.
-            if fname.startswith(('_temp_', 'tmp-')):
-                continue
-            if os.path.isfile(fpath) and (fname.endswith('.qmd') or fname.endswith('.md') or fname.endswith('.json') or fname.endswith('.pdf')):
-                rel = os.path.join(entry, fname).replace('\\', '/')
-                files.append(rel)
-                name_map[_normalize_name(fname)] = rel
-                # Read frontmatter title for QMD/MD files
-                if fname.endswith('.qmd') or fname.endswith('.md'):
-                    try:
-                        post = fm.load(fpath)
-                        ft = post.metadata.get('title', '')
-                        if ft:
-                            title_map[_normalize_name(ft)] = rel
-                            local_path_to_title[rel] = ft
-                    except Exception:
-                        pass
-        local_files_by_module[entry] = files
-        norm_mod = _normalize_name(entry)
-        local_name_index[norm_mod] = name_map
-        local_title_index[norm_mod] = title_map
+    # One record per local module, in layout order. 'files' are every file the
+    # module could match a Canvas item to: what the sync includes, plus files
+    # in the folder it does not (a PDF not yet listed), so an item uploaded
+    # before still finds its source.
+    local_mods = []
+    for mod in layout.modules:
+        files = mod.items + mod.unlisted
+        titles = {}
+        for f in files:
+            t = _title_of(os.path.join(content_root, mod.dir, f))
+            if t:
+                titles[f"{mod.dir}/{f}"] = t
+        local_mods.append({'mod': mod, 'titles': titles,
+                           'paths': [f"{mod.dir}/{f}" for f in files]})
 
-    # Map normalized module name -> local dir name (for empty modules)
-    norm_to_local_dir = {}
-    for entry in local_files_by_module:
-        norm_to_local_dir[_normalize_name(entry)] = entry
+    base = {
+        'course_name': None, 'course_code': '', 'course_id': None,
+        'total_students': None, 'term': '', 'workflow_state': '',
+        'default_view': '', 'time_zone': '', 'storage_quota_mb': None, 'created_at': '',
+        'connected': course is not None,
+        'problems': problems,
+        'layout': {
+            'mode': layout.mode,
+            'problems': [p.__dict__ for p in layout.problems],
+            'unlisted_dirs': layout.unlisted_dirs,
+            'root_items': layout.root_items,
+        },
+    }
+
+    def _local_item(lm, rel, canvas_known):
+        """A row for a file with no Canvas item (yet)."""
+        abs_p = os.path.join(content_root, rel.replace('/', os.sep))
+        synced = rel in sync_map
+        return {
+            'title': _display_title(rel, lm['titles'].get(rel)),
+            'type': 'LocalOnly',
+            'published': None,
+            'indent': 0,
+            'local_path': rel,
+            'content_id': None,
+            'page_url': None,
+            'module_item_id': None,
+            'html_url': None,
+            'local_mtime': _iso_mtime(abs_p),
+            'last_synced_at': path_to_last_synced.get(rel, ''),
+            # Offline we cannot say it is missing from Canvas, only whether the
+            # map remembers syncing it.
+            'local_only': canvas_known or not synced,
+            'offline': not canvas_known,
+            'included': True,
+        }
+
+    if course is None:
+        modules = []
+        for lm in local_mods:
+            mod = lm['mod']
+            modules.append({
+                'name': mod.name, 'id': None, 'published': None,
+                'local_dir': mod.dir, 'in_layout': True,
+                'items': [_local_item(lm, p, False) for p in mod.item_paths()],
+                'unlisted': mod.unlisted,
+            })
+        base['modules'] = modules
+        return base
 
     # Batch-fetch updated_at for pages only (1 API call).
     #
@@ -223,19 +307,24 @@ def fetch_module_structure(course, content_root: str,
                         hit = id_to_local.get(pid) or id_to_local.get(str(pid))
         return hit
 
-    modules = []
+    canvas_mods = []
     for module in course.get_modules():
-        mod_name = module.name
-        mod_items = []
-        items = list(module.get_module_items())
+        canvas_mods.append((module, list(module.get_module_items())))
 
-        # Which local directory is this module? By name first, because that is
-        # what the sync itself uses. Renaming a module in Canvas breaks that,
-        # so fall back to asking the items: whichever directory holds the files
-        # they already map to is this module's directory, whatever it is called.
-        norm_mod = _normalize_name(mod_name)
-        local_dir = norm_to_local_dir.get(norm_mod)
-        if local_dir is None:
+    # Which local module is each Canvas module? By name first, because that is
+    # what the sync itself uses. Renaming a module in Canvas breaks that, so
+    # fall back to asking the items: whichever directory holds the files they
+    # already map to is this module's directory, whatever it is called.
+    by_norm = {}
+    for lm in local_mods:
+        by_norm.setdefault(_normalize_name(lm['mod'].name), lm)
+        by_norm.setdefault(_normalize_name(lm['mod'].dir), lm)
+    by_dir = {lm['mod'].dir: lm for lm in local_mods}
+    mod_match = {}
+    taken = set()
+    for module, items in canvas_mods:
+        lm = by_norm.get(_normalize_name(module.name))
+        if lm is None:
             votes = {}
             for it in items:
                 hit = _id_match(it)
@@ -243,178 +332,125 @@ def fetch_module_structure(course, content_root: str,
                     d = hit.split('/')[0]
                     votes[d] = votes.get(d, 0) + 1
             if votes:
-                local_dir = max(votes, key=votes.get)
+                lm = by_dir.get(max(votes, key=votes.get))
+        if lm is not None and id(lm) not in taken:
+            taken.add(id(lm))
+            mod_match[module.id] = lm
 
-        norm_dir = _normalize_name(local_dir) if local_dir else norm_mod
-        local_mod_files = local_name_index.get(norm_dir, {})
-        local_mod_titles = local_title_index.get(norm_dir, {})
+    def _match_item(item, lm, claimed):
+        """The local path of a Canvas item inside module ``lm``, or None."""
+        local_path = _id_match(item)
+        if local_path:
+            return local_path
+        if lm is None:
+            return None
+        item_type = item.type
+        item_title = getattr(item, 'title', 'Untitled')
+        free = [p for p in lm['paths'] if p not in claimed]
+        names = {_normalize_name(p.split('/')[-1]): p for p in free}
+        titles = {_normalize_name(lm['titles'][p]): p for p in free if p in lm['titles']}
 
-        for item in items:
-            item_type = item.type
-            item_title = getattr(item, 'title', 'Untitled')
-            item_id = getattr(item, 'content_id', None) or getattr(item, 'page_url', None) or getattr(item, 'id', None)
-            published = getattr(item, 'published', False)
-            indent = getattr(item, 'indent', 0)
-            external_url = getattr(item, 'external_url', None)
+        norm_title = _normalize_name(item_title)
+        # For File items with "(PDF)" — strip it and match against source QMD
+        norm_title_alt = None
+        if item_type == 'File' and '(PDF)' in item_title:
+            norm_title_alt = _normalize_name(item_title.replace('(PDF)', ''))
 
+        # Strategy 2: match by normalized filename
+        for t in (norm_title, norm_title_alt):
+            if t and t in names:
+                return names[t]
+        # Strategy 3: match by frontmatter title
+        if norm_title in titles:
+            return titles[norm_title]
+        # Strategy 4: substring match on filename or frontmatter title
+        check = [t for t in (norm_title, norm_title_alt) if t]
+        for table in (names, titles):
+            for local_norm, local_rel in table.items():
+                if local_norm and any(local_norm in t or t in local_norm for t in check):
+                    return local_rel
+        return None
+
+    def _canvas_row(module, item, local_path):
+        item_type = item.type
+        updated_at = ''
+        if item_type == 'Page':
             # Look up updated_at, pages only. A hint that something moved,
             # not evidence that the content did. See the note above.
-            updated_at = ''
-            if item_type == 'Page':
-                page_slug = getattr(item, 'page_url', '')
-                updated_at = page_updated.get(page_slug, '')
+            updated_at = page_updated.get(getattr(item, 'page_url', ''), '')
+        row = {
+            'title': getattr(item, 'title', 'Untitled'),
+            'type': item_type,
+            'published': getattr(item, 'published', False),
+            'indent': getattr(item, 'indent', 0),
+            'local_path': local_path,
+            'content_id': getattr(item, 'content_id', None),
+            'page_url': getattr(item, 'page_url', None),
+            'module_item_id': getattr(item, 'id', None),
+            'html_url': getattr(item, 'html_url', None) or '',
+            'updated_at': updated_at,
+            'local_mtime': _iso_mtime(os.path.join(content_root, local_path.replace('/', os.sep))) if local_path else '',
+            'last_synced_at': path_to_last_synced.get(local_path, '') if local_path else '',
+            # True drifted, False checked and clean, None not checked.
+            'canvas_drift': (local_path in drifted_paths) if (with_drift and local_path) else None,
+        }
+        external_url = getattr(item, 'external_url', None)
+        if external_url:
+            row['external_url'] = external_url
+        return row
 
-            # Strategy 1: match via sync map (canvas ID)
-            local_path = _id_match(item)
-            if not local_path and item_type == 'Page':
-                page_url = getattr(item, 'page_url', None)
-                if page_url:
-                    local_path = id_to_local.get(page_url)
+    def _module_rows(module, items, lm):
+        mod = lm['mod'] if lm else None
+        included = set(mod.item_paths()) if mod else set()
+        claimed = set()
+        matched = {}
+        for it in items:
+            p = _match_item(it, lm, claimed)
+            if p and p not in claimed:
+                claimed.add(p)
+                matched[id(it)] = p
+        if mod is None:
+            return [_canvas_row(module, it, matched.get(id(it))) for it in items]
 
-            # Strategy 2: match by normalized filename within the same module
-            if not local_path and local_mod_files:
-                norm_title = _normalize_name(item_title)
-                # For File items with "(PDF)" — strip it and match against source QMD
-                norm_title_alt = None
-                if item_type == 'File' and '(PDF)' in item_title:
-                    norm_title_alt = _normalize_name(item_title.replace('(PDF)', ''))
-                # Exact match on filename
-                if norm_title in local_mod_files:
-                    local_path = local_mod_files[norm_title]
-                elif norm_title_alt and norm_title_alt in local_mod_files:
-                    local_path = local_mod_files[norm_title_alt]
+        local_paths = mod.item_paths()
+        # Canvas items matched to a file the layout does not include (a PDF
+        # nobody listed) keep their Canvas place, flagged.
+        rows = []
+        for l, c in _interleave(local_paths, items, lambda it: matched.get(id(it)) if matched.get(id(it)) in included else None,
+                                 key=lambda p: p):
+            if c is None:
+                rows.append(_local_item(lm, l, True))
+            else:
+                row = _canvas_row(module, c, l or matched.get(id(c)))
+                if row['local_path'] and row['local_path'] not in included:
+                    row['included'] = False
+                rows.append(row)
+        return rows
 
-            # Strategy 3: match by frontmatter title
-            if not local_path and local_mod_titles:
-                norm_title = _normalize_name(item_title)
-                if norm_title in local_mod_titles:
-                    local_path = local_mod_titles[norm_title]
-
-            # Strategy 4: substring match on filename or frontmatter title
-            if not local_path and (local_mod_files or local_mod_titles):
-                norm_title = _normalize_name(item_title)
-                norm_title_alt = None
-                if item_type == 'File' and '(PDF)' in item_title:
-                    norm_title_alt = _normalize_name(item_title.replace('(PDF)', ''))
-                check_titles = [t for t in [norm_title, norm_title_alt] if t]
-                # Check filenames
-                for local_norm, local_rel in local_mod_files.items():
-                    if not local_norm:
-                        continue
-                    for t in check_titles:
-                        if local_norm in t or t in local_norm:
-                            local_path = local_rel
-                            break
-                    if local_path:
-                        break
-                # Check frontmatter titles
-                if not local_path:
-                    for local_norm, local_rel in local_mod_titles.items():
-                        if not local_norm:
-                            continue
-                        for t in check_titles:
-                            if local_norm in t or t in local_norm:
-                                local_path = local_rel
-                                break
-                        if local_path:
-                            break
-
-            # Collect canvas IDs for API operations
-            content_id = getattr(item, 'content_id', None)
-            page_url = getattr(item, 'page_url', None)
-            item_canvas_id = getattr(item, 'id', None)
-
-            html_url = getattr(item, 'html_url', None) or ''
-
-            # Get local file mtime if matched
-            local_mtime = ''
-            if local_path:
-                abs_local = os.path.join(content_root, local_path.replace('/', os.sep))
-                try:
-                    mt = os.path.getmtime(abs_local)
-                    local_mtime = datetime.fromtimestamp(mt, tz=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-                except Exception:
-                    pass
-
-            item_data = {
-                'title': item_title,
-                'type': item_type,
-                'published': published,
-                'indent': indent,
-                'local_path': local_path,
-                'content_id': content_id,
-                'page_url': page_url,
-                'module_item_id': item_canvas_id,
-                'html_url': html_url,
-                'updated_at': updated_at,
-                'local_mtime': local_mtime,
-                'last_synced_at': path_to_last_synced.get(local_path, '') if local_path else '',
-                # True drifted, False checked and clean, None not checked.
-                'canvas_drift': (local_path in drifted_paths) if (with_drift and local_path) else None,
-            }
-            if external_url:
-                item_data['external_url'] = external_url
-            mod_items.append(item_data)
-
+    modules = []
+    pairs = _interleave(local_mods, canvas_mods, lambda cm: mod_match.get(cm[0].id))
+    for lm, cm in pairs:
+        if cm is None:
+            mod = lm['mod']
+            modules.append({
+                'name': mod.name, 'id': None, 'published': None,
+                'local_dir': mod.dir, 'in_layout': True,
+                'items': [_local_item(lm, p, True) for p in mod.item_paths()],
+                'unlisted': mod.unlisted,
+            })
+            continue
+        module, items = cm
         modules.append({
-            'name': mod_name,
+            'name': module.name,
             'id': module.id,
             'published': getattr(module, 'published', False),
-            'items': mod_items,
-            'local_dir': local_dir or '',
+            'local_dir': lm['mod'].dir if lm else '',
+            'in_layout': lm is not None,
+            'items': _module_rows(module, items, lm),
+            'unlisted': lm['mod'].unlisted if lm else [],
         })
 
-    # Inject unmatched local files into their matching Canvas modules
-    all_local_paths = set()
-    for files in local_files_by_module.values():
-        all_local_paths.update(files)
-    matched_paths = {item['local_path'] for mod in modules for item in mod['items'] if item['local_path']}
-    unmatched_local = sorted(all_local_paths - matched_paths)
-
-    # Reverse lookup for placing unmatched local files, keyed on the module's
-    # resolved local directory rather than its Canvas name. Keying on the name
-    # meant that renaming a module in Canvas sent every unmatched file in its
-    # directory to the "no Canvas module" list, even though the module is right
-    # there and the rest of its items matched.
-    norm_to_mod_idx = {}
-    for idx, mod in enumerate(modules):
-        norm_to_mod_idx[_normalize_name(mod['name'])] = idx
-    for idx, mod in enumerate(modules):
-        if mod['local_dir']:
-            norm_to_mod_idx[_normalize_name(mod['local_dir'])] = idx
-
-    orphan_files_by_dir = {}
-    for rel_path in unmatched_local:
-        dir_name = rel_path.split('/')[0]
-        norm_dir = _normalize_name(dir_name)
-        mod_idx = norm_to_mod_idx.get(norm_dir)
-
-        if mod_idx is not None:
-            # Get display title: prefer frontmatter title, else strip prefix/ext from filename
-            fname = rel_path.split('/')[-1]
-            display_title = local_path_to_title.get(rel_path) or re.sub(r'^\d+_', '', os.path.splitext(fname)[0]).replace('_', ' ')
-
-            modules[mod_idx]['items'].append({
-                'title': display_title,
-                'type': 'LocalOnly',
-                'published': None,
-                'indent': 0,
-                'local_path': rel_path,
-                'content_id': None,
-                'page_url': None,
-                'module_item_id': None,
-                'html_url': None,
-                'local_only': True,
-            })
-        else:
-            orphan_files_by_dir.setdefault(dir_name, []).append(rel_path)
-
-    local_only_modules = [
-        {'dir_name': d, 'files': files}
-        for d, files in sorted(orphan_files_by_dir.items())
-    ]
-
-    return {
+    base.update({
         'course_name': course.name,
         'course_code': getattr(course, 'course_code', ''),
         'course_id': course.id,
@@ -426,5 +462,5 @@ def fetch_module_structure(course, content_root: str,
         'storage_quota_mb': getattr(course, 'storage_quota_mb', None),
         'created_at': getattr(course, 'created_at', ''),
         'modules': modules,
-        'local_only_modules': local_only_modules,
-    }
+    })
+    return base

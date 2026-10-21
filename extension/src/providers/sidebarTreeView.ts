@@ -103,9 +103,9 @@ export function registerSidebarViews(
       command: 'cqs.diffWithCanvas',
     },
     {
-      label: 'Module Structure',
+      label: 'Course Board',
       icon: 'list-tree',
-      command: 'cqs.showModuleStructure',
+      command: 'cqs.openCourseBoard',
     },
     {
       label: 'Grade Rollup',

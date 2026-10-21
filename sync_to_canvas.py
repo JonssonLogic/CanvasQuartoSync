@@ -12,7 +12,8 @@ from handlers.calendar_handler import CalendarHandler
 from handlers.subheader_handler import SubHeaderHandler
 from handlers.external_link_handler import ExternalLinkHandler
 from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name, verify_sync_map_course, load_sync_map, save_sync_map, set_sync_identity
-from handlers.single_sync import build_handlers, find_or_create_module, sync_single_file
+from handlers.single_sync import build_handlers, find_or_create_module, arrange_modules, remove_stale_placements, sync_single_file
+from handlers.course_layout import load_layout, is_ordered, free_name, append_item, add_module, remove_module
 from handlers.module_structure import fetch_module_structure
 from handlers import __version__
 from handlers.config import get_api_credentials, get_course_id, load_config
@@ -59,15 +60,26 @@ def _import_single_item(course, content_root: str, item_json: str) -> dict:
         content_root=content_root
     )
 
-    # Determine next file index
-    existing = sorted(f for f in os.listdir(mod_path) if is_valid_name(f))
-    if existing:
-        last_num = int(re.match(r'^(\d+)', existing[-1]).group(1))
-        next_idx = last_num + 1
-    else:
-        next_idx = 1
-    prefix = f'{next_idx:02d}'
+    ordered = is_ordered(content_root)
     safe_name = sanitize_filename(title)
+    if ordered:
+        prefix = ''
+    else:
+        # Determine next file index
+        existing = sorted(f for f in os.listdir(mod_path) if is_valid_name(f))
+        if existing:
+            last_num = int(re.match(r'^(\d+)', existing[-1]).group(1))
+            next_idx = last_num + 1
+        else:
+            next_idx = 1
+        prefix = f'{next_idx:02d}_'
+
+    def _place(filename):
+        """The path to write, and in an ordered course, list it last."""
+        if ordered:
+            filename = free_name(mod_path, filename)
+            append_item(content_root, module_dir, filename, item.get('module_name'))
+        return os.path.join(mod_path, filename)
 
     content = ''
     ext = '.qmd'
@@ -98,7 +110,7 @@ def _import_single_item(course, content_root: str, item_json: str) -> dict:
             try:
                 file_obj = course.get_file(content_id)
                 original_name = getattr(file_obj, 'filename', safe_name)
-                file_path = os.path.join(mod_path, f'{prefix}_{original_name}')
+                file_path = _place(f'{prefix}{original_name}')
                 file_obj.download(file_path)
                 rel = os.path.relpath(file_path, content_root).replace('\\', '/')
                 return {'success': True, 'file': rel}
@@ -114,8 +126,7 @@ def _import_single_item(course, content_root: str, item_json: str) -> dict:
     if not content:
         return {'success': False, 'error': 'No content generated'}
 
-    filename = f'{prefix}_{safe_name}{ext}'
-    filepath = os.path.join(mod_path, filename)
+    filepath = _place(f'{prefix}{safe_name}{ext}')
     with open(filepath, 'w', encoding='utf-8') as f:
         f.write(content)
 
@@ -183,10 +194,12 @@ def _create_module(course, content_root: str, payload_json: str) -> dict:
     except Exception as e:
         return {'success': False, 'error': f'Could not list Canvas modules: {e}'}
 
+    ordered = is_ordered(content_root)
+
     # Refuse if a local folder normalizes to the same name
     try:
         for d in os.listdir(content_root):
-            if os.path.isdir(os.path.join(content_root, d)) and is_valid_name(d):
+            if os.path.isdir(os.path.join(content_root, d)) and (ordered or is_valid_name(d)):
                 if _normalize_name(d) == norm_new:
                     return {'success': False, 'error': f'Local folder "{d}" already matches that name'}
     except Exception:
@@ -198,29 +211,33 @@ def _create_module(course, content_root: str, payload_json: str) -> dict:
     except Exception as e:
         return {'success': False, 'error': f'Canvas create failed: {e}'}
 
-    # Determine next local prefix by scanning content_root for NN_* dirs
-    next_idx = 1
-    try:
-        existing = [d for d in os.listdir(content_root)
-                    if os.path.isdir(os.path.join(content_root, d)) and re.match(r'^\d{2,}_', d)]
-        max_idx = 0
-        for d in existing:
-            m = re.match(r'^(\d+)_', d)
-            if m:
-                max_idx = max(max_idx, int(m.group(1)))
-        next_idx = max_idx + 1
-    except Exception:
-        pass
-
     safe = re.sub(r'[^A-Za-z0-9åäöÅÄÖ _-]', '', name).strip()
     safe = re.sub(r'\s+', ' ', safe)
     if not safe:
         safe = 'Module'
-    prefix = f'{next_idx:02d}'
-    dir_name = f'{prefix}_{safe}'
+
+    if ordered:
+        dir_name = safe
+    else:
+        # Determine next local prefix by scanning content_root for NN_* dirs
+        next_idx = 1
+        try:
+            existing = [d for d in os.listdir(content_root)
+                        if os.path.isdir(os.path.join(content_root, d)) and re.match(r'^\d{2,}_', d)]
+            max_idx = 0
+            for d in existing:
+                m = re.match(r'^(\d+)_', d)
+                if m:
+                    max_idx = max(max_idx, int(m.group(1)))
+            next_idx = max_idx + 1
+        except Exception:
+            pass
+        dir_name = f'{next_idx:02d}_{safe}'
     dir_path = os.path.join(content_root, dir_name)
     try:
         os.makedirs(dir_path, exist_ok=True)
+        if ordered:
+            add_module(content_root, dir_name, name)
     except Exception as e:
         return {'success': False, 'error': f'Could not create local dir: {e}', 'module_id': module_obj.id}
 
@@ -280,6 +297,8 @@ def _delete_items(course, content_root: str, payload_json: str) -> dict:
                     if os.path.isdir(abs_d):
                         shutil.rmtree(abs_d)
                     forget_synced_dir(content_root, local_dir)
+                    if is_ordered(content_root):
+                        remove_module(content_root, local_dir)
                 deleted += 1
 
             elif target == 'local_file':
@@ -299,6 +318,73 @@ def _delete_items(course, content_root: str, payload_json: str) -> dict:
             errors.append(str(e))
 
     return {'success': failed == 0, 'deleted': deleted, 'failed': failed, 'errors': errors}
+
+
+def _problem(level, code, message, action=''):
+    return {'level': level, 'code': code, 'message': message, 'action': action}
+
+
+def _print_module_structure(content_root, api_url, api_token, course_id, with_drift):
+    """Structure mode: what Canvas holds and how it lines up with local files.
+
+    Read-only, JSON on stdout. Always exits 0 with a document: when Canvas
+    cannot be reached the document holds the local course and ``problems``
+    says why, each with what to do about it.
+    """
+    problems = []
+    course = None
+    if not course_id and not os.path.isfile(os.path.join(content_root, 'config.toml')):
+        problems.append(_problem('error', 'no_config',
+            'This folder has no config.toml, so the board does not know which Canvas course it belongs to.',
+            'Create config.toml with course_id and canvas_api_url. New Project in the sidebar sets one up.'))
+    elif not course_id:
+        problems.append(_problem('error', 'no_course_id',
+            'No course_id in config.toml.',
+            'Open config.toml and set course_id to the number in the Canvas course URL (…/courses/12345).'))
+    if not problems and (not api_url or not api_token):
+        missing = 'canvas_api_url' if not api_url else 'a Canvas API token'
+        problems.append(_problem('error', 'no_credentials',
+            f'No {missing}, so Canvas cannot be reached.',
+            'Set canvas_api_url in config.toml, and the token in the CANVAS_API_TOKEN environment '
+            'variable (or canvas_token_path in config.toml).'))
+    if not problems:
+        try:
+            canvas = Canvas(api_url, api_token)
+            course = canvas.get_course(course_id, include=['total_students', 'term'])
+        except Exception as e:
+            text = str(e)
+            if 'Invalid access token' in text or '401' in text:
+                problems.append(_problem('error', 'bad_token',
+                    'Canvas refused the API token.',
+                    'Create a new token in Canvas (Account > Settings > New access token) and set CANVAS_API_TOKEN.'))
+            elif 'Not Found' in text or '404' in text:
+                problems.append(_problem('error', 'course_not_found',
+                    f'Canvas has no course {course_id}, or this token cannot see it.',
+                    'Check course_id in config.toml.'))
+            else:
+                problems.append(_problem('error', 'connect_failed',
+                    f'Could not reach Canvas: {text[:200]}',
+                    'Check the network and canvas_api_url in config.toml, then Refresh.'))
+            course = None
+    if course is not None and not verify_sync_map_course(content_root, course_id, getattr(course, 'name', None)):
+        problems.append(_problem('error', 'wrong_course',
+            f'.canvas_sync_map.json belongs to another course than {course_id}.',
+            'Check course_id in config.toml. If the course really changed, delete the sync map.'))
+        course = None
+
+    try:
+        from handlers.course_layout import is_ordered
+        if not is_ordered(content_root) and load_layout(content_root).modules:
+            problems.append(_problem('info', 'nn_prefix',
+                'This course orders modules with NN_ prefixes in file names.',
+                'Convert it to order files to rearrange the course by dragging. Nothing in Canvas changes.'))
+    except Exception:
+        pass
+
+    print(json.dumps(fetch_module_structure(course, content_root, with_drift=with_drift,
+                                            problems=problems),
+                     ensure_ascii=False))
+    return 0
 
 
 def main():
@@ -368,6 +454,12 @@ def main():
     API_URL, API_TOKEN = get_api_credentials(content_root)
     course_id = get_course_id(content_root, args.course_id)
 
+    # The Course Board asks for the structure even when Canvas is out of
+    # reach, and shows the local course with a banner saying what to fix.
+    # So this mode reports a missing setting instead of failing on it.
+    if args.module_structure:
+        return _print_module_structure(content_root, API_URL, API_TOKEN, course_id, args.with_drift)
+
     if not API_URL or not API_TOKEN:
          logger.error("[red]Canvas credentials not found.[/red] Set CANVAS_API_URL / CANVAS_API_TOKEN env vars, or provide canvas_api_url / canvas_token_path in config.toml.")
          return 1
@@ -406,15 +498,6 @@ def main():
     accept = {('all' if p.strip().lower() == 'all' else p.replace('\\', '/'))
               for p in args.accept_drift}
     set_policy(SyncPolicy(workflow=workflow, accept=accept))
-
-    # Structure mode: report what Canvas holds and how it lines up with local
-    # files, then exit. Read-only, and JSON on stdout so a caller can parse it.
-    if args.module_structure:
-        print(json.dumps(
-            fetch_module_structure(course, content_root,
-                                   with_drift=args.with_drift),
-            ensure_ascii=False))
-        return 0
 
     # Import single item mode
     if args.import_item:
@@ -568,116 +651,112 @@ def _sync_content(args, course, canvas, content_root):
 
     logger.info("[bold cyan]Starting content sync...[/bold cyan]")
 
-    # 1. Walk the directory
-    # Sort ensure robust ordering
-    items = sorted(os.listdir(content_root))
+    # 1. Walk the course in layout order: _modules.yml and _order.yml, or NN_
+    # prefixes in a course that has not moved to order files.
+    layout = load_layout(content_root)
+    for p in layout.problems:
+        log = logger.error if p.level == 'error' else logger.warning
+        log("[yellow]%s[/yellow] %s", p.path, p.message)
 
     module_count = 0
     item_count = 0
+    placed = []     # (module id, module item) for every item put in place
 
-    for item in items:
+    # Case B: Root files, synced outside any module.
+    for item in layout.root_items:
         item_path = os.path.join(content_root, item)
-
-        # Case A: Module Directory
-        if os.path.isdir(item_path):
-            if not is_valid_name(item):
+        for handler in handlers:
+            # SubHeaders and ExternalLinks make no sense without a module.
+            if isinstance(handler, (SubHeaderHandler, ExternalLinkHandler)):
                 continue
+            if handler.can_handle(item_path):
+                logger.info("[cyan]Syncing root item:[/cyan] %s", item)
+                try:
+                    handler.sync(item_path, course, module=None, canvas_obj=canvas, content_root=content_root)
+                    item_count += 1
+                except Exception as e:
+                    logger.exception("Failed to sync root item %s", item)
+                break
 
-            # This is a Module directory
-            module_name = parse_module_name(item)
-            logger.info("[cyan]Processing module:[/cyan] [bold]%s[/bold]", module_name)
-            module_count += 1
+    # Case A: Modules.
+    for mod in layout.modules:
+        item_path = os.path.join(content_root, mod.dir)
+        module_name = mod.name
+        logger.info("[cyan]Processing module:[/cyan] [bold]%s[/bold]", module_name)
+        module_count += 1
 
-            # Find or Create Module in Canvas
-            try:
-                module_obj = find_or_create_module(course, module_name)
+        try:
+            module_obj = find_or_create_module(course, module_name)
 
-                # Walk files inside the module
-                module_files = sorted(os.listdir(item_path))
+            # Track synced items for reordering
+            synced_module_items = []
 
-                # Track synced items for reordering
-                synced_module_items = []
+            for filename in mod.items:
+                file_path = os.path.join(item_path, filename)
 
-                for filename in module_files:
-                    file_path = os.path.join(item_path, filename)
-
-                    if os.path.isdir(file_path):
-                        continue
-
-                    if not is_valid_name(filename):
-                        continue
-
-                    # Delegation Logic
-                    handled = False
-                    for handler in handlers:
-                        if handler.can_handle(file_path):
-                            try:
-                                mod_item = handler.sync(file_path, course, module_obj, canvas_obj=canvas, content_root=content_root)
-                                if mod_item:
-                                    synced_module_items.append(mod_item)
-                                item_count += 1
-                            except Exception as e:
-                                logger.exception("Failed to sync %s", filename)
-                            handled = True
-                            break
-
-                    if not handled:
-                        # Case C: Solo Asset (PDF, ZIP, etc) with NN_ prefix in Module
-                        logger.info("  [yellow]Uploading file:[/yellow] %s", filename)
-
-                        # Upload to namespaced folder
-                        file_url, file_id = upload_file(course, file_path, FOLDER_FILES, content_root=content_root)
-
-                        if file_id and module_obj:
-                            # Add to module as File item
-                            mod_item = handlers[0].add_to_module(module_obj, {
-                                'type': 'File',
-                                'content_id': file_id,
-                                'title': parse_module_name(filename),
-                                'published': True
-                            })
+                # Delegation Logic
+                handled = False
+                for handler in handlers:
+                    if handler.can_handle(file_path):
+                        try:
+                            mod_item = handler.sync(file_path, course, module_obj, canvas_obj=canvas, content_root=content_root)
                             if mod_item:
                                 synced_module_items.append(mod_item)
                             item_count += 1
+                        except Exception as e:
+                            logger.exception("Failed to sync %s", filename)
+                        handled = True
+                        break
 
-                # Reorder Module Items
-                if synced_module_items:
-                    logger.debug("  Verifying module item order (%d items)...", len(synced_module_items))
-                    for i, mod_item in enumerate(synced_module_items):
-                        expected_position = i + 1
-                        if mod_item.position != expected_position:
-                            logger.debug("    Moving '%s' to position %d (was %d)", mod_item.title, expected_position, mod_item.position)
-                            try:
-                                mod_item.edit(module_item={'position': expected_position})
-                                mod_item.position = expected_position
-                            except Exception as e:
-                                logger.error("  Failed to reorder item %s: %s", mod_item.title, e)
+                if not handled:
+                    # Case C: Solo Asset (PDF, ZIP, etc) listed in the module
+                    logger.info("  [yellow]Uploading file:[/yellow] %s", filename)
 
-            except Exception as e:
-                 logger.error("Failed to process module %s: %s", module_name, e)
+                    # Upload to namespaced folder
+                    file_url, file_id = upload_file(course, file_path, FOLDER_FILES, content_root=content_root)
 
-        # Case B: Root File (No Module)
-        elif os.path.isfile(item_path):
-             if not is_valid_name(item):
-                 continue
-
-             # Delegation Logic
-             handled = False
-             for handler in handlers:
-                # Skip SubHeaders and ExternalLinks in root (doesn't make sense without a module)
-                if isinstance(handler, (SubHeaderHandler, ExternalLinkHandler)):
-                    continue
-
-                if handler.can_handle(item_path):
-                    logger.info("[cyan]Syncing root item:[/cyan] %s", item)
-                    try:
-                        # Pass module=None
-                        handler.sync(item_path, course, module=None, canvas_obj=canvas, content_root=content_root)
+                    if file_id and module_obj:
+                        # Add to module as File item
+                        mod_item = handlers[0].add_to_module(module_obj, {
+                            'type': 'File',
+                            'content_id': file_id,
+                            'title': parse_module_name(filename),
+                            'published': True
+                        })
+                        if mod_item:
+                            synced_module_items.append(mod_item)
                         item_count += 1
-                    except Exception as e:
-                        logger.exception("Failed to sync root item %s", item)
-                    handled = True
-                    break
+
+            placed += [(module_obj.id, mi) for mi in synced_module_items]
+
+            # Reorder Module Items
+            if synced_module_items:
+                logger.debug("  Verifying module item order (%d items)...", len(synced_module_items))
+                for i, mod_item in enumerate(synced_module_items):
+                    expected_position = i + 1
+                    if mod_item.position != expected_position:
+                        logger.debug("    Moving '%s' to position %d (was %d)", mod_item.title, expected_position, mod_item.position)
+                        try:
+                            mod_item.edit(module_item={'position': expected_position})
+                            mod_item.position = expected_position
+                        except Exception as e:
+                            logger.error("  Failed to reorder item %s: %s", mod_item.title, e)
+
+        except Exception as e:
+             logger.error("Failed to process module %s: %s", module_name, e)
+
+    # 2. Put the modules themselves in order. Without this a module created
+    # by the sync stayed wherever Canvas appended it.
+    if layout.modules:
+        try:
+            arrange_modules(course, [m.name for m in layout.modules])
+        except Exception as e:
+            logger.error("Failed to order modules: %s", e)
+        # A file moved to another module folder leaves its item in the old one.
+        try:
+            remove_stale_placements(course, placed, {m.name for m in layout.modules})
+        except Exception as e:
+            logger.error("Failed to check for moved items: %s", e)
 
     # 3. Cleanup Orphans
     prune_orphaned_assets(course)

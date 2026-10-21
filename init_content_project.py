@@ -221,6 +221,20 @@ def copy_starter(target, log):
         log.append(f"  starter    {', '.join(written)}")
 
 
+def start_layout(target, log):
+    """A new course orders its modules with _modules.yml, not NN_ prefixes.
+
+    Left alone when the folder already has a layout: order files, or NN_
+    module folders, which ``cqs migrate`` converts when the owner chooses to.
+    """
+    from handlers import course_layout as cl
+    if cl.is_ordered(target) or cl.load_layout(target).modules:
+        return
+    cl.write_modules(target, [])
+    cl.ensure_gitattributes(target)
+    log.append(f"  layout     {cl.MODULES_FILE} (module order), .gitattributes")
+
+
 def copy_example(target, log):
     src = os.path.join(KIT_SRC, "example")
     written = []
@@ -235,6 +249,11 @@ def copy_example(target, log):
             written.append(rel.replace("\\", "/"))
     if written:
         log.append(f"  example    {', '.join(written)}")
+    from handlers import course_layout as cl
+    if cl.is_ordered(target):
+        for name in sorted(os.listdir(src)):
+            if os.path.isdir(os.path.join(src, name)):
+                cl.add_module(target, name)
 
 
 def write_stamp(target, python_exe, claude_hash):
@@ -273,6 +292,7 @@ def install(target, python_exe=None, update=False, with_example=False):
 
     if not update:
         copy_starter(target, log)
+        start_layout(target, log)
         if with_example:
             copy_example(target, log)
 

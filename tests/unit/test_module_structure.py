@@ -57,6 +57,11 @@ class FakeCourse:
         return self._pages
 
 
+def _not_in_canvas(out):
+    """Local modules Canvas has no module for."""
+    return [m["local_dir"] for m in out["modules"] if m["id"] is None]
+
+
 def _qmd(tmp_path, rel, title):
     p = tmp_path / rel
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -125,19 +130,27 @@ def test_canvas_item_with_no_local_file_is_reported_unmatched(tmp_path):
     assert out["modules"][0]["items"][0]["local_path"] is None
 
 
-def test_local_module_absent_from_canvas_is_listed_separately(tmp_path):
+def test_local_module_absent_from_canvas_is_a_module_not_in_canvas_yet(tmp_path):
+    """It is a module of the course, in its place, with nothing in Canvas.
+
+    It used to go to a separate "no Canvas module" list with no way to sync
+    it from there, although syncing any of its files creates the module.
+    """
     _qmd(tmp_path, "02_NotYetSynced/01_Draft.qmd", "Draft")
     out = fetch_module_structure(FakeCourse(), str(tmp_path))
 
-    assert [m["dir_name"] for m in out["local_only_modules"]] == ["02_NotYetSynced"]
-    assert out["local_only_modules"][0]["files"] == ["02_NotYetSynced/01_Draft.qmd"]
+    assert _not_in_canvas(out) == ["02_NotYetSynced"]
+    mod = out["modules"][0]
+    assert mod["name"] == "NotYetSynced"
+    assert [i["local_path"] for i in mod["items"]] == ["02_NotYetSynced/01_Draft.qmd"]
+    assert mod["items"][0]["local_only"] is True
 
 
 def test_folders_without_an_NN_prefix_are_ignored(tmp_path):
     """graphics/ and assets/ are not modules."""
     _qmd(tmp_path, "graphics/notes.qmd", "Notes")
     out = fetch_module_structure(FakeCourse(), str(tmp_path))
-    assert out["local_only_modules"] == []
+    assert out["modules"] == []
 
 
 # --- Coexistence with the rest of the sync map ------------------------------
@@ -156,7 +169,7 @@ def test_reserved_course_key_is_not_mistaken_for_a_file(tmp_path):
     out = fetch_module_structure(course, str(tmp_path))
 
     assert out["modules"][0]["items"][0]["local_path"] == "01_Intro/01_Welcome.qmd"
-    assert out["local_only_modules"] == []
+    assert _not_in_canvas(out) == []
 
 
 def test_nothing_is_written_to_canvas(tmp_path):
@@ -207,7 +220,7 @@ def test_render_artefacts_are_not_treated_as_content(tmp_path):
     item = out["modules"][0]["items"][0]
     assert item["local_path"] == "01_Intro/01_Welcome.qmd"
     # And no artefact is left over as a file with no Canvas counterpart.
-    assert out["local_only_modules"] == []
+    assert _not_in_canvas(out) == []
     assert not [i for i in out["modules"][0]["items"] if i.get("local_only")]
 
 
@@ -339,7 +352,7 @@ def test_module_renamed_in_canvas_still_finds_its_directory(tmp_path):
     out = fetch_module_structure(course, str(tmp_path))
 
     assert out["modules"][0]["local_dir"] == "04_Labs"
-    assert out["local_only_modules"] == []
+    assert _not_in_canvas(out) == []
 
 
 def test_renamed_module_still_adopts_its_unsynced_files(tmp_path):
@@ -364,7 +377,7 @@ def test_renamed_module_still_adopts_its_unsynced_files(tmp_path):
     titles = {i["title"]: i for i in out["modules"][0]["items"]}
     assert "Setup guide" in titles
     assert titles["Setup guide"]["local_only"] is True
-    assert out["local_only_modules"] == []
+    assert _not_in_canvas(out) == []
 
 
 def test_stale_map_entry_does_not_mask_the_file_on_disk(tmp_path):
@@ -397,3 +410,80 @@ def test_stale_map_entry_does_not_mask_the_file_on_disk(tmp_path):
     assert synced[0]["local_path"] == "06_Genomgangar/02_Click_alongs.qmd"
     # And the live file is not also reported as local-only.
     assert not [i for i in items if i["type"] == "LocalOnly"]
+
+
+# --- Local order ------------------------------------------------------------
+
+def _ordered(tmp_path, modules, orders=None):
+    (tmp_path / "_modules.yml").write_text("".join(f"- {m}\n" for m in modules), encoding="utf-8")
+    for d, files in (orders or {}).items():
+        (tmp_path / d / "_order.yml").write_text("".join(f"- {f}\n" for f in files), encoding="utf-8")
+
+
+def test_modules_and_items_come_in_local_order(tmp_path):
+    """The board shows the order a sync will produce, not Canvas's."""
+    _qmd(tmp_path, "Labs/One.qmd", "One")
+    _qmd(tmp_path, "Labs/Two.qmd", "Two")
+    _qmd(tmp_path, "Intro/Welcome.qmd", "Welcome")
+    _ordered(tmp_path, ["Intro", "Labs"], {"Labs": ["Two.qmd", "One.qmd"]})
+    course = FakeCourse(modules=[
+        FakeModule("Labs", id=1, items=[FakeItem("One", id=1), FakeItem("Two", id=2)]),
+        FakeModule("Intro", id=2, items=[FakeItem("Welcome", id=3)]),
+    ])
+
+    out = fetch_module_structure(course, str(tmp_path))
+
+    assert [m["name"] for m in out["modules"]] == ["Intro", "Labs"]
+    assert [i["title"] for i in out["modules"][1]["items"]] == ["Two", "One"]
+
+
+def test_canvas_only_entries_stay_after_what_they_follow(tmp_path):
+    """A Canvas-only item is anchored to the matched item before it in Canvas."""
+    _qmd(tmp_path, "Labs/One.qmd", "One")
+    _qmd(tmp_path, "Labs/Two.qmd", "Two")
+    _ordered(tmp_path, ["Labs"], {"Labs": ["Two.qmd", "One.qmd"]})
+    course = FakeCourse(modules=[
+        FakeModule("Info", id=9, items=[FakeItem("Hello", id=7)]),
+        FakeModule("Labs", id=1, items=[
+            FakeItem("Header", type="SubHeader", id=4),
+            FakeItem("One", id=1),
+            FakeItem("Extra", id=5),
+            FakeItem("Two", id=2),
+        ]),
+    ])
+
+    out = fetch_module_structure(course, str(tmp_path))
+
+    assert [m["name"] for m in out["modules"]] == ["Info", "Labs"]
+    assert out["modules"][0]["in_layout"] is False
+    assert [i["title"] for i in out["modules"][1]["items"]] == ["Header", "Two", "One", "Extra"]
+
+
+def test_unlisted_files_are_reported_per_module(tmp_path):
+    _qmd(tmp_path, "Labs/One.qmd", "One")
+    (tmp_path / "Labs" / "handout.pdf").write_bytes(b"%PDF")
+    _ordered(tmp_path, ["Labs"])
+
+    out = fetch_module_structure(FakeCourse(), str(tmp_path))
+
+    assert out["modules"][0]["unlisted"] == ["handout.pdf"]
+    assert out["layout"]["mode"] == "order-files"
+
+
+# --- Without Canvas ---------------------------------------------------------
+
+def test_without_a_course_the_local_course_is_still_returned(tmp_path):
+    """The board opens with what it can show, and says what is missing."""
+    _qmd(tmp_path, "01_Intro/01_Welcome.qmd", "Welcome")
+    save_sync_map(str(tmp_path), {"01_Intro/01_Welcome.qmd": {"id": 1}})
+    problems = [{"level": "error", "code": "no_course_id", "message": "No course_id.", "action": ""}]
+
+    out = fetch_module_structure(None, str(tmp_path), problems=problems)
+
+    assert out["connected"] is False
+    assert out["problems"] == problems
+    item = out["modules"][0]["items"][0]
+    assert item["offline"] is True
+    # Offline, "local only" can only mean "the map has never seen it".
+    assert item["local_only"] is False
+    json.dumps(out)

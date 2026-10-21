@@ -10,7 +10,7 @@ the sync - a misspelling fails silently, so run the validator.
 | page, assignment, study_guide, subheader, external_url | top-level `title:` in the frontmatter |
 | quiz, new_quiz | `canvas.title` |
 
-If there's no title at all, the filename with its `NN_` prefix stripped is used.
+If there's no title at all, the filename is used, with an `NN_` prefix stripped if it has one.
 Putting `title:` at the top level of a quiz file does **not** work - it is ignored.
 
 ## Shared by every module item
@@ -101,7 +101,7 @@ The file body is ignored entirely; only frontmatter is read.
 | `title` | string | filename | Quiz title |
 | `quiz_type` | string | `practice_quiz` | `practice_quiz`, `assignment` (graded), `graded_survey`, `survey` |
 | `description` | string | unset | Inline HTML/text intro |
-| `description_file` | string | unset | Path to a `.qmd` rendered as the description. **Must not** have an `NN_` prefix |
+| `description_file` | string | unset | Path to a `.qmd` rendered as the description. Must not be a module item itself: no `canvas.type`, not listed in `_order.yml`, and no `NN_` prefix in an `NN_` course |
 | `due_at` / `unlock_at` / `lock_at` | ISO 8601 | unset | As for assignments |
 | `shuffle_answers` | bool | `false` | Randomise answer order |
 | `show_correct_answers` | bool | Canvas default | Classic only |

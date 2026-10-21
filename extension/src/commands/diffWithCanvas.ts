@@ -68,7 +68,7 @@ export async function diffWithCanvas(extensionPath: string): Promise<void> {
 /**
  * Compare one file with Canvas and open the diff, with no picker.
  *
- * The Module Structure panel knows which row was clicked, so asking again
+ * The Course Board knows which row was clicked, so asking again
  * would be asking a question the user already answered.
  *
  * `relPath` is relative to the workspace root, the form the panel already

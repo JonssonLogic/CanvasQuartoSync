@@ -96,7 +96,7 @@ An earlier proposal (#8) split the map into a committed part and a local cache
 holding `mtime`. Once `mtime` is replaced there is nothing local left to split
 off, so the split is not needed.
 
-`last_synced_at` stays shared on purpose: the extension's Module Structure panel
+`last_synced_at` stays shared on purpose: the extension's Course Board
 compares it with Canvas's own edit time to show "edited in Canvas after the last
 sync". A local value would show your colleague's syncs as Canvas edits.
 

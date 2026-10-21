@@ -5,9 +5,12 @@ pages, or gradebook settings.
 
 ## Silent failures
 
-**No `NN_` prefix means the file is invisible to the sync.** No error, no warning - the
-sync simply never looks at it. Same for a module folder without a prefix. This is the
-first thing to check when content "didn't appear in Canvas".
+**A file outside the course layout is invisible to the sync.** No error at sync time -
+the sync simply never looks at it. With order files: a folder not listed in
+`_modules.yml`, a file whose name starts with `_`, or a PDF or note not listed in its
+`_order.yml`. With `NN_` prefixes: a file or folder without the prefix. This is the
+first thing to check when content "didn't appear in Canvas"; `cqs check` says which
+rule applies.
 
 **Misspelled settings are ignored.** `publish:` instead of `published:` doesn't fail; the
 setting just never applies. The validator catches these.

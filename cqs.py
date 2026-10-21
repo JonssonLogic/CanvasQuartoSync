@@ -12,6 +12,7 @@ Each verb runs one of the existing scripts, which keep working on their own
     cqs init [DIR]          init_content_project.py
     cqs kit update          init_content_project.py --update
     cqs github              github_course.py         creates a GitHub repo
+    cqs migrate             course_board.py migrate  NN_ prefixes -> order files, local only
     cqs where               which tool, which Python, which course
 
 The course is found the way git finds a repository: walk up from the current
@@ -48,6 +49,8 @@ usage: cqs [-C DIR] <command> [options]
   kit update         Refresh the authoring kit in this course folder.
   github             Put the course on GitHub as a private team course.
                      'cqs github invite USER' invites a teacher.
+  migrate            Convert NN_ prefixes to _modules.yml / _order.yml.
+                     Local only. Try --dry-run first.
   where              Show which tool, Python and course cqs would use.
 
   -C DIR             Run as if started in DIR.
@@ -177,6 +180,10 @@ def _github(args, cwd):
     return 'github_course', [_require_root(cwd), *args]
 
 
+def _migrate(args, cwd):
+    return 'course_board', [_require_root(cwd), 'migrate', *args]
+
+
 def _kit(args, cwd):
     if not args or args[0] != 'update':
         raise CqsError("usage: cqs kit update")
@@ -193,6 +200,7 @@ VERBS = {
     'init': _init,
     'kit': _kit,
     'github': _github,
+    'migrate': _migrate,
 }
 
 

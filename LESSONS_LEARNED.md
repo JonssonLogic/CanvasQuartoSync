@@ -150,6 +150,23 @@ single synced asset — must branch on the content type, and must respect handle
 `studyguide`/`kurspm`). A file no handler claims uploads as a solo asset, whose module
 item title **keeps the file extension**.
 
+### Module Order in Order Files, Not in Names
+`NN_` prefixes made the order part of every path: moving one item renamed its neighbours,
+broke links that named them, and added rename noise to history. Two people adding `03_`
+files merged silently into an order nobody chose. The order now lives in `_modules.yml`
+and per-module `_order.yml` (`handlers/course_layout.py`), which the Course Board edits.
+
+- **Not the sync map.** The map is a machine-written cache of Canvas ids; it only knows
+  files that were synced, and losing it must not lose the course structure.
+- **One file per module**, so teachers working in different modules never touch the same
+  order file, and **`merge=union`** in `.gitattributes`, so a merge never stops on one.
+  That is only safe because reading is tolerant: duplicates keep their first place, gone
+  files are skipped with a warning, unlisted content is appended.
+- **Content declares itself.** A file a handler claims (`canvas.type`, a quiz) is included
+  without being listed, so a new page needs no bookkeeping. Everything else (PDFs, quiz
+  description files, notes) must be listed, so nothing becomes a page by accident.
+- `NN_` courses keep working unchanged; `cqs migrate` converts one when its owner chooses.
+
 ### Always Fetch Before Create-or-Update
 When implementing update logic for any Canvas object, **always try to fetch the existing object** before deciding to create a new one — even if the local file has changed. A common bug pattern: putting the "fetch existing" call inside the "skip if unchanged" branch means that when the file *does* change, the handler thinks no object exists and creates a duplicate. The fetch must happen unconditionally whenever a sync map ID is available.
 

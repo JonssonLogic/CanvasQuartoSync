@@ -23,6 +23,7 @@ from handlers.content_utils import (
     upload_file,
     FOLDER_FILES,
 )
+from handlers.course_layout import load_layout
 from handlers.study_guide_handler import StudyGuideHandler
 from handlers.page_handler import PageHandler
 from handlers.assignment_handler import AssignmentHandler
@@ -57,24 +58,97 @@ def find_or_create_module(course, module_name):
     return course.create_module(module={'name': module_name})
 
 
-def compute_insert_position(module, module_dir, target_filename):
+def arrange_modules(course, names):
+    """Put the course's own modules in ``names`` order, leaving the rest alone.
+
+    Only the slots the local modules already occupy are reassigned, so a
+    module that exists only in Canvas keeps its place. Canvas order [Info, B,
+    A] with local order [A, B] becomes [Info, A, B]. Returns how many moved.
     """
-    Compute the 1-based position a single synced item should occupy within its
+    wanted = {n: i for i, n in enumerate(names)}
+    ours = [m for m in course.get_modules() if m.name in wanted]
+    slots = sorted(getattr(m, 'position', 0) or 0 for m in ours)
+    moved = 0
+    for slot, m in zip(slots, sorted(ours, key=lambda m: wanted[m.name])):
+        if getattr(m, 'position', None) != slot:
+            logger.debug("  Moving module '%s' to position %d", m.name, slot)
+            try:
+                m.edit(module={'position': slot})
+                moved += 1
+            except Exception as e:
+                logger.error("  Failed to move module %s: %s", m.name, e)
+    return moved
+
+
+def _placement_key(item):
+    """What a module item points at, for items that can only be in one place.
+
+    SubHeaders and external links are matched by title and URL, which may
+    legitimately repeat, so they are never treated as moved.
+    """
+    t = getattr(item, 'type', None)
+    if t == 'Page':
+        return (t, getattr(item, 'page_url', None))
+    if t in ('Assignment', 'Quiz', 'File'):
+        try:
+            return (t, int(getattr(item, 'content_id', None)))
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def remove_stale_placements(course, placed, own_names):
+    """Take moved items out of the module they used to be in.
+
+    ``placed`` is ``[(module_id, module_item)]`` for what this sync put in
+    place. A file moved to another module folder is added to its new module,
+    and the item in the old one would otherwise stay behind. Only the
+    course's own modules (``own_names``) are touched: an item someone placed
+    by hand in a Canvas-only module is theirs. Returns how many were removed.
+    """
+    home = {}
+    for module_id, item in placed:
+        key = _placement_key(item)
+        if key and key[1] is not None:
+            home[key] = module_id
+    if not home:
+        return 0
+    removed = 0
+    for module in course.get_modules():
+        if module.name not in own_names:
+            continue
+        for item in module.get_module_items():
+            key = _placement_key(item)
+            if key in home and home[key] != module.id:
+                logger.info("  [yellow]Removing[/yellow] '%s' from module %s: it has moved.",
+                            getattr(item, 'title', '?'), module.name)
+                try:
+                    item.delete()
+                    removed += 1
+                except Exception as e:
+                    logger.error("  Failed to remove %s from %s: %s", getattr(item, 'title', '?'), module.name, e)
+    return removed
+
+
+def compute_insert_position(module, module_dir, target_filename, order=None):
+    """
+    The 1-based position a single synced item should occupy within its
     module, matching the order a full sync would produce.
 
-    The position is the number of *syncable* sibling files that sort before the
-    target AND are currently present as module items, plus one. This is a
-    relative insert: Canvas reflows the remaining items when the position is
-    applied, so it stays correct even when some earlier siblings aren't synced
-    yet.
+    ``order`` is the module's files in layout order (``_order.yml``, or NN_
+    prefixes). Without it the syncable siblings are taken in sorted filename
+    order, which is the NN_ rule. The position is how many of the files
+    before the target are already module items, plus one. This is a relative
+    insert: Canvas reflows the remaining items when the position is applied,
+    so it stays correct even when some earlier siblings aren't synced yet.
     """
-    siblings = sorted(
-        f for f in os.listdir(module_dir)
-        if f != target_filename
-        and is_valid_name(f)
-        and os.path.isfile(os.path.join(module_dir, f))
-    )
-    before = [f for f in siblings if f < target_filename]
+    if order is None:
+        order = sorted(f for f in os.listdir(module_dir)
+                       if is_valid_name(f) and os.path.isfile(os.path.join(module_dir, f)))
+        if target_filename not in order:
+            order = sorted(order + [target_filename])
+    keys = [f.lower() for f in order]
+    before = order[:keys.index(target_filename.lower())] if target_filename.lower() in keys else order
     before_titles = {expected_canvas_title(os.path.join(module_dir, f)) for f in before}
     before_titles.discard(None)
 
@@ -120,28 +194,26 @@ def sync_single_file(course, content_root, target_abs_path, canvas=None, handler
         return SingleSyncResult(False, f"File is not inside the content directory: {target_abs_path}")
 
     filename = os.path.basename(target_abs_path)
-    if not is_valid_name(filename):
+    layout = load_layout(content_root)
+    mod, included = layout.locate(target_abs_path)
+    if not included:
         return SingleSyncResult(
             False,
-            f"File has no NN_ prefix and would be ignored by a full sync: {filename}",
+            f"{filename} would be skipped by a full sync: {layout.why_excluded(target_abs_path)}.",
         )
 
     if handlers is None:
         handlers = build_handlers()
 
-    # Resolve the module from the parent directory.
     parent_dir = os.path.dirname(target_abs_path)
     module_obj = None
-    if parent_dir != content_root:
-        parent_name = os.path.basename(parent_dir)
-        if not is_valid_name(parent_name):
-            return SingleSyncResult(
-                False,
-                f"Parent directory is not a valid module (needs an NN_ prefix): {parent_name}",
-            )
-        module_name = parse_module_name(parent_name)
-        logger.info("[cyan]Processing module:[/cyan] [bold]%s[/bold]", module_name)
-        module_obj = find_or_create_module(course, module_name)
+    if mod is not None:
+        logger.info("[cyan]Processing module:[/cyan] [bold]%s[/bold]", mod.name)
+        known = {m.name for m in course.get_modules(search_term=mod.name)}
+        module_obj = find_or_create_module(course, mod.name)
+        if mod.name not in known:
+            # New in Canvas: it was appended, so move it among its siblings.
+            arrange_modules(course, [m.name for m in layout.modules])
 
     rel_display = os.path.relpath(target_abs_path, content_root)
     logger.info("[cyan]Syncing single asset:[/cyan] %s", rel_display)
@@ -181,7 +253,7 @@ def sync_single_file(course, content_root, target_abs_path, canvas=None, handler
     # Place the item in its correct slot within the module.
     position = None
     if module_obj is not None and mod_item is not None:
-        position = compute_insert_position(module_obj, parent_dir, filename)
+        position = compute_insert_position(module_obj, parent_dir, filename, order=mod.items)
         if getattr(mod_item, 'position', None) != position:
             logger.debug(
                 "  Moving '%s' to position %d (was %s)",
@@ -192,5 +264,10 @@ def sync_single_file(course, content_root, target_abs_path, canvas=None, handler
                 mod_item.position = position
             except Exception as e:
                 logger.error("  Failed to position item: %s", e)
+
+        try:
+            remove_stale_placements(course, [(module_obj.id, mod_item)], {m.name for m in layout.modules})
+        except Exception as e:
+            logger.error("  Could not check other modules for an old copy: %s", e)
 
     return SingleSyncResult(True, f"Synced {rel_display}", module_item=mod_item, position=position)

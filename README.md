@@ -79,19 +79,25 @@ To generate a token: Canvas → Account → Settings → New Access Token.
 MyCourse/
 ├── config.toml                    # Course settings + Canvas API config
 ├── _quarto.yml                    # Quarto rendering config
-├── 01_Introduction/               # → Canvas module "Introduction"
-│   ├── 01_Welcome.qmd            #   → Canvas page
-│   ├── 02_Lab_Setup.qmd          #   → Canvas assignment
+├── _modules.yml                   # Module order: Course_Info, Introduction, Fundamentals
+├── Course_Info/                   # → Canvas module "Course_Info"
+│   └── StudyGuide.qmd             #   → Study guide + PDF export
+├── Introduction/                  # → Canvas module "Introduction"
+│   ├── _order.yml                 #   Item order (optional)
+│   ├── Welcome.qmd                #   → Canvas page
+│   ├── Lab_Setup.qmd              #   → Canvas assignment
 │   └── graphics/                  #   → Images (auto-uploaded)
-├── 02_Fundamentals/               # → Canvas module "Fundamentals"
-│   ├── 01_Theory.qmd             #   → Canvas page
-│   └── 02_Quiz.json              #   → Canvas quiz
-└── 01_Course_Info/
-    └── 01_StudyGuide.qmd          #   → Study guide + PDF export
+└── Fundamentals/                  # → Canvas module "Fundamentals"
+    ├── Theory.qmd                 #   → Canvas page
+    └── Quiz.json                  #   → Canvas quiz
 ```
 
-- **Folders** starting with `NN_` become Canvas **modules**
-- **Files** starting with `NN_` become **module items** (pages, assignments, quizzes)
+- **Folders** listed in `_modules.yml` become Canvas **modules**, in that order
+- **Files** with a `canvas.type` become **module items**, in `_order.yml` order, then the
+  rest; PDFs and other files when `_order.yml` lists them
+- Reorder by dragging in the **Course Board**, which rewrites the order files
+- Courses made before order files use `NN_` prefixes (`01_Introduction/01_Welcome.qmd`);
+  `cqs migrate` converts them
 - **YAML frontmatter** in each `.qmd` controls the Canvas type and settings
 - **Images and PDFs** are auto-uploaded and linked
 - **Cross-references** between `.qmd` files are resolved to Canvas URLs
@@ -161,13 +167,13 @@ cqs init C:\Courses\MECH201
 ```
 
 This installs a Claude Code skill plus reference documentation into the folder, so a
-fresh session starts out knowing the `NN_` naming rules, the `canvas.*` frontmatter
+fresh session starts out knowing how modules and their order are declared, the `canvas.*` frontmatter
 schema, and the quiz syntax, without reading this repository. Content is checked with
 an offline validator: double-click `check_content.bat` in the folder, or from a
 terminal:
 
 ```powershell
-cqs check 01_Introduction\02_Welcome.qmd
+cqs check Introduction\Welcome.qmd
 ```
 
 There are three ways to run the tool: the VS Code extension (recommended), the
@@ -175,7 +181,7 @@ double-click `.bat` files on Windows, and the `cqs` command in a terminal on any
 See [Three Ways to Run the Tool](Guides/Canvas_Sync_User_Guide.md#6-three-ways-to-run-the-tool).
 
 It needs no Canvas connection and reports what each file will become in Canvas, plus the
-mistakes that otherwise only surface after a sync: missing `NN_` prefixes, misspelled
+mistakes that otherwise only surface after a sync: files the sync would skip, misspelled
 settings, broken image paths, cross-references that would render as `?@fig-x`, quiz
 questions that will not grade.
 
@@ -194,9 +200,13 @@ The extension adds a full GUI on top of the Python sync tool:
 - **Import from Canvas**: Pull existing Canvas content into local `.qmd` files
 - **Diff with Canvas**: Check if someone edited content directly on Canvas
 - **New Project wizard**: Full-page form to scaffold a new course
-- **Module Structure panel**: Browse Canvas modules side-by-side with the local repo
-  - **Create modules** directly from the panel (Draft or Published)
-  - **Create new items** (Page, Assignment, Quiz, External URL) inside any module — auto-numbered, with auto-suffixed titles (`New Page`, `New Page 2`, …)
+- **Course Board**: the course in one view, local order side-by-side with Canvas
+  - **Drag to reorder** modules and items, or move an item to another module; the next sync applies it in Canvas
+  - **Opens without Canvas**: a missing `course_id`, token or network shows a banner with what to fix, plus **Open config.toml** and **Retry**
+  - **Sync a whole module**, including one Canvas does not have yet (*Create in Canvas*)
+  - **Converts `NN_` courses** to order files after showing a preview
+  - **Create modules** directly from the board (Draft or Published)
+  - **Create new items** (Page, Assignment, Quiz, External URL) inside any module, with auto-suffixed titles (`New Page`, `New Page 2`, …)
   - **Publish/unpublish toggles** on every module and item
   - **Batch delete** modules and items via per-row checkboxes with a modal confirm dialog (removes Canvas content and matched local files)
   - **Sticky header** with quick Refresh and `+ New Module` actions
@@ -207,7 +217,7 @@ You can also use the Python tools directly:
 
 ```bash
 python sync_to_canvas.py ./MyCourse              # Sync everything
-python sync_to_canvas.py ./MyCourse --only 01_Intro/01_Welcome.qmd  # Sync one file
+python sync_to_canvas.py ./MyCourse --only Intro/Welcome.qmd  # Sync one file
 python sync_to_canvas.py ./MyCourse --force       # Re-render all (ignore cache)
 python sync_to_canvas.py ./MyCourse --check-drift # Check for external edits
 python sync_to_canvas.py ./MyCourse --sync-calendar # Include calendar events
@@ -215,8 +225,23 @@ python import_from_canvas.py ./output             # Import from Canvas
 ```
 
 Or, from anywhere inside a course folder, `cqs` (put on the PATH by the
-installer): `cqs check`, `cqs sync`, `cqs diff`, `cqs github --org <org>`,
+installer): `cqs check`, `cqs sync`, `cqs diff`, `cqs migrate`, `cqs github --org <org>`,
 `cqs github invite <user>`. Run `cqs` for the full list.
+
+## Converting a Course from `NN_` Prefixes
+
+Courses made before 0.15 order modules with `NN_` prefixes in folder and file names.
+They keep working unchanged. To reorder such a course by dragging in the Course Board,
+convert it once to order files (`_modules.yml`, `_order.yml`):
+
+- **In VS Code**: the Course Board offers it when it opens the course. *Preview
+  conversion* lists every rename and link fix before anything changes.
+- **In a terminal**: `cqs migrate --dry-run` to preview, then `cqs migrate`.
+
+It is local only: Canvas sees the same module names and item titles, and the sync map
+moves along with the renamed files, so every Canvas id is kept. Commit first; the
+conversion refuses to run on uncommitted changes, so it lands as one commit of its own.
+In a team course, have everyone push first and pull afterwards.
 
 ## Example Project
 
@@ -224,6 +249,7 @@ The [Mechatronics course](https://github.com/cenmir/Mechatronics) is a real-worl
 
 ## Documentation
 
+- [Changelog](CHANGELOG.md): What changed in each release
 - [User Guide](Guides/Canvas_Sync_User_Guide.md): Full documentation on all features
 - [Canvas Token Setup](Guides/Canvas_token_setup.md): How to generate an API token
 - [Team Mode](Guides/Team_Mode.md): Several teachers publishing one course from one git repo, and what happens when someone edits Canvas directly

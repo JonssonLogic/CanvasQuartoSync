@@ -58,7 +58,8 @@ the Canvas file page, which gives students a download button. No prefix needed o
 file - it isn't a module item.
 
 To put a file in the module list *as its own item* instead, drop it in the module folder
-with an `NN_` prefix: `03_Datasheet.pdf`.
+and list it in that folder's `_order.yml` where it should appear (`- Datasheet.pdf`).
+In a course with `NN_` prefixes, give it a prefix instead: `03_Datasheet.pdf`.
 
 ## Link to another page, assignment, or quiz
 

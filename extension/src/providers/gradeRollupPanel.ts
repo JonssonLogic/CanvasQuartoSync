@@ -12,7 +12,7 @@ import {
 // so before anything is pressed it is a configuration inspector: the target,
 // each requirement, and whether each has a Canvas id. Those are the things
 // that break, and all of them are visible offline. Canvas is asked per rollup,
-// with the same button the Module Structure panel puts in the target's row.
+// with the same button the Course Board puts in the target's row.
 
 let currentPanel: vscode.WebviewPanel | undefined;
 

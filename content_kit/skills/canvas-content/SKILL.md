@@ -5,8 +5,10 @@ description: >-
   quizzes (Classic and New Quizzes), study guides, module structure, and
   calendar events, written locally as Quarto .qmd/.json files and later synced
   to Canvas. Use whenever creating or editing course material in this folder:
-  it defines the required NN_ file naming, the canvas.* frontmatter schema for
-  every content type, the quiz syntax, and how links and images are handled.
+  it defines how modules and their order are declared (_modules.yml and
+  _order.yml, or NN_ prefixes in older courses), the canvas.* frontmatter
+  schema for every content type, the quiz syntax, and how links and images
+  are handled.
 when_to_use: >-
   Triggers include: add or edit a page, assignment, quiz, module, study guide,
   syllabus, or course PM; embed a video or image; link a PDF; set a due date,
@@ -26,6 +28,8 @@ correctly; the developer runs the sync.
    `sync_to_canvas.py`, `import_from_canvas.py`, `purge_course.py`,
    `run_sync_here.bat`, or anything else that contacts Canvas.
    Pushing to a live course is always the developer's call. Write files and stop.
+   Don't run `cqs migrate` either unless asked: it renames every module folder
+   and file in one go, which is the course owner's decision.
 2. **Match the scope of the request.** "Add a video to the welcome page" is one edit.
    "Draft the statics module" may be several files. Don't create files nobody asked
    for, and don't restructure existing content as a side effect.
@@ -39,7 +43,7 @@ correctly; the developer runs the sync.
 After writing or editing any content file, run the checker on it:
 
 ```
-cqs check 01_Introduction/02_Welcome.qmd
+cqs check Introduction/Welcome.qmd
 ```
 
 Paths are relative to where you stand, and `cqs check` with no path checks the whole
@@ -49,8 +53,8 @@ one. They are the same checker.
 
 It runs offline - no Canvas, no credentials, about a second. It reports what each
 file **will become in Canvas**, and catches the mistakes that otherwise only surface
-after a sync: missing `NN_` prefixes, misspelled settings, invalid dates, broken image
-paths, quiz questions that won't grade. Fix every `ERROR` before reporting back.
+after a sync: a file the sync would skip (and why), misspelled settings, invalid dates,
+broken image paths, quiz questions that won't grade, problems in the order files. Fix every `ERROR` before reporting back.
 Pass a folder instead of a file to check everything.
 
 If the wrapper is missing or fails to run, say so rather than skipping the check.
@@ -88,7 +92,42 @@ or is silently ignored.
 Note: a `.qmd` whose filename contains `studyguide` or `kurspm` is treated as a study
 guide **even without** `type: study_guide`. Avoid those words in ordinary page filenames.
 
-## Naming: `NN_` prefixes are mandatory
+## Modules and their order
+
+Look at the course root first. **If it has `_modules.yml`, the course uses order
+files. If not, it uses `NN_` prefixes.** Never mix the two.
+
+### Order files (`_modules.yml`)
+
+```
+_modules.yml              - Introduction
+                          - Statics: Statics and equilibrium   # folder: name in Canvas
+Introduction/
+  _order.yml              - Welcome.qmd
+                          - Syllabus.pdf
+  Welcome.qmd
+  Syllabus.pdf
+graphics/                 not listed in _modules.yml, so never a module
+```
+
+- **A folder is a module only if `_modules.yml` lists it.** The module is named after
+  the folder, or after the name given with `- Folder: Name`.
+- **Inside a module, a file is included if `_order.yml` lists it, or if it declares
+  itself as content** (`canvas.type`, or a quiz). Listed files come first, in order.
+  Content that isn't listed is added at the end, sorted by name.
+- So **a new page needs no bookkeeping**: give it a `canvas.type` and it appears last in
+  its module. To put it somewhere else, add its filename to `_order.yml` at that place.
+  When you create a new module, also add the folder to `_modules.yml`.
+- **PDFs, images and plain notes are synced only when listed** in `_order.yml`. A quiz
+  `description_file` or an image next to a page is therefore never synced by accident.
+- **A name starting with `_` stays out** unless it is listed. Use it for drafts.
+- Both files are one `- name` per line. Keep it that way: git merges them line by line,
+  and the tool reads a merged file even with duplicate lines.
+- A file at the content root syncs only if `_modules.yml` lists it, and then outside
+  any module.
+- Plain filenames: `Welcome.qmd`, `Lab_1.qmd`. Don't add number prefixes.
+
+### `NN_` prefixes (older courses)
 
 - **Folders** = modules: `01_Introduction`, `02_Statics`. The `NN_` sets module order
   and is stripped from the Canvas name.
@@ -98,6 +137,10 @@ guide **even without** `type: study_guide`. Avoid those words in ordinary page f
 - Exceptions that *should not* have a prefix: images, `branding.css`, `config.toml`,
   and quiz `description_file` targets (a prefix would make them sync as their own page).
 - A file at the content root syncs to Canvas but is **not** added to any module.
+- `cqs migrate` converts such a course to order files. That is the owner's call.
+
+In both layouts, `cqs check` names any file with `canvas:` metadata that the sync
+would skip, and says why.
 
 ## Skeletons
 

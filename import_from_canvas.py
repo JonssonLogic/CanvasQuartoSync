@@ -34,6 +34,7 @@ from urllib.parse import unquote, urlparse, urljoin
 
 from canvasapi import Canvas
 
+from handlers import course_layout as cl
 from handlers import __version__
 from handlers.log import logger, setup_logging
 from handlers.config import load_config, get_api_credentials, get_course_id
@@ -931,18 +932,39 @@ def import_course(course, output_path: str, dry_run: bool = False, include_types
     modules = list(course.get_modules())
     logger.info("Found [bold]%d[/bold] modules", len(modules))
 
+    # Order files (_modules.yml, _order.yml) unless the folder already holds
+    # a course laid out with NN_ prefixes, which would end up half and half.
+    ordered = cl.is_ordered(output_path) or not cl.load_layout(output_path).modules
+    layout_entries = []   # (folder or root file, Canvas name or None)
+    orders = {}           # folder -> [files], in Canvas order
+
     if not modules:
         logger.warning("No modules found in this course. Importing unmodularized content...")
         converter = HtmlToMarkdown(asset_downloader=downloader, context_dir=output_path)
-        _import_standalone_pages(course, output_path, converter, dry_run, include_types)
+        _import_standalone_pages(course, output_path, converter, dry_run, include_types,
+                                 layout_entries if ordered else None)
+        _write_layout(output_path, ordered, layout_entries, orders, dry_run)
         return
 
+    taken_dirs = set()
     for mod_idx, module in enumerate(modules, start=1):
         mod_name = module.name
-        mod_prefix = f"{mod_idx:02d}"
         safe_mod_name = sanitize_filename(mod_name)
-        mod_dir_name = f"{mod_prefix}_{safe_mod_name}"
+        if ordered:
+            mod_dir_name = safe_mod_name
+            n = 2
+            while mod_dir_name.lower() in taken_dirs or os.path.isfile(os.path.join(output_path, mod_dir_name)):
+                mod_dir_name = f"{safe_mod_name}_{n}"
+                n += 1
+            taken_dirs.add(mod_dir_name.lower())
+            layout_entries.append((mod_dir_name, mod_name if mod_name != mod_dir_name else None))
+            orders[mod_dir_name] = []
+            mod_prefix = ''
+        else:
+            mod_prefix = f"{mod_idx:02d}"
+            mod_dir_name = f"{mod_prefix}_{safe_mod_name}"
         mod_dir = os.path.join(output_path, mod_dir_name)
+        written = orders.get(mod_dir_name)
 
         logger.info("[cyan]Module %d:[/cyan] [bold]%s[/bold] -> %s/", mod_idx, mod_name, mod_dir_name)
 
@@ -960,7 +982,7 @@ def import_course(course, output_path: str, dry_run: bool = False, include_types
             continue
 
         for item_idx, item in enumerate(items, start=1):
-            item_prefix = f"{item_idx:02d}"
+            item_prefix = '' if ordered else f"{item_idx:02d}"
             item_type = item.type
             item_title = getattr(item, 'title', 'Untitled')
             safe_item_name = sanitize_filename(item_title)
@@ -977,7 +999,7 @@ def import_course(course, output_path: str, dry_run: bool = False, include_types
                     body_html = fetch_page_body(course, page_url)
                     body_md = converter.convert(body_html)
                     content = generate_page_qmd(item_title, body_md, published)
-                    _write_qmd(mod_dir, item_prefix, safe_item_name, content, dry_run)
+                    _record(written, _write_qmd(mod_dir, item_prefix, safe_item_name, content, dry_run))
 
                 elif item_type == 'Assignment':
                     if include_types and 'assignments' not in include_types:
@@ -987,7 +1009,7 @@ def import_course(course, output_path: str, dry_run: bool = False, include_types
                         desc_html = getattr(assignment, 'description', '') or ''
                         body_md = converter.convert(desc_html)
                         content = generate_assignment_qmd(item_title, body_md, assignment, tz)
-                        _write_qmd(mod_dir, item_prefix, safe_item_name, content, dry_run)
+                        _record(written, _write_qmd(mod_dir, item_prefix, safe_item_name, content, dry_run))
 
                 elif item_type == 'Quiz':
                     if include_types and 'quizzes' not in include_types:
@@ -996,12 +1018,12 @@ def import_course(course, output_path: str, dry_run: bool = False, include_types
                     if quiz:
                         questions = fetch_quiz_questions(quiz)
                         content = generate_quiz_qmd(item_title, quiz, questions)
-                        _write_qmd(mod_dir, item_prefix, safe_item_name, content, dry_run)
+                        _record(written, _write_qmd(mod_dir, item_prefix, safe_item_name, content, dry_run))
 
                 elif item_type == 'File':
                     if include_types and 'files' not in include_types:
                         continue
-                    _import_file_item(course, item, mod_dir, item_prefix, safe_item_name, dry_run)
+                    _record(written, _import_file_item(course, item, mod_dir, item_prefix, safe_item_name, dry_run))
 
                 elif item_type == 'ExternalUrl':
                     if include_types and 'links' not in include_types:
@@ -1009,18 +1031,18 @@ def import_course(course, output_path: str, dry_run: bool = False, include_types
                     url = getattr(item, 'external_url', '')
                     new_tab = getattr(item, 'new_tab', False)
                     content = generate_external_link_qmd(item_title, url, published, new_tab)
-                    _write_qmd(mod_dir, item_prefix, safe_item_name, content, dry_run)
+                    _record(written, _write_qmd(mod_dir, item_prefix, safe_item_name, content, dry_run))
 
                 elif item_type == 'SubHeader':
                     content = generate_subheader_qmd(item_title, published, indent)
-                    _write_qmd(mod_dir, item_prefix, safe_item_name, content, dry_run, ext='.md')
+                    _record(written, _write_qmd(mod_dir, item_prefix, safe_item_name, content, dry_run, ext='.md'))
 
                 elif item_type == 'ExternalTool':
                     # External tools (LTI) - save as external link with a note
                     url = getattr(item, 'external_url', '') or getattr(item, 'url', '') or ''
                     if url:
                         content = generate_external_link_qmd(item_title, url, published, new_tab=True)
-                        _write_qmd(mod_dir, item_prefix, safe_item_name, content, dry_run)
+                        _record(written, _write_qmd(mod_dir, item_prefix, safe_item_name, content, dry_run))
                     else:
                         logger.warning("    Skipping ExternalTool (no URL): %s", item_title)
 
@@ -1032,23 +1054,52 @@ def import_course(course, output_path: str, dry_run: bool = False, include_types
 
     # Also import pages that are NOT in any module
     standalone_converter = HtmlToMarkdown(asset_downloader=downloader, context_dir=output_path)
-    _import_standalone_pages(course, output_path, standalone_converter, dry_run, include_types)
+    _import_standalone_pages(course, output_path, standalone_converter, dry_run, include_types,
+                             layout_entries if ordered else None)
+    _write_layout(output_path, ordered, layout_entries, orders, dry_run)
 
     logger.info("[bold green]Import complete.[/bold green]")
 
 
+def _record(written, filename):
+    """Note a file written into a module, for its _order.yml."""
+    if written is not None and filename:
+        written.append(filename)
+
+
+def _write_layout(output_path, ordered, entries, orders, dry_run):
+    """_modules.yml and one _order.yml per module, merged with what is there."""
+    if not ordered or dry_run or not entries:
+        return
+    existing = cl.module_entries(output_path) if cl.is_ordered(output_path) else []
+    known = {n.lower() for n, _ in existing}
+    cl.write_modules(output_path, existing + [e for e in entries if e[0].lower() not in known])
+    for d, files in orders.items():
+        if os.path.isdir(os.path.join(output_path, d)):
+            mod = cl.load_layout(output_path).module(d)
+            before = [f for f in (mod.items if mod else []) if f not in files]
+            cl.set_item_order(output_path, d, before + files)
+    cl.ensure_gitattributes(output_path)
+    logger.info("[green]Wrote[/green] %s and the modules' %s", cl.MODULES_FILE, cl.ORDER_FILE)
+
+
 def _write_qmd(directory: str, prefix: str, name: str, content: str, dry_run: bool, ext: str = '.qmd'):
-    """Write a QMD/MD file to disk."""
-    filename = f"{prefix}_{name}{ext}"
+    """Write a QMD/MD file to disk. Returns the filename.
+
+    Without a prefix (a course with order files) a taken name gets a suffix
+    instead of being overwritten.
+    """
+    filename = f"{prefix}_{name}{ext}" if prefix else cl.free_name(directory, f"{name}{ext}")
     filepath = os.path.join(directory, filename)
 
     if dry_run:
         logger.info("    [dim]Would create:[/dim] %s", filepath)
-        return
+        return filename
 
     with open(filepath, 'w', encoding='utf-8') as f:
         f.write(content)
     logger.info("    [green]Created:[/green] %s", os.path.basename(filepath))
+    return filename
 
 
 def _import_file_item(course, item, mod_dir: str, prefix: str, name: str, dry_run: bool):
@@ -1058,21 +1109,30 @@ def _import_file_item(course, item, mod_dir: str, prefix: str, name: str, dry_ru
         file_obj = course.get_file(content_id)
         original_name = getattr(file_obj, 'filename', name)
         ext = os.path.splitext(original_name)[1]
-        target_name = f"{prefix}_{sanitize_filename(os.path.splitext(original_name)[0])}{ext}"
+        stem = sanitize_filename(os.path.splitext(original_name)[0])
+        target_name = f"{prefix}_{stem}{ext}" if prefix else cl.free_name(mod_dir, f"{stem}{ext}")
         target_path = os.path.join(mod_dir, target_name)
 
         if dry_run:
             logger.info("    [dim]Would download:[/dim] %s", target_path)
-            return
+            return target_name
 
         if download_file(file_obj, target_path):
             logger.info("    [green]Downloaded:[/green] %s", target_name)
+            return target_name
     except Exception as e:
         logger.error("    Failed to download file item: %s", e)
+    return None
 
 
-def _import_standalone_pages(course, output_path: str, converter, dry_run: bool, include_types: set):
-    """Import pages that are not part of any module."""
+def _import_standalone_pages(course, output_path: str, converter, dry_run: bool, include_types: set,
+                            layout_entries=None):
+    """Import pages that are not part of any module.
+
+    ``layout_entries`` is given for a course with order files: the pages are
+    written without a prefix and listed there, which is how a root file is
+    included in such a course.
+    """
     if include_types and 'pages' not in include_types:
         return
 
@@ -1106,7 +1166,11 @@ def _import_standalone_pages(course, output_path: str, converter, dry_run: bool,
             published = getattr(page, 'published', False)
             content = generate_page_qmd(title, body_md, published)
 
-            filename = f"99_{safe_name}.qmd"
+            if layout_entries is None:
+                filename = f"99_{safe_name}.qmd"
+            else:
+                filename = cl.free_name(output_path, f"{safe_name}.qmd")
+                layout_entries.append((filename, None))
             filepath = os.path.join(output_path, filename)
 
             if dry_run:

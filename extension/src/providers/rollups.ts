@@ -8,7 +8,7 @@ import { setSyncing } from './statusBar';
 
 // ── Grade rollups ───────────────────────────────────────────────────
 //
-// Shared by the Module Structure panel (a button in the target's row) and the
+// Shared by the Course Board (a button in the target's row) and the
 // Grade Rollup panel (every rollup in the course). Both read and drive the
 // same state, so a check run in one shows up in the other.
 //
@@ -62,7 +62,7 @@ export interface RollupState {
   checkedAt?: Date;
   busy?: 'status' | 'setup' | 'apply';
   error?: string;
-  // What the line under a Module Structure row shows, if anything.
+  // What the line under a Course Board row shows, if anything.
   view?: 'status' | 'setup';
 }
 
@@ -410,7 +410,7 @@ function renderStatusLines(st: RollupState, close: string): string {
 }
 
 /**
- * What goes under the button. `row` is the line under a Module Structure row:
+ * What goes under the button. `row` is the line under a Course Board row:
  * empty until asked for, and closable. `card` is the Grade Rollup panel's
  * body: the requirement table is always there, and Canvas results are added
  * below it once checked.

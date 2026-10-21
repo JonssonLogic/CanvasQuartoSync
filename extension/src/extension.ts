@@ -10,7 +10,7 @@ import { createStatusBar, updateVisibility, dispose as disposeStatusBar } from '
 import { createToggleButtons, registerToggleCommands } from './providers/syncOptions';
 import { registerSidebarViews } from './providers/sidebarTreeView';
 import { openNewProjectPanel } from './providers/newProjectPanel';
-import { openModuleStructurePanel } from './providers/moduleStructurePanel';
+import { openCourseBoard } from './providers/courseBoardPanel';
 import { openGradeRollupPanel } from './providers/gradeRollupPanel';
 import { showWelcomeIfNeeded } from './providers/welcomePanel';
 
@@ -56,8 +56,12 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('cqs.purgeCourse', () =>
       purgeCourse(context.extensionPath)
     ),
+    vscode.commands.registerCommand('cqs.openCourseBoard', () =>
+      openCourseBoard(context)
+    ),
+    // The panel's old name. Kept so keybindings and scripts that call it work.
     vscode.commands.registerCommand('cqs.showModuleStructure', () =>
-      openModuleStructurePanel(context.extensionPath)
+      openCourseBoard(context)
     ),
     vscode.commands.registerCommand('cqs.showGradeRollup', () =>
       openGradeRollupPanel(context.extensionPath)
@@ -71,20 +75,28 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   // Welcome tab on first activation (if no config.toml)
-  // Auto-open Module Structure if this is a configured course workspace
+  // Auto-open the Course Board if this is a course workspace
   const folders = vscode.workspace.workspaceFolders;
   if (folders) {
-    const configUri = vscode.Uri.joinPath(folders[0].uri, 'config.toml');
-    vscode.workspace.fs.stat(configUri).then(
-      () => {
-        // config.toml exists — open Module Structure as the main panel
-        openModuleStructurePanel(context.extensionPath);
-      },
-      () => {
+    const isCourse = async () => {
+      for (const marker of ['config.toml', '_modules.yml']) {
+        try {
+          await vscode.workspace.fs.stat(vscode.Uri.joinPath(folders[0].uri, marker));
+          return true;
+        } catch { /* not this one */ }
+      }
+      return false;
+    };
+    isCourse().then((yes) => {
+      if (yes) {
+        // A course folder: the Course Board is the main panel. It opens even
+        // when config.toml is incomplete, and says what to fix.
+        openCourseBoard(context);
+      } else {
         // No config.toml — show welcome for first-time setup
         showWelcomeIfNeeded(context);
       }
-    );
+    });
   } else {
     showWelcomeIfNeeded(context);
   }

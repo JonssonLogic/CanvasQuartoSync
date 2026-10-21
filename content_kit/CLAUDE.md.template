@@ -9,8 +9,8 @@ Quarto and pushed to Canvas by CanvasQuartoSync, which lives outside this folder
 ## Working here
 
 **Use the `canvas-content` skill** for anything involving course material - it defines
-the required `NN_` file naming, the `canvas.*` frontmatter schema for each content type,
-the quiz syntax, and how links and images resolve. Invoke it with `/canvas-content` or
+how modules and their order are declared, the `canvas.*` frontmatter schema for each
+content type, the quiz syntax, and how links and images resolve. Invoke it with `/canvas-content` or
 just start working on content and it will load.
 
 Three rules that always apply:
@@ -33,13 +33,20 @@ offset unless you mean a specific UTC instant.
 ## Layout
 
 ```
-01_Introduction/          module -> Canvas module "Introduction"
-  01_Welcome.qmd          module item, in this order
-  02_Syllabus.qmd
-graphics/                 images - no NN_ prefix, never synced as content
+_modules.yml              the modules, in Canvas order: one folder per line
+Introduction/             module -> Canvas module "Introduction"
+  _order.yml              the items, in order (optional)
+  Welcome.qmd             module item
+  Syllabus.pdf            synced because _order.yml lists it
+graphics/                 images - not in _modules.yml, never synced as content
 config.toml               course id and metadata
 schedule.yaml             calendar events (only synced on request)
 ```
 
-Folders and files **without** an `NN_` prefix are ignored by the sync. That is the most
-common reason content doesn't appear in Canvas.
+A folder is a module only if `_modules.yml` lists it. Inside it, files with a
+`canvas.type` are included (added at the end unless `_order.yml` places them), and
+other files (PDFs, notes) only when `_order.yml` lists them. The teacher usually
+reorders in the Course Board in VS Code, which rewrites these files.
+
+A course without `_modules.yml` still uses the older `NN_` prefixes: there, folders and
+files without an `NN_` prefix are ignored by the sync. The skill covers both.
