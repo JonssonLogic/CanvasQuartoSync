@@ -3,6 +3,22 @@
 What changed in each release, for the people using it. Earlier releases are described
 on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/releases).
 
+## Unreleased
+
+### Preview: comments that work, and MDViewer's rendering
+
+- **Comment highlights show up** even when the commented text spans bold, links, math or
+  table cells. Comments are anchored in the source instead of searched for in the
+  rendered page, so Hide/Show comments has something to toggle.
+- A comment popup and a comment panel, which also lists orphaned comments (whose text
+  is gone). Right-click an entry for *Go to comment* and *Delete comment*.
+- Comments on links open with a right-click; a left click inside a link follows it.
+- Saving a comment goes through the open editor, so it is not lost when the file has
+  unsaved changes. A comment whose context contains `-->` no longer breaks the comment
+  block.
+- From MDViewer: definition lists, LaTeX in figure captions, the Swedish "AI:n" fix for
+  directives, and a highlighted raw source view.
+
 ## 0.15.0 - 2026-10-21
 
 ### Course Board, and module order without `NN_` prefixes
