@@ -6,7 +6,8 @@ Run with: python -m pytest tests/e2e/ -v -m canvas
 Test content lives in tests/fixtures/e2e_content/ — a mechanical-engineering
 themed course (MECH201, Mechanics of Materials) that exercises:
   - Pages (markdown + HTML images, inline/display LaTeX, callouts, code,
-    tables, cross-links, an unpublished + indented page)
+    tables, one styled through a .cqs-table wrapper, cross-links, an
+    unpublished + indented page)
   - Assignments (upload + text entry; due/unlock/lock dates; grading types;
     omit_from_final_grade; hide_in_gradebook; a group-set assignment)
   - Classic Quizzes (QMD with settings + essay + omit_from_final_grade on the
@@ -32,6 +33,13 @@ def _utc(value):
     from handlers.dates import parse_canvas_utc
     parsed = parse_canvas_utc(value)
     return parsed.strftime("%Y-%m-%dT%H:%M:%SZ") if parsed else None
+
+
+def _has_colour(html, rgb):
+    """Whether ``html`` uses this colour, as hex or as the rgb() Canvas may store."""
+    import re
+    return ("#%02x%02x%02x" % rgb in html.lower()
+            or re.search(r"rgb\(\s*%d\s*,\s*%d\s*,\s*%d\s*\)" % rgb, html) is not None)
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +104,34 @@ class TestPageContent:
 
     def test_stress_page_has_material_table(self, synced_pages):
         assert "<table" in self._stress_body(synced_pages).lower(), "Material table should render"
+
+    def test_stress_page_styled_table_survives_canvas(self, synced_pages):
+        """The Load Cases table is wrapped in .cqs-table; the course has no table
+        settings. Canvas must keep the inline styles on the row, the cells and
+        the table, and the material table, which asks for nothing, must arrive
+        as Quarto made it."""
+        import re
+        body = self._stress_body(synced_pages)
+        tables = re.findall(r"<table\b.*?</table>", body, re.DOTALL | re.IGNORECASE)
+        styled = next((t for t in tables if "Load case" in t), None)
+        material = next((t for t in tables if "Structural steel" in t), None)
+        assert styled and material, f"Expected both tables, found {len(tables)}"
+        assert "cqs-table" not in body, "The wrapper div should be removed at sync"
+
+        stripe, line, header = (0xe8, 0xee, 0xf5), (0x9a, 0xa5, 0xb1), (0x00, 0x38, 0x65)
+        rows = re.findall(r"<tr\b[^>]*>", styled.split("<tbody")[1], re.IGNORECASE)
+        assert _has_colour(rows[0], stripe), f"First body row lost its stripe: {rows[0]}"
+        assert not _has_colour(rows[1], stripe), "Only the 1st, 3rd... body rows are striped"
+        cells = re.findall(r"<td\b[^>]*>", styled, re.IGNORECASE)
+        assert cells and all(_has_colour(c, line) for c in cells), "Cell borders lost"
+        heads = re.findall(r"<th\b[^>]*>", styled, re.IGNORECASE)
+        assert heads and all(_has_colour(h, header) for h in heads), "Header colour lost"
+        assert re.search(r"border-collapse:\s*collapse", styled), "Table style lost"
+        assert "table-striped" not in styled and "table-bordered" not in styled
+        assert "table-hover" in styled, "Hover is Canvas's, so its class must stay"
+
+        assert not re.search(r"background|border", material, re.IGNORECASE), (
+            "The material table asks for no styling and must not get any")
 
     def test_formula_sheet_is_unpublished(self, synced_pages):
         """The draft formula sheet is published: false."""

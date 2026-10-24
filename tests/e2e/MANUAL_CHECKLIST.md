@@ -20,6 +20,11 @@ prints this prompt (with the course URL) at the end. Fixture =
       The API can't verify the New Quizzes UI, so eyeball these.
 - [ ] **Overall branding / layout** looks right (colours, headings, spacing) on
       the front page and a couple of content pages.
+- [ ] **Styled table** on *Stress, Strain & Material Behaviour* (Load Cases):
+      light blue-grey stripes on rows 1 and 3, grey lines around every cell, a
+      dark blue header with white text. The material table above it looks as it
+      always has. Hovering a row shows **no** highlight; that is Canvas's own
+      `.hover` and expected (see LESSONS_LEARNED.md, tables).
 
 ## Optional spot-checks
 - [ ] Click a cross-link on the Welcome page (e.g. "Truss Analysis assignment")

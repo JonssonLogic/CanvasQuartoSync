@@ -36,6 +36,7 @@ CanvasQuartoSync/
 │   ├── external_link_handler.py # .qmd → Module External URL link
 │   ├── content_utils.py       # Shared: image upload, cross-linking, sync map, pruning
 │   ├── dates.py               # Shared: course-local times → UTC (DST-aware)
+│   ├── table_styles.py        # Shared: table styling inlined at sync (registries + pass)
 │   └── log.py                 # Logging configuration (logger + setup_logging)
 ├── validate_content.py        # Offline content validation (no Canvas/network needed)
 ├── init_content_project.py    # Scaffolds a content folder with the AI authoring kit
@@ -347,6 +348,41 @@ The test asserts the schema and both documents describe exactly the same set of 
 in both directions — so a setting can't ship undocumented, and the docs can't describe
 a setting the tool doesn't support.
 
+### Adding a table style
+
+Table styling (#47) is data in `handlers/table_styles.py`. The code that applies it
+knows no style by name, so a new one is entries in the registries:
+
+- **`TABLE_VALUES`**: what a course can set. `TableValue('stripe', '#f0f4f7')` is
+  `--table-stripe` in `branding.css` and `stripe=` on a `.cqs-table` wrapper, with the
+  default a feature falls back on. `kind` picks the check in `VALUE_KINDS` that keeps a
+  value safe inside `style="..."`.
+- **`TABLE_FEATURES`**: what a table asks for, by caption class or in `[tables] style`.
+  `quarto_class` is the class Quarto puts on `<table>`: `.striped` arrives as
+  `table-striped`, while a class Quarto does not know, such as `.first-col`, arrives
+  unchanged. The feature's `rules` are inlined and the class is dropped, so Canvas's
+  own rule for it cannot interfere; `canvas_draws=True` keeps the class instead, for
+  what only a stylesheet can do (hover).
+- **`TARGETS`**: which elements a `Rule` styles. Rows and cells know their section
+  (`head`, `body`, `foot`), row and column, so "the first column" is one lambda.
+- **`VALUE_RULES`**: rules every table the sync draws gets, applied only where some
+  level sets the values they use. `unless` skips a rule for tables with a given
+  feature.
+
+So `.borderless` would be one entry:
+
+```python
+TableFeature('borderless', 'table-borderless',
+             rules=(Rule('cell', 'border: 0'),), note='no lines at all'),
+```
+
+plus a row in the options tables of `reference/recipes.md` and the user guide's
+"Table styling", and a test. `tests/unit/test_doc_consistency.py` fails until both
+documents list every option and value; `[tables] style` and the validator accept the
+new name with no further change. Keep in mind that the pass edits only the start tags
+of tables a course or table asked to style: a course without table settings must keep
+getting byte-identical HTML.
+
 ### The content authoring kit
 
 `content_kit/` is the source; `init_content_project.py` copies it into a content folder.
@@ -374,6 +410,9 @@ Notes for maintainers:
 ### Modifying Quarto rendering
 - The render pipeline is in `PageHandler.sync()` and `AssignmentHandler.sync()` (duplicated — see Improvements).
 - Pattern: write temp `.qmd` → `quarto render --to html` → extract `<main>` content → cleanup temp files.
+- Canvas strips `<style>`, so `render_quarto_document()` then inlines what Quarto left to
+  classes: callouts, figure alignment, syntax highlighting, math, and tables
+  (`handlers/table_styles.py`, see "Adding a table style").
 
 ### Working with quizzes
 - JSON format: parsed directly in `QuizHandler.sync()`.

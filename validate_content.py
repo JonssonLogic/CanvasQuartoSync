@@ -32,6 +32,8 @@ from handlers.content_utils import is_valid_name
 from handlers.course_layout import load_layout, MODULES_FILE, ORDER_FILE
 from handlers.ip_filter import parse_ip_filter
 from handlers.single_sync import build_handlers
+from handlers.table_styles import (TABLE_VALUES, WRAPPER_CLASS, check_value,
+                                   load_table_settings, names, resolve_vars)
 
 
 # ---------------------------------------------------------------------------
@@ -604,6 +606,65 @@ def _check_figure_paragraphs(report, body):
         )
 
 
+_PANDOC_ATTR_RE = re.compile(r"""([\w-]+)=(?:"([^"]*)"|'([^']*)'|([^\s"'}]+))""")
+# A pipe table row, a grid table border, or a hand-written HTML table.
+_TABLE_LINE_RE = re.compile(r"^\s*\||^\s*\+[-=:]|<table\b", re.IGNORECASE)
+
+
+def _check_table_wrappers(report, text, custom=None):
+    """A ::: {.cqs-table ...} wrapper sets the look of the table inside it, and
+    the sync removes it. So a wrapper with no table, or anything it carries
+    besides the table settings, does nothing. ``custom`` holds the course's
+    :root properties, which a value may name with var()."""
+    in_code = False
+    open_divs = []      # one per open fenced div: a wrapper's details, or None
+    for n, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            continue
+        if in_code:
+            continue
+        if stripped.startswith(":::"):
+            opener = stripped.lstrip(":").strip()
+            if opener:
+                open_divs.append(_open_table_wrapper(report, n, opener, custom or {}))
+            elif open_divs:
+                wrapper = open_divs.pop()
+                if wrapper and not wrapper["table"]:
+                    report.warn(f"line {wrapper['line']}: this .{WRAPPER_CLASS} wrapper has "
+                                f"no table inside, so it does nothing.")
+            continue
+        if _TABLE_LINE_RE.search(line):
+            for wrapper in open_divs:
+                if wrapper:
+                    wrapper["table"] = True
+
+
+def _open_table_wrapper(report, n, opener, custom):
+    """Check a fenced div's opening line; its details if it is a wrapper, else None."""
+    if opener.startswith("{"):
+        attrs = opener.strip("{}")
+        classes = re.findall(r"(?:^|\s)\.([\w-]+)", attrs)
+    else:
+        attrs, classes = "", opener.split()
+    if WRAPPER_CLASS not in classes:
+        return None
+    for m in _PANDOC_ATTR_RE.finditer(attrs):
+        key = m.group(1)
+        value = next(v for v in m.groups()[1:] if v is not None)
+        if key not in TABLE_VALUES:
+            report.warn(f"line {n}: {key}= is not a table setting, so it does nothing "
+                        f"(the wrapper is removed at sync). The settings are: "
+                        f"{names(TABLE_VALUES)}.")
+            continue
+        try:
+            check_value(key, resolve_vars(value, custom))
+        except ValueError as e:
+            report.warn(f"line {n}: .{WRAPPER_CLASS} {key}=: {e}; the sync ignores it.")
+    return {"line": n, "table": False}
+
+
 def _check_cross_link(report, abs_target, shown):
     """A .qmd/.json link resolves to a Canvas item only if it has canvas metadata."""
     try:
@@ -865,6 +926,8 @@ def validate_file(file_path, content_root=None, handlers=None):
         body = frontmatter.loads(raw_text).content
         _check_links(report, body, base_path)
         _check_crossrefs(report, body, raw_text)
+        custom = load_table_settings(content_root).custom if content_root else {}
+        _check_table_wrappers(report, raw_text, custom)
 
     return report
 
@@ -968,6 +1031,15 @@ def validate_path(target, content_root=None):
         report = FileReport(path=os.path.join(root, "course_id.txt"), kind="legacy setting")
         report.warn(notice)
         reports.append(report)
+
+    # Table settings live in config.toml and branding.css, which are not
+    # content files; the sync ignores what it cannot use, so say so here.
+    table_reports = {}
+    for file, message in load_table_settings(root).problems:
+        if file not in table_reports:
+            table_reports[file] = FileReport(path=os.path.join(root, file), kind="table styling")
+            reports.append(table_reports[file])
+        table_reports[file].warn(f"{message} - the sync ignores it.")
     return reports
 
 

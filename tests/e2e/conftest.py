@@ -47,6 +47,8 @@ _HUMAN_CHECKS = [
     "Calculations / Section Properties / Self-Check); numeric & formula "
     "questions show values",
     "Overall branding / layout looks right",
+    "Styled table (Stress, Strain & Material Behaviour > Load Cases): stripes "
+    "on rows 1 and 3, grey cell lines, dark blue header (no hover highlight: expected)",
 ]
 
 

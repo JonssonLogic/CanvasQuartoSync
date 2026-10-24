@@ -10,6 +10,9 @@ If one of these fails you added or renamed a setting. Update all three:
   - validate_content.py            CANVAS_SCHEMA
   - content_kit/.../frontmatter.md the table row
   - Guides/Canvas_Sync_User_Guide.md
+
+Table styling works the same way, with handlers/table_styles.py as the source
+of truth and content_kit/.../recipes.md as the kit's half.
 """
 
 import os
@@ -17,12 +20,15 @@ import re
 
 import pytest
 
+from handlers.table_styles import TABLE_FEATURES, TABLE_VALUES
 from validate_content import (CANVAS_SCHEMA, PDF_KEYS, RESULT_VIEW_KEYS,
                               ROLLUP_KEYS)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 KIT_REFERENCE = os.path.join(
     PROJECT_ROOT, "content_kit", "skills", "canvas-content", "reference", "frontmatter.md")
+KIT_RECIPES = os.path.join(
+    PROJECT_ROOT, "content_kit", "skills", "canvas-content", "reference", "recipes.md")
 USER_GUIDE = os.path.join(PROJECT_ROOT, "Guides", "Canvas_Sync_User_Guide.md")
 
 
@@ -113,3 +119,23 @@ class TestKitIsShippable:
         reference = blocks[names[0]]
         for name, block in blocks.items():
             assert block == reference, f"{name}.bat lookup differs from {names[0]}.bat"
+
+
+class TestTableStylesDocumented:
+    """A table option or value added to handlers/table_styles.py is usable
+    at once, so the kit and the user guide must say it exists, and neither may
+    describe one that does not."""
+
+    @pytest.mark.parametrize("path", [KIT_RECIPES, USER_GUIDE])
+    def test_documents_every_option_and_value(self, path):
+        text = _read(path)
+        missing = [f".{n}" for n in TABLE_FEATURES if f"`.{n}`" not in text]
+        missing += [v.prop for v in TABLE_VALUES.values() if f"`{v.prop}`" not in text]
+        missing += [f"{n}=" for n in TABLE_VALUES if f"`{n}=`" not in text]
+        assert not missing, f"{os.path.basename(path)} does not document: {missing}"
+
+    @pytest.mark.parametrize("path", [KIT_RECIPES, USER_GUIDE])
+    def test_does_not_invent_values(self, path):
+        documented = set(re.findall(r"--table-[a-z]+(?:-[a-z]+)*", _read(path)))
+        extra = sorted(documented - {v.prop for v in TABLE_VALUES.values()})
+        assert not extra, f"{os.path.basename(path)} describes values that don't exist: {extra}"

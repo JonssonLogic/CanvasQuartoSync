@@ -7,6 +7,7 @@ import urllib.parse
 from handlers.content_utils import safe_delete_file, safe_delete_dir
 from handlers.config import load_config
 from handlers.log import logger
+from handlers.table_styles import inline_table_styles, load_table_settings
 
 # Default callout styles (used when no branding.css defines them)
 _DEFAULT_CALLOUT_STYLES = {
@@ -280,6 +281,8 @@ class BaseHandler(ABC):
             html_body = self._inline_figure_alignment(html_body)
             html_body = self._inline_syntax_highlighting(html_body)
             html_body = self._inline_math(html_body)
+            table_settings = load_table_settings(content_root, warn=True) if content_root else None
+            html_body = inline_table_styles(html_body, table_settings)
 
             # Cleanup
             self._cleanup(temp_qmd, temp_html, temp_files_dir)

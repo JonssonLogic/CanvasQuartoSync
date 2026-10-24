@@ -28,6 +28,8 @@ a { color: var(--brand-primary) !important; }
 a:hover { color: var(--brand-heading) !important; }
 details summary { color: var(--brand-heading) !important; }
 details { border-color: var(--brand-primary) !important; }
+/* These two table rules reach study guides only. For tables on every page, see
+   "Table styling" at the end of this file. */
 table th, table thead tr { background-color: var(--brand-heading) !important; color: #fff !important; }
 table tr:nth-child(even) { background-color: #f0f4f7; }
 
@@ -41,3 +43,20 @@ table tr:nth-child(even) { background-color: #f0f4f7; }
 .callout-warning   { border-color: #ffc107; background-color: #fff3cd; --callout-icon: "\U000026a0"; }
 .callout-note      { border-color: #0d6efd; background-color: #cfe2ff; --callout-icon: "\U0001f4dd"; }
 .callout-caution   { border-color: #fd7e14; background-color: #ffe5d0; --callout-icon: "\U0001f536"; }
+
+/*
+ * Table styling (optional). Until the course sets something here or in
+ * config.toml's [tables], Canvas draws every table in its own faint style.
+ * Uncomment the :root block to have the sync draw them all in these colours:
+ *
+ * :root {
+ *   --table-stripe: #f0f4f7;
+ *   --table-border: #cccccc;
+ *   --table-header-bg: var(--brand-heading);
+ *   --table-header-fg: #ffffff;
+ * }
+ *
+ * A named style, for the tables whose caption line adds .schema:
+ *
+ * .schema { --table-stripe: #eef3f8; --table-border: #999999; }
+ */

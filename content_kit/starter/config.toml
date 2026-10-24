@@ -42,3 +42,9 @@ language    = "english"              # or "swedish"
 css = "branding.css"
 # Optional: an institution theme stylesheet loaded on Canvas pages
 # canvas_css_url = "https://example.com/your-institution-theme.css"
+
+# Tables look the way Canvas draws them until the course asks otherwise. With a
+# [tables] section the sync draws every table instead, and gives these options to
+# the tables whose caption line names none of its own. Colours go in branding.css.
+# [tables]
+# style = ["striped"]                # options: striped, bordered, sm, hover

@@ -30,10 +30,12 @@ def reset_globals():
     """Clear module-level caches between tests to prevent cross-contamination."""
     from handlers.content_utils import FOLDER_CACHE, ACTIVE_ASSET_IDS
     from handlers.config import _config_cache
+    from handlers.table_styles import _settings_cache as _table_settings_cache
 
     FOLDER_CACHE.clear()
     ACTIVE_ASSET_IDS.clear()
     _config_cache.clear()
+    _table_settings_cache.clear()
     yield
 
 

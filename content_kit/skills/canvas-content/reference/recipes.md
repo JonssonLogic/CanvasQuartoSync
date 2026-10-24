@@ -9,8 +9,8 @@ no Quarto theme. Anything Quarto styles by attaching a *class* therefore arrives
 unstyled unless the sync inlines it explicitly.
 
 The sync already inlines the common cases for you - callouts, code syntax highlighting,
-and math (converted to Canvas equation images). Everything else needs **inline styles or
-explicit dimensions**, not classes.
+math (converted to Canvas equation images) and, when the course asks for it, table
+styling. Everything else needs **inline styles or explicit dimensions**, not classes.
 
 Practical consequence: don't invent `<div class="my-thing">` and expect it to look like
 anything. Use inline `style="..."` if you need custom presentation.
@@ -99,6 +99,56 @@ Ordinary markdown pipe tables work and arrive as real HTML tables:
 | Steel    |     210 |         250 |
 | Aluminium|      69 |         240 |
 ```
+
+### Styling a table
+
+Options go on the caption line after the table, with or without caption text:
+
+```markdown
+: Material data {.striped .bordered}
+```
+
+| Option | What it does |
+|:--|:--|
+| `.striped` | a background on every other body row |
+| `.bordered` | lines around every cell |
+| `.sm` | tighter cell padding |
+| `.hover` | passed on to Canvas, which shows no visible highlight: don't promise one |
+| `.plain` | the table stays as Canvas draws it, whatever the course sets |
+
+In a course without table settings these get Canvas's own faint styling. A course
+turns on its own look with `[tables] style = [...]` in `config.toml` (the options for
+tables that name none) and colours on `:root` in `branding.css`. Those are the
+teacher's settings: change them only when asked.
+
+For one table, wrap it. The wrapper's values override the course's, and the sync
+removes the wrapper:
+
+```markdown
+::: {.cqs-table stripe="#eef3f8" border="#999999"}
+
+| Week | Topic |
+|---|---|
+| 44 | Introduction |
+
+: {.striped .bordered}
+
+:::
+```
+
+| In `branding.css` | On the wrapper | Sets |
+|:--|:--|:--|
+| `--table-stripe` | `stripe=` | background of the striped rows |
+| `--table-border` | `border=` | colour of the lines |
+| `--table-header-bg` | `header-bg=` | background of the header row |
+| `--table-header-fg` | `header-fg=` | text colour of the header row |
+
+A class in `branding.css` that sets these values, such as
+`.schema { --table-stripe: #eef3f8; }`, is a named style: add `.schema` to a caption
+line to use it. Values are colours (`#003865`, `rgb(0, 56, 101)`, `white`,
+`var(--brand-heading)`). Quarto drops `key=value` on the caption line itself, which is
+why one table's values need the wrapper. `check_content` flags a wrapper with no table
+inside and a value that is not a colour.
 
 ## Math
 
