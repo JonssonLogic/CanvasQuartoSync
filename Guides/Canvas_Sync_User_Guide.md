@@ -913,6 +913,39 @@ events:
     location: "Room 101"
 ```
 
+### Outlook and other calendar apps (`cqs ics`)
+
+The same `schedule.yaml` can be published as a calendar that Outlook, Google Calendar or
+Apple Calendar subscribes to. Canvas is not involved.
+
+```
+cqs ics              # write <course_code>.ics next to config.toml; nothing leaves the computer
+cqs ics --publish    # also put it on a secret GitHub gist and print the address
+```
+
+The first `--publish` creates the gist and writes its id into `config.toml`. Every later
+`--publish` updates the same gist, so the address never changes. Subscribe to it once
+(Outlook: *Add calendar > Subscribe from web*). After that, edit `schedule.yaml` and run
+`cqs ics --publish` again: moved events move and removed events disappear the next time the
+calendar app refreshes, which Outlook does by itself (allow a few hours).
+
+Optional settings:
+
+```toml
+[ics]
+name = "Konstruktion och Mekatronik 1"   # calendar name; default course_name
+file = "T1H2UO.ics"                      # default <course_code>.ics
+gist = "..."                             # written by the first --publish
+```
+
+* Times are course-local (`timezone` in `config.toml`) and written as UTC, so they are
+  right on both sides of a daylight-saving change.
+* Publishing needs a GitHub sign-in with the `gist` permission (`gh auth login`, or
+  `gh auth refresh -s gist`). The gist belongs to whoever published first; only they can
+  update it.
+* A secret gist is unlisted, not private: anyone with the address can read it. Put nothing
+  in `schedule.yaml` that is not meant for the students.
+
 ---
 
 ## 5. Linking & Asset Handling (Power Feature)
@@ -1014,6 +1047,7 @@ cqs kit update                # refresh the authoring kit
 cqs where                     # which tool, Python and course cqs is using
 cqs github --org jth-crunch   # put the course on GitHub as a private team course
 cqs github invite USERNAME    # invite a teacher to the course's organisation
+cqs ics --publish             # schedule.yaml as a calendar Outlook can subscribe to
 ```
 
 `cqs` on its own prints the list and does nothing else. Anything that writes to Canvas

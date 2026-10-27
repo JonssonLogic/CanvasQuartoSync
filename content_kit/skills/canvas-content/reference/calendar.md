@@ -53,3 +53,10 @@ date between `start_date` and `end_date`:
   date, start time, and location is left alone. Changing a *time* creates a second event
   rather than moving the first - the old one must be deleted in Canvas by hand.
 - Events are never deleted by the sync.
+
+## Outlook and other calendar apps
+
+`cqs ics` writes the same file as an `.ics` calendar; `cqs ics --publish` also puts it on a
+secret GitHub gist that Outlook subscribes to. Publishing again updates that calendar in
+place, moved and removed events included. Publishing sends the schedule to GitHub, so it is
+the developer's call, like a sync: write `schedule.yaml`, check it, and stop.

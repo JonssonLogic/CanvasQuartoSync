@@ -13,6 +13,7 @@ Each verb runs one of the existing scripts, which keep working on their own
     cqs kit update          init_content_project.py --update
     cqs github              github_course.py         creates a GitHub repo
     cqs migrate             course_board.py migrate  NN_ prefixes -> order files, local only
+    cqs ics                 ics_export.py            schedule.yaml -> .ics, --publish to a gist
     cqs where               which tool, which Python, which course
 
 The course is found the way git finds a repository: walk up from the current
@@ -51,6 +52,8 @@ usage: cqs [-C DIR] <command> [options]
                      'cqs github invite USER' invites a teacher.
   migrate            Convert NN_ prefixes to _modules.yml / _order.yml.
                      Local only. Try --dry-run first.
+  ics                Write schedule.yaml as an .ics calendar file.
+                     --publish puts it where Outlook can subscribe to it.
   where              Show which tool, Python and course cqs would use.
 
   -C DIR             Run as if started in DIR.
@@ -184,6 +187,10 @@ def _migrate(args, cwd):
     return 'course_board', [_require_root(cwd), 'migrate', *args]
 
 
+def _ics(args, cwd):
+    return 'ics_export', [_require_root(cwd), *args]
+
+
 def _kit(args, cwd):
     if not args or args[0] != 'update':
         raise CqsError("usage: cqs kit update")
@@ -201,6 +208,7 @@ VERBS = {
     'kit': _kit,
     'github': _github,
     'migrate': _migrate,
+    'ics': _ics,
 }
 
 

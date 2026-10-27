@@ -5,6 +5,18 @@ on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/r
 
 ## Unreleased
 
+### `cqs ics`: the schedule in Outlook
+
+- **`cqs ics`** writes `schedule.yaml` as an iCalendar file (`<course_code>.ics`).
+  **`cqs ics --publish`** also puts it on a secret GitHub gist and prints an address that
+  never changes. Subscribe to it once in Outlook, Google or Apple Calendar; after that,
+  editing `schedule.yaml` and publishing again is the whole update.
+- Event ids are stable, so an unchanged event stays the same event, and a moved or removed
+  one moves or disappears in the subscribed calendar. No duplicates, unlike the Canvas
+  calendar sync.
+- Optional `[ics]` table in `config.toml`: `name`, `file`, and `gist` (written by the first
+  publish).
+
 ### Preview: comments that work, and MDViewer's rendering
 
 - **Comment highlights show up** even when the commented text spans bold, links, math or
