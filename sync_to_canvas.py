@@ -13,7 +13,7 @@ from handlers.subheader_handler import SubHeaderHandler
 from handlers.external_link_handler import ExternalLinkHandler
 from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name, verify_sync_map_course, load_sync_map, save_sync_map, set_sync_identity
 from handlers.single_sync import build_handlers, find_or_create_module, arrange_modules, remove_stale_placements, sync_single_file
-from handlers.course_layout import load_layout, is_ordered, free_name, append_item, add_module, remove_module
+from handlers.course_layout import load_layout, is_ordered, free_name, append_item, add_module, remove_module, remove_item
 from handlers.module_structure import fetch_module_structure
 from handlers import __version__
 from handlers.config import get_api_credentials, get_course_id, load_config
@@ -285,6 +285,8 @@ def _delete_items(course, content_root: str, payload_json: str) -> dict:
                     # is the sync map entry, not the file, that makes a deleted
                     # page keep showing up as synced in the module panel.
                     forget_synced_file(content_root, local_path)
+                    if is_ordered(content_root):
+                        remove_item(content_root, local_path)
                 deleted += 1
 
             elif target == 'module':
@@ -309,6 +311,8 @@ def _delete_items(course, content_root: str, payload_json: str) -> dict:
                     if os.path.isfile(abs_p):
                         os.remove(abs_p)
                     forget_synced_file(content_root, local_path)
+                    if is_ordered(content_root):
+                        remove_item(content_root, local_path)
                     deleted += 1
 
             else:
