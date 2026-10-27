@@ -71,6 +71,51 @@ export function findCourseRoot(filePath: string): string | undefined {
 }
 
 /**
+ * Picks the course to work on when the workspace may hold more than one:
+ * the course of the open file, else the workspace root if it is a course,
+ * else the course folder directly under the root (asking when there are
+ * several). Falls back to the workspace root.
+ */
+export async function resolveCourseRoot(): Promise<string | undefined> {
+  const active = vscode.window.activeTextEditor?.document;
+  if (active && active.uri.scheme === 'file') {
+    const fromFile = findCourseRoot(active.uri.fsPath);
+    if (fromFile) {
+      return fromFile;
+    }
+  }
+  const ws = getWorkspaceRoot();
+  if (!ws || fs.existsSync(path.join(ws, 'config.toml'))) {
+    return ws;
+  }
+  const courses = fs.readdirSync(ws, { withFileTypes: true })
+    .filter(d => d.isDirectory() && fs.existsSync(path.join(ws, d.name, 'config.toml')))
+    .map(d => d.name)
+    .sort();
+  if (courses.length === 1) {
+    return path.join(ws, courses[0]);
+  }
+  if (courses.length > 1) {
+    const pick = await vscode.window.showQuickPick(courses, { placeHolder: 'Which course?' });
+    return pick ? path.join(ws, pick) : undefined;
+  }
+  return ws;
+}
+
+// The course the Course Board opened, so its actions (rollups, diffs)
+// work on the same folder even when the workspace is a parent of it.
+let boardCourseRoot: string | undefined;
+
+export function setCourseRoot(root: string | undefined): void {
+  boardCourseRoot = root;
+}
+
+/** The course the board is showing, else the workspace root. */
+export function getCourseRoot(): string | undefined {
+  return boardCourseRoot ?? getWorkspaceRoot();
+}
+
+/**
  * Returns the workspace root path, or undefined if no workspace is open.
  */
 export function getWorkspaceRoot(): string | undefined {

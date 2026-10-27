@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { resolvePython, resolveCqsRoot } from '../python/venvResolver';
-import { getWorkspaceRoot } from '../config/configLoader';
+import { getCourseRoot, resolveCourseRoot, setCourseRoot } from '../config/configLoader';
 import { diffFileWithCanvas } from '../commands/diffWithCanvas';
 import { setSyncing } from './statusBar';
 import {
@@ -92,7 +92,14 @@ export async function openCourseBoard(context: vscode.ExtensionContext): Promise
   const extensionPath = context.extensionPath;
   log.appendLine('[open] called');
 
+  // The workspace may be a parent of the course (or of several courses).
+  const root = await resolveCourseRoot();
+  if (!root) return;
+  setCourseRoot(root);
+  log.appendLine(`[open] course folder: ${root}`);
+
   if (currentPanel) {
+    currentPanel.title = `Course Board: ${path.basename(root)}`;
     currentPanel.reveal();
     await refreshPanel(extensionPath);
     return;
@@ -100,13 +107,13 @@ export async function openCourseBoard(context: vscode.ExtensionContext): Promise
 
   currentPanel = vscode.window.createWebviewPanel(
     'cqs.courseBoard',
-    'Course Board',
+    `Course Board: ${path.basename(root)}`,
     vscode.ViewColumn.One,
     { enableScripts: true, retainContextWhenHidden: true }
   );
 
   currentPanel.webview.onDidReceiveMessage(async (msg) => {
-    const ws = getWorkspaceRoot();
+    const ws = getCourseRoot();
     if (msg.type === 'openFile') {
       if (ws && msg.path) {
         const uri = vscode.Uri.file(path.join(ws, msg.path));
@@ -145,7 +152,7 @@ export async function openCourseBoard(context: vscode.ExtensionContext): Promise
       await refreshPanel(extensionPath);
     } else if (msg.type === 'batchSync') {
       // Sync multiple local items sequentially (no --force for batch)
-      const ws = getWorkspaceRoot();
+      const ws = getCourseRoot();
       if (ws) {
         let synced = 0;
         for (const localPath of msg.paths as string[]) {
@@ -239,7 +246,7 @@ canvas_api_url = ""    # e.g. "https://yourschool.instructure.com"
 `;
 
 async function openConfig(): Promise<void> {
-  const ws = getWorkspaceRoot();
+  const ws = getCourseRoot();
   if (!ws) {
     vscode.window.showErrorMessage('Open the course folder first.');
     return;
@@ -274,7 +281,7 @@ function runBoard(extensionPath: string, ws: string, args: string[]): Promise<{ 
 }
 
 async function handleBoardOp(extensionPath: string, op: Record<string, unknown>): Promise<void> {
-  const ws = getWorkspaceRoot();
+  const ws = getCourseRoot();
   if (!ws || !op) return;
   const res = await runBoard(extensionPath, ws, ['op', JSON.stringify(op)]);
   const line = res.stdout.split('\n').find(l => l.trim().startsWith('BOARD_RESULT_JSON:'));
@@ -313,7 +320,7 @@ function offerConversion(extensionPath: string): void {
 
 /** Show what the conversion would do, then do it if asked. */
 async function handleConvert(extensionPath: string): Promise<void> {
-  const ws = getWorkspaceRoot();
+  const ws = getCourseRoot();
   if (!ws) return;
   const dry = await runBoard(extensionPath, ws, ['migrate', '--dry-run']);
   if (dry.code !== 0) {
@@ -366,7 +373,7 @@ async function handleConvert(extensionPath: string): Promise<void> {
 }
 
 async function handleSetPublished(extensionPath: string, data: Record<string, unknown>): Promise<void> {
-  const ws = getWorkspaceRoot();
+  const ws = getCourseRoot();
   if (!ws) return;
   const pythonPath = resolvePython();
   if (!pythonPath) return;
@@ -455,7 +462,7 @@ async function handleSync(extensionPath: string, ws: string, localPath: string, 
 }
 
 async function handleImport(extensionPath: string, itemData: Record<string, unknown>): Promise<void> {
-  const ws = getWorkspaceRoot();
+  const ws = getCourseRoot();
   if (!ws) return;
   const pythonPath = resolvePython();
   if (!pythonPath) return;
@@ -547,7 +554,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 async function handleCreateItem(extensionPath: string, moduleDir: string, itemType: string, moduleName?: string): Promise<void> {
-  const ws = getWorkspaceRoot();
+  const ws = getCourseRoot();
   if (!ws) return;
 
   const template = ITEM_TEMPLATES[itemType];
@@ -606,7 +613,7 @@ async function handleCreateItem(extensionPath: string, moduleDir: string, itemTy
 }
 
 async function handleCreateModule(extensionPath: string): Promise<void> {
-  const ws = getWorkspaceRoot();
+  const ws = getCourseRoot();
   if (!ws) return;
 
   const name = await vscode.window.showInputBox({
@@ -660,7 +667,7 @@ async function handleCreateModule(extensionPath: string): Promise<void> {
 }
 
 async function handleBatchDelete(extensionPath: string, items: Record<string, unknown>[]): Promise<void> {
-  const ws = getWorkspaceRoot();
+  const ws = getCourseRoot();
   if (!ws || !items || items.length === 0) return;
 
   const modCount = items.filter(i => i.target === 'module').length;
@@ -720,7 +727,7 @@ async function fetchStructure(
   extensionPath: string,
   withDrift = false
 ): Promise<{ type: string; data?: StructureData; message?: string }> {
-  const workspaceRoot = getWorkspaceRoot();
+  const workspaceRoot = getCourseRoot();
   if (!workspaceRoot) return { type: 'error', message: 'No folder is open. Open the course folder (File > Open Folder) to see its board.' };
 
   const pythonPath = resolvePython();

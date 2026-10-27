@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
 import { resolvePython, resolveCqsRoot } from '../python/venvResolver';
-import { getWorkspaceRoot } from '../config/configLoader';
+import { getCourseRoot } from '../config/configLoader';
 import { setSyncing } from './statusBar';
 
 // ── Grade rollups ───────────────────────────────────────────────────
@@ -99,7 +99,7 @@ async function runRollup(
   args: string[],
   showBusy: boolean
 ): Promise<{ code: number | null; doc: any; stderr: string } | undefined> {
-  const ws = getWorkspaceRoot();
+  const ws = getCourseRoot();
   const pythonPath = resolvePython();
   if (!ws || !pythonPath) return undefined;
   const scriptPath = path.join(resolveCqsRoot(extensionPath), 'rollup.py');

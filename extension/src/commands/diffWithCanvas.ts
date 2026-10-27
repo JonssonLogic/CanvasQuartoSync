@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { resolvePython, resolveCqsRoot } from '../python/venvResolver';
-import { getWorkspaceRoot } from '../config/configLoader';
+import { getCourseRoot } from '../config/configLoader';
 import { setSyncing } from '../providers/statusBar';
 
 // ── Diff with Canvas ─────────────────────────────────────────────────
@@ -22,7 +22,7 @@ interface DriftItem {
 }
 
 export async function diffWithCanvas(extensionPath: string): Promise<void> {
-  const workspaceRoot = getWorkspaceRoot();
+  const workspaceRoot = getCourseRoot();
   if (!workspaceRoot) {
     vscode.window.showErrorMessage('No workspace folder open.');
     return;
@@ -78,7 +78,7 @@ export async function diffFileWithCanvas(
   extensionPath: string,
   relPath: string
 ): Promise<void> {
-  const workspaceRoot = getWorkspaceRoot();
+  const workspaceRoot = getCourseRoot();
   if (!workspaceRoot) return;
   await runDriftCheck(extensionPath, path.join(workspaceRoot, relPath));
 }
@@ -87,7 +87,7 @@ async function runDriftCheck(
   extensionPath: string,
   targetPath: string | null
 ): Promise<void> {
-  const workspaceRoot = getWorkspaceRoot();
+  const workspaceRoot = getCourseRoot();
   if (!workspaceRoot) {
     vscode.window.showErrorMessage('No workspace folder open.');
     return;
