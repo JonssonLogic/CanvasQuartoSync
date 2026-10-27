@@ -95,6 +95,33 @@ Expected column orders:
 Sections are split on `#` (level-one) headings, so use `#` for top-level sections and
 `##` below.
 
+### YH courses
+
+A yrkeshögskola course counts in Yh-poäng and grades IG/G/VG. Set `yh = true` in
+`config.toml` (or `preprocessor: yh` under `canvas:` in one file) and a separate YH
+preprocessor runs instead. Without either, the ordinary one runs as above.
+
+- The PDF cover says `Yh-poäng` instead of `Högskolepoäng`.
+- `# Betygskriterier` takes the grade labels from the table's header row, so
+  `| Läranderesultat | IG | G | VG |` gives collapsible cards with IG, G and VG.
+- `# Lärare` takes `| Namn | Roll | Bild | Länk | Kontakt |`. The photo, link and
+  contact are optional; with no photo the card is text only.
+
+```markdown
+# Betygskriterier
+
+| Läranderesultat | IG | G | VG |
+|:--|:--|:--|:--|
+| 1. Beskriva principer… | Kan inte… | Beskriver… | Analyserar… |
+
+# Lärare
+
+| Namn | Roll | Bild | Länk | Kontakt |
+|:--|:--|:--|:--|:--|
+| Mirza Cenanovic | Kursansvarig | assets/Mirza.jpg | | Canvas-meddelande |
+| Maja Johansson | Utbildningsledare | | | Canvas-meddelande |
+```
+
 ## Manual mode
 
 Without `preprocess: true` the file renders as written, and dual-format content is your

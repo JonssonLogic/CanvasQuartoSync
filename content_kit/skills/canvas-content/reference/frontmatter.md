@@ -69,6 +69,7 @@ See study-guide.md for the preprocessor and required `config.toml` keys.
 |---|---|---|---|
 | `front_page` | bool | `false` | As for pages |
 | `preprocess` | bool | `false` | Expand plain markdown into dual-format HTML/PDF content |
+| `preprocessor` | string | unset | `yh` for a YH course: Yh-poäng and IG/G/VG. `yh = true` in config.toml does the same for every study guide. See study-guide.md |
 | `pdf` | block | - | Nested settings below |
 
 Nested under `pdf:`

@@ -129,6 +129,7 @@ CANVAS_SCHEMA = {
         **_COMMON,
         "front_page": Key("bool"),
         "preprocess": Key("bool"),
+        "preprocessor": Key("str", ("yh",)),
         "pdf": Key("dict"),
     },
     "subheader": {

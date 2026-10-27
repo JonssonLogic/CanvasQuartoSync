@@ -106,9 +106,14 @@ class StudyGuideHandler(BaseHandler):
 
         # 3a. Preprocess study guide (expand minimal QMD into dual-format styled QMD)
         if canvas_meta.get('preprocess'):
-            from handlers.qmd_preprocessor import preprocess_study_guide
             from handlers.config import load_config
             config = load_config(content_root) if content_root else {}
+            # YH courses (Yh-poäng, IG/G/VG) have their own preprocessor:
+            # yh = true in config.toml, or preprocessor: yh in this file.
+            if config.get('yh') is True or canvas_meta.get('preprocessor') == 'yh':
+                from handlers.qmd_preprocessor_yh import preprocess_study_guide
+            else:
+                from handlers.qmd_preprocessor import preprocess_study_guide
             config_dir = content_root or os.path.dirname(file_path)
             raw_content = preprocess_study_guide(raw_content, config, config_dir=config_dir)
             logger.debug("    Preprocessed study guide with dual-format styling")
