@@ -190,6 +190,15 @@ def upload_file(course, local_path, target_folder_name="course_files", content_r
                 asset_id = cached_entry.get('id')
                 if asset_id:
                     ACTIVE_ASSET_IDS.add(asset_id)
+                # Entries written before files carried a sync time get one now,
+                # during the sync, so the map is committed with it. Reloaded:
+                # source_unchanged may have saved the map in between.
+                if not cached_entry.get('last_synced_at'):
+                    sync_map = load_sync_map(content_root)
+                    entry = sync_map.get(rel_path)
+                    if isinstance(entry, dict):
+                        entry['last_synced_at'] = _now_iso()
+                        save_sync_map(content_root, sync_map)
                 return cached_entry.get('url'), asset_id
 
     folder = get_or_create_folder(course, target_folder_name)
@@ -209,11 +218,15 @@ def upload_file(course, local_path, target_folder_name="course_files", content_r
             if content_root:
                 sync_map = load_sync_map(content_root)
                 rel_path = os.path.relpath(map_path, content_root).replace('\\', '/')
-                sync_map[rel_path] = {
+                entry = {
                     'source_hash': fingerprint,
                     'url': file_url,
-                    'id': file_id
+                    'id': file_id,
+                    'last_synced_at': _now_iso(),
                 }
+                if _SYNC_IDENTITY:
+                    entry['last_synced_by'] = _SYNC_IDENTITY
+                sync_map[rel_path] = entry
                 save_sync_map(content_root, sync_map)
 
             return file_url, file_id

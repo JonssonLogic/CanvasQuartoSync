@@ -46,16 +46,15 @@ def _normalize_name(name: str) -> str:
     return name
 
 
-def _backfill_last_synced(sync_map: dict, content_root: str):
-    """Backfill last_synced_at for entries that were synced before this field existed.
+def _backfill_last_synced(sync_map: dict):
+    """Fill in last_synced_at for entries synced before this field existed.
 
-    Sets last_synced_at to 'now' — these items were in sync before this feature
-    existed, so we treat the current state as the baseline. Any future Canvas
-    edits or local edits will then be detected correctly.
+    In memory only: 'now' is the baseline for this read, so the item shows as
+    in sync. Writing it back left the map changed after every board refresh,
+    after team mode had already committed it. The sync stamps the entries.
     """
     now_iso = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-    changed = False
-    for rel_path, entry in sync_map.items():
+    for entry in sync_map.values():
         if not isinstance(entry, dict):
             continue
         if entry.get('last_synced_at'):
@@ -64,9 +63,6 @@ def _backfill_last_synced(sync_map: dict, content_root: str):
         if not entry.get('canvas_hash') and not entry.get('id'):
             continue
         entry['last_synced_at'] = now_iso
-        changed = True
-    if changed:
-        save_sync_map(content_root, sync_map)
 
 
 def _iso_mtime(path):
@@ -149,7 +145,7 @@ def fetch_module_structure(course, content_root: str,
 
     if course is not None:
         # Backfill last_synced_at for legacy entries that were synced before this field existed
-        _backfill_last_synced(sync_map, content_root)
+        _backfill_last_synced(sync_map)
 
     # Build reverse map: canvas_id -> local rel_path
     # Build last_synced lookup: rel_path -> last_synced_at ISO string
