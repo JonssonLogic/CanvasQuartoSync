@@ -19,6 +19,19 @@ on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/r
   unused-file cleanup at the end of the sync used to delete it, leaving the course with no
   PDF until the next successful render.
 
+### Team mode: no committing by hand
+
+- **The sync commits your changes itself**, new and deleted files included, then pulls
+  your colleagues' work in under yours and pushes. It used to refuse to run with
+  uncommitted or unpushed changes. The only thing that stops it now is a **merge
+  conflict**: it names the files, keeps your commit on your computer, and syncs nothing.
+- **Leftover changes to the sync map after a sync are gone.** Uploaded files record when
+  they were synced, and the Course Board no longer writes the map when it refreshes.
+- **Deleting a file in the Course Board removes it from the module's `_order.yml`**, so
+  the board no longer warns that the order file lists a file that does not exist.
+- **A study guide's PDF shows with its guide** in the Course Board instead of as "Not in
+  order". The sync no longer records the rendered PDF as a source file of its own.
+
 ### `cqs ics`: the schedule in Outlook
 
 - **`cqs ics`** writes `schedule.yaml` as an iCalendar file (`<course_code>.ics`).

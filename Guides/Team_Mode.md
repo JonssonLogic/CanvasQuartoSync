@@ -146,15 +146,19 @@ Before the sync:
 
 1. The folder is a git repository with an upstream branch, and the map is not
    gitignored.
-2. **No uncommitted changes**, untracked content files included: Canvas should
-   show what is in the repo.
+2. **Commit everything that changed** in the course folder, new and deleted
+   files included, so Canvas shows what is in the repo. The commit message lists
+   the files. Nobody commits by hand before a sync.
 3. **Take the lock.**
-4. **Pull**, fast-forward only.
-5. **Nothing unpushed.** This is the consequence of a shared fingerprint that is
-   easy to miss. Publish a commit that is not on GitHub, and the next person's
-   older copy of that file no longer matches the fingerprint in the map. Their
-   sync sees it as a new edit and publishes it, **silently reverting your change
-   in Canvas**.
+4. **Pull, rebasing** the local commits over GitHub. A **merge conflict** is the
+   one thing that stops the sync: the rebase is undone, the commit stays on the
+   computer, and the message names the files. Resolve them in VS Code and sync
+   again.
+5. **Push.** Nothing published may be missing from GitHub. This is the
+   consequence of a shared fingerprint that is easy to miss. Publish a commit
+   that is not on GitHub, and the next person's older copy of that file no
+   longer matches the fingerprint in the map. Their sync sees it as a new edit
+   and publishes it, **silently reverting your change in Canvas**.
 
 After the sync, always, including after a crash: **commit and push the map**,
 rebasing over anything colleagues pushed meanwhile, then release the lock. If the
@@ -214,8 +218,6 @@ teacher role in the Canvas course.
 ## Still open
 
 - **A personal sandbox course** next to the live one (#7) is not built yet.
-- **Deleting items from the extension** updates the map but does not commit it;
-  commit the map afterwards in team mode.
 - **Same Quarto version for everyone.** Harmless for the checks (they compare
   sources, and Canvas's stored copy), but different versions render slightly
   different HTML for the same `.qmd`.

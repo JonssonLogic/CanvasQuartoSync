@@ -10,13 +10,17 @@ Before a sync (``begin``):
 1. The folder is a git repository, and the sync map is not gitignored. The map
    holds the Canvas ids; a clone without it matches by title and creates
    duplicates of anything renamed.
-2. No uncommitted changes, so Canvas shows what is in the repo.
+2. Commit whatever changed in the course folder, so Canvas shows what is in
+   the repo. Nobody has to commit by hand before a sync.
 3. Take the lock (below).
-4. Pull, fast-forward only.
-5. Nothing unpushed. This one is easy to miss: the map records a fingerprint
-   of what was published. Publish an unpushed commit, and the next person's
-   older copy of that file no longer matches the fingerprint, so their sync
-   treats it as a new edit and publishes it, silently reverting yours.
+4. Pull, rebasing the local commits over GitHub. A conflict stops the sync:
+   the rebase is undone, the commits stay local, and the message names the
+   files to resolve. That is the only case that needs a person.
+5. Push, so nothing published is missing from GitHub. This one is easy to
+   miss: the map records a fingerprint of what was published. Publish an
+   unpushed commit, and the next person's older copy of that file no longer
+   matches the fingerprint, so their sync treats it as a new edit and
+   publishes it, silently reverting yours.
 
 After a sync (``end``, always, also after a crash): commit and push the map,
 rebasing over anything pushed meanwhile, then release the lock. If the map
@@ -89,35 +93,60 @@ class TeamSync:
                 f'{MAP_NAME} is gitignored. In team mode it must be committed: it holds '
                 'the Canvas ids everyone needs. Remove it from .gitignore and commit it.')
 
-        dirty = self._dirty_paths()
-        if dirty:
-            raise TeamModeError(
-                'Uncommitted changes. Canvas should show what is in the repo, so commit '
-                '(or discard) them first:\n    ' + '\n    '.join(dirty[:10]))
+        self._commit_changes()
 
         self._acquire_lock()
         try:
-            pull = _git(self.root, 'pull', '--ff-only', check=False)
-            if pull.returncode != 0:
-                raise TeamModeError(
-                    'Could not pull without merging: your branch and GitHub have both '
-                    'moved on. Pull (and resolve) in VS Code first, then sync.\n    '
-                    + (pull.stderr or pull.stdout).strip())
+            self._pull()
             ahead = _git(self.root, 'rev-list', '--count', '@{u}..HEAD').stdout.strip()
             if ahead and ahead != '0':
-                raise TeamModeError(
-                    f'{ahead} commit(s) not pushed. Push first: publishing something '
-                    'that is not on GitHub lets the next person\'s sync revert it.')
+                push = _git(self.root, 'push', self.remote, 'HEAD', check=False)
+                if push.returncode != 0:
+                    raise TeamModeError(
+                        'Could not push your changes to GitHub, so nothing was synced: '
+                        'publishing something that is not on GitHub lets the next '
+                        'person\'s sync revert it.\n    '
+                        + (push.stderr or push.stdout).strip())
+                logger.info('[green]Pushed %s commit(s) to GitHub.[/green]', ahead)
         except Exception:
             self._release_lock()
             raise
 
-    def _dirty_paths(self):
-        out = _git(self.root, 'status', '--porcelain', '--', '.').stdout
-        paths = [line[3:] for line in out.splitlines() if line.strip()]
-        # The map itself may be left over from a sync whose push failed; end()
-        # commits it, so it does not block.
-        return [p for p in paths if p.strip('"').replace('\\', '/').split('/')[-1] != MAP_NAME]
+    def _commit_changes(self):
+        """Commit everything that changed in the course folder. Returns the paths."""
+        _git(self.root, 'add', '-A', '--', '.')
+        # quotePath off: L2_Strömförsörjning.qmd, not "L2_Str\303\266m..."
+        staged = _git(self.root, '-c', 'core.quotePath=false', 'diff', '--cached',
+                      '--name-only', '--relative').stdout
+        paths = [p for p in staged.splitlines() if p.strip()]
+        if not paths:
+            return []
+        who = self.who or self._git_user() or 'cqs'
+        names = [p.split('/')[-1] for p in paths if p.split('/')[-1] != MAP_NAME] or [MAP_NAME]
+        subject = f'Changes synced by {who}: ' + ', '.join(names[:3])
+        if len(names) > 3:
+            subject += f' and {len(names) - 3} more'
+        _git(self.root, 'commit', '-q', '-m', subject, '-m', '\n'.join(paths))
+        logger.info('[green]Committed %d changed file(s).[/green]', len(paths))
+        return paths
+
+    def _pull(self):
+        """Rebase local commits over GitHub. A conflict is undone and reported."""
+        pull = _git(self.root, 'pull', '--rebase', '--autostash', check=False)
+        if pull.returncode == 0:
+            return
+        conflicts = _git(self.root, '-c', 'core.quotePath=false', 'diff', '--name-only',
+                         '--diff-filter=U', check=False).stdout.splitlines()
+        _git(self.root, 'rebase', '--abort', check=False)
+        if conflicts:
+            raise TeamModeError(
+                'Merge conflict: your changes and GitHub\'s change the same lines in:\n    '
+                + '\n    '.join(conflicts)
+                + '\nNothing was synced. Your changes are committed on this computer. '
+                'Pull in VS Code (Source Control, Sync Changes), choose what to keep in '
+                'each file, then sync again.')
+        raise TeamModeError('Could not pull from GitHub:\n    '
+                            + (pull.stderr or pull.stdout).strip())
 
     # -- lock --------------------------------------------------------------
 
