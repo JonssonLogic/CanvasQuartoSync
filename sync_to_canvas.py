@@ -20,6 +20,7 @@ from handlers.config import get_api_credentials, get_course_id, load_config
 from handlers.drift_detector import check_all_drift, drift_report, forget_synced_file, forget_synced_dir
 from handlers.sync_policy import SyncPolicy, set_policy, get_policy, SOLO, TEAM
 from handlers.team import TeamSync, TeamModeError
+from handlers.render_workspace import render_workspace
 
 
 def _normalize_name(name: str) -> str:
@@ -580,7 +581,10 @@ def main():
     team_ok = True
     try:
         _apply_force(args, content_root)
-        rc = _sync_content(args, course, canvas, content_root)
+        # Every Quarto render of the run happens in one mirror of the course
+        # outside the content folder, removed when the run ends.
+        with render_workspace(content_root):
+            rc = _sync_content(args, course, canvas, content_root)
         if get_policy().report() and rc == 0:
             rc = 2
     finally:

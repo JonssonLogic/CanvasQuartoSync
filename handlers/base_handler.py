@@ -2,9 +2,11 @@ from abc import ABC, abstractmethod
 import os
 import subprocess
 import re
+import time
 import html as html_lib
 import urllib.parse
 from handlers.content_utils import safe_delete_file, safe_delete_dir
+from handlers.render_workspace import render_dir, real_text
 from handlers.config import load_config
 from handlers.log import logger
 
@@ -177,17 +179,27 @@ class BaseHandler(ABC):
         if files_dir:
             safe_delete_dir(files_dir)
 
-    def render_quarto_pdf(self, processed_content, base_path, filename):
+    def render_quarto_pdf(self, processed_content, base_path, filename, content_root=None):
         """
         Renders a processed QMD document to PDF via Quarto.
         Returns the path to the rendered PDF file, or None on failure.
         The caller is responsible for deleting the PDF after use.
-        """
-        temp_qmd = os.path.join(base_path, f"tmp-pdf-{filename}")
-        temp_stem = os.path.splitext(f"tmp-pdf-{filename}")[0]
-        temp_files_dir = os.path.join(base_path, f"{temp_stem}_files")
-        temp_pdf = os.path.join(base_path, f"{temp_stem}.pdf")
 
+        The render runs in the course mirror (see render_workspace), so the
+        returned PDF lives there. Call this inside ``render_workspace`` when
+        the PDF is used after the call returns; outside one the mirror, and
+        the PDF with it, is gone again.
+        """
+        with render_dir(base_path, content_root) as work_dir:
+            return self._render_pdf_in(processed_content, work_dir, base_path, filename)
+
+    def _render_pdf_in(self, processed_content, work_dir, base_path, filename):
+        temp_qmd = os.path.join(work_dir, f"tmp-pdf-{filename}")
+        temp_stem = os.path.splitext(f"tmp-pdf-{filename}")[0]
+        temp_files_dir = os.path.join(work_dir, f"{temp_stem}_files")
+        temp_pdf = os.path.join(work_dir, f"{temp_stem}.pdf")
+
+        started = time.time()
         try:
             with open(temp_qmd, 'w', encoding='utf-8') as f:
                 f.write(processed_content)
@@ -206,6 +218,16 @@ class BaseHandler(ABC):
 
         except subprocess.CalledProcessError as e:
             stderr_text = e.stderr.decode('utf-8', errors='replace') if e.stderr else ''
+            stderr_text = real_text(stderr_text, work_dir, base_path)
+            # Quarto exits non-zero when only its cleanup fails (a folder held
+            # open by Dropbox, os error 32), after the PDF is written. A PDF
+            # from this render is good: keep it.
+            if self._fresh_file(temp_pdf, started):
+                tail = ' | '.join(stderr_text.strip().splitlines()[-3:])
+                logger.warning("    [yellow]Quarto reported an error after writing the PDF; "
+                               "using the PDF.[/yellow] %s", tail)
+                self._cleanup(temp_qmd, None, temp_files_dir)
+                return temp_pdf
             if 'no such file' in stderr_text.lower() and ('latex' in stderr_text.lower() or 'tinytex' in stderr_text.lower()):
                 logger.error("    PDF render failed: LaTeX not found. Install with: quarto install tinytex")
             else:
@@ -213,18 +235,31 @@ class BaseHandler(ABC):
             self._cleanup(temp_qmd, None, temp_files_dir)
             return None
         except Exception as e:
-            logger.error("    PDF render failed: %s", e)
+            logger.error("    PDF render failed: %s", real_text(str(e), work_dir, base_path))
             self._cleanup(temp_qmd, None, temp_files_dir)
             return None
+
+    @staticmethod
+    def _fresh_file(path, since):
+        """True if ``path`` exists and was written at or after ``since``."""
+        try:
+            # One second of slack for file systems with coarse timestamps.
+            return os.path.getsize(path) > 0 and os.path.getmtime(path) >= since - 1
+        except OSError:
+            return False
 
     def render_quarto_document(self, processed_content, base_path, filename, content_root=None):
         """
         Renders a processed QMD document to HTML via Quarto.
         Extracts the <main> content block and cleans up temp files.
         """
-        temp_qmd = os.path.join(base_path, f"tmp-html-{filename}")
+        with render_dir(base_path, content_root) as work_dir:
+            return self._render_html_in(processed_content, work_dir, base_path, filename, content_root)
+
+    def _render_html_in(self, processed_content, work_dir, base_path, filename, content_root):
+        temp_qmd = os.path.join(work_dir, f"tmp-html-{filename}")
         temp_stem = os.path.splitext(f"tmp-html-{filename}")[0]
-        temp_files_dir = os.path.join(base_path, f"{temp_stem}_files")
+        temp_files_dir = os.path.join(work_dir, f"{temp_stem}_files")
         temp_html = None
 
         try:
@@ -236,7 +271,7 @@ class BaseHandler(ABC):
             stderr_text = result.stderr.decode('utf-8', errors='replace') if result.stderr else ''
             for line in stderr_text.splitlines():
                 if 'WARNING' in line:
-                    logger.debug("    quarto: %s", line.strip())
+                    logger.debug("    quarto: %s", real_text(line.strip(), work_dir, base_path))
 
             temp_html = temp_qmd.replace('.qmd', '.html')
 
@@ -285,8 +320,14 @@ class BaseHandler(ABC):
             self._cleanup(temp_qmd, temp_html, temp_files_dir)
             return html_body
 
+        except subprocess.CalledProcessError as e:
+            stderr_text = e.stderr.decode('utf-8', errors='replace') if e.stderr else ''
+            logger.error("    Quarto render failed: %s",
+                         real_text(stderr_text, work_dir, base_path) or e)
+            self._cleanup(temp_qmd, None, temp_files_dir)
+            return None
         except Exception as e:
-            logger.error("    Quarto render failed: %s", e)
+            logger.error("    Quarto render failed: %s", real_text(str(e), work_dir, base_path))
             self._cleanup(temp_qmd, None, temp_files_dir)
             return None
 

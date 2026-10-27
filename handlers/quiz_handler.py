@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import subprocess
@@ -13,6 +14,7 @@ from handlers.dates import resolve_timezone, to_canvas_iso
 from handlers.ip_filter import ip_filter_to_classic
 from handlers.qmd_quiz_parser import parse_qmd_quiz
 from handlers.log import logger
+from handlers.render_workspace import render_dir, real_text
 
 class QuizHandler(BaseHandler):
     def can_handle(self, file_path: str) -> bool:
@@ -474,9 +476,12 @@ class QuizHandler(BaseHandler):
         qmd_content = ''.join(qmd_parts)
 
         # Step 4: Single Quarto render
-        temp_qmd = os.path.join(base_path, "_temp_quiz_render.qmd")
-        temp_html = os.path.join(base_path, "_temp_quiz_render.html")
-        temp_files_dir = os.path.join(base_path, "_temp_quiz_render_files")
+        # In the course mirror, not the course folder (see render_workspace).
+        render_stack = contextlib.ExitStack()
+        work_dir = render_stack.enter_context(render_dir(base_path, content_root))
+        temp_qmd = os.path.join(work_dir, "_temp_quiz_render.qmd")
+        temp_html = os.path.join(work_dir, "_temp_quiz_render.html")
+        temp_files_dir = os.path.join(work_dir, "_temp_quiz_render_files")
 
         rendered_map = {}
 
@@ -516,10 +521,11 @@ class QuizHandler(BaseHandler):
                 rendered_map = processed_chunks
 
         except Exception as e:
-            logger.warning("    Quarto render error: %s", e)
+            logger.warning("    Quarto render error: %s", real_text(str(e), work_dir, base_path))
             rendered_map = processed_chunks
         finally:
             self._cleanup(temp_qmd, temp_html, temp_files_dir)
+            render_stack.close()
 
         # Step 6: Apply rendered HTML back to question data
         rendered_questions = []

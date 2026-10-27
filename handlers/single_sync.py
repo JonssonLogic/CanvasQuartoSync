@@ -24,6 +24,7 @@ from handlers.content_utils import (
     FOLDER_FILES,
 )
 from handlers.course_layout import load_layout
+from handlers.render_workspace import render_workspace
 from handlers.study_guide_handler import StudyGuideHandler
 from handlers.page_handler import PageHandler
 from handlers.assignment_handler import AssignmentHandler
@@ -226,10 +227,12 @@ def sync_single_file(course, content_root, target_abs_path, canvas=None, handler
         if module_obj is None and isinstance(handler, (SubHeaderHandler, ExternalLinkHandler)):
             continue
         if handler.can_handle(target_abs_path):
-            mod_item = handler.sync(
-                target_abs_path, course, module_obj,
-                canvas_obj=canvas, content_root=content_root,
-            )
+            # Renders run in a mirror of the course, not in it.
+            with render_workspace(content_root):
+                mod_item = handler.sync(
+                    target_abs_path, course, module_obj,
+                    canvas_obj=canvas, content_root=content_root,
+                )
             handled = True
             break
 

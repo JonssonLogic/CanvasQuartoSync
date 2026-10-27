@@ -5,6 +5,20 @@ on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/r
 
 ## Unreleased
 
+### Renders no longer happen in the course folder
+
+- **Quarto renders in a mirror of the course under the temp folder**, not next to the
+  source. Dropbox, OneDrive and VS Code no longer see the `tmp-*` files, so they cannot
+  lock them, and nothing is left behind in the course when a render fails. The mirror is
+  hard links (instant, no extra space), made once per sync and removed at the end. If it
+  cannot be made, the render happens in place as before.
+- **A PDF that Quarto wrote is used even if Quarto then exits with an error.** Quarto
+  fails when only its cleanup cannot delete a locked folder (os error 32), after the PDF
+  is finished; that used to throw the PDF away.
+- **A study guide whose PDF fails to render or upload keeps its old PDF in Canvas.** The
+  unused-file cleanup at the end of the sync used to delete it, leaving the course with no
+  PDF until the next successful render.
+
 ### `cqs ics`: the schedule in Outlook
 
 - **`cqs ics`** writes `schedule.yaml` as an iCalendar file (`<course_code>.ics`).
