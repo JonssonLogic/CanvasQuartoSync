@@ -52,6 +52,25 @@ export function loadConfig(workspaceRoot: string): CqsConfig | undefined {
 }
 
 /**
+ * Returns the course folder a file belongs to: the nearest folder upwards
+ * with a config.toml, the same rule the cqs CLI uses. Works whether the
+ * workspace is the course, a parent of it, or something else entirely.
+ */
+export function findCourseRoot(filePath: string): string | undefined {
+  let dir = path.dirname(path.resolve(filePath));
+  while (true) {
+    if (fs.existsSync(path.join(dir, 'config.toml'))) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      return undefined;
+    }
+    dir = parent;
+  }
+}
+
+/**
  * Returns the workspace root path, or undefined if no workspace is open.
  */
 export function getWorkspaceRoot(): string | undefined {

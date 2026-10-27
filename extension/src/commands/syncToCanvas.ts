@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { resolvePython, resolveCqsRoot } from '../python/venvResolver';
-import { getWorkspaceRoot } from '../config/configLoader';
+import { findCourseRoot, getWorkspaceRoot } from '../config/configLoader';
 import { setSyncing } from '../providers/statusBar';
 import { syncOptions } from '../providers/syncOptions';
 
@@ -159,7 +159,18 @@ async function runSync(
   extensionPath: string,
   singleFile?: string
 ): Promise<void> {
-  const workspaceRoot = getWorkspaceRoot();
+  // The course is the folder holding the file's config.toml, not the
+  // workspace: the workspace may be a parent folder, or not open at all.
+  // Sync All uses the active editor's course, else the workspace.
+  if (singleFile && !findCourseRoot(singleFile)) {
+    vscode.window.showErrorMessage(
+      `${path.basename(singleFile)} is not inside a course: no config.toml in its folder or above it.`
+    );
+    return;
+  }
+  const anchor = singleFile ?? vscode.window.activeTextEditor?.document.fileName;
+  const workspaceRoot =
+    (anchor && findCourseRoot(anchor)) || getWorkspaceRoot();
   if (!workspaceRoot) {
     vscode.window.showErrorMessage('No workspace folder open.');
     return;
