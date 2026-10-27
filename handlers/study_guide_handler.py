@@ -198,7 +198,11 @@ class StudyGuideHandler(BaseHandler):
                     # copy into an existing file of that name, and in the mirror
                     # that file can be a hard link to one in the course.
                     os.replace(pdf_path, renamed_pdf)
-                    pdf_file_url, pdf_file_id = upload_file(course, renamed_pdf, FOLDER_FILES, content_root=content_root)
+                    # No content_root: the PDF is recorded as the page's
+                    # pdf_file_id below, not as a source file of its own. An
+                    # entry of its own made the Course Board match the Canvas
+                    # file to a path that does not exist ("Not in order").
+                    pdf_file_url, pdf_file_id = upload_file(course, renamed_pdf, FOLDER_FILES)
                 except Exception as e:
                     logger.error("    [red]PDF upload failed:[/red] %s", e)
                 finally:
@@ -224,6 +228,13 @@ class StudyGuideHandler(BaseHandler):
                     rel_path = os.path.relpath(file_path, content_root).replace('\\', '/')
                     sync_map[rel_path]['pdf_file_id'] = pdf_file_id
                     sync_map[rel_path]['pdf_url'] = pdf_file_url
+                    # Earlier versions also recorded the PDF under its own
+                    # path. Drop that entry unless a real file is there.
+                    pdf_rel = os.path.relpath(os.path.join(os.path.dirname(file_path), pdf_filename),
+                                              content_root).replace('\\', '/')
+                    if pdf_rel in sync_map and not os.path.isfile(
+                            os.path.join(content_root, pdf_rel.replace('/', os.sep))):
+                        del sync_map[pdf_rel]
                     save_sync_map(content_root, sync_map)
 
             # 9. Add PDF to target module

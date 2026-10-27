@@ -151,6 +151,7 @@ def fetch_module_structure(course, content_root: str,
     # Build last_synced lookup: rel_path -> last_synced_at ISO string
     id_to_local = {}
     path_to_last_synced = {}
+    pdf_owner = {}      # str(Canvas file id) -> the study guide that renders it
 
     def _still_on_disk(rel: str) -> bool:
         return os.path.isfile(os.path.join(content_root, rel.replace('/', os.sep)))
@@ -179,6 +180,10 @@ def fetch_module_structure(course, content_root: str,
                     _claim(int(canvas_id), rel_path)
                 except (ValueError, TypeError):
                     pass
+            # A study guide's PDF is rendered from the guide, so its Canvas
+            # file belongs to the guide's source, not to a path of its own.
+            if entry.get('pdf_file_id') is not None:
+                pdf_owner[str(entry['pdf_file_id'])] = rel_path
             last_synced = entry.get('last_synced_at', '')
             if last_synced:
                 path_to_last_synced[rel_path] = last_synced
@@ -400,13 +405,22 @@ def fetch_module_structure(course, content_root: str,
         included = set(mod.item_paths()) if mod else set()
         claimed = set()
         matched = {}
+        guide_pdfs = {}     # id(item) -> guide path, for a study guide's PDF
         for it in items:
+            owner = pdf_owner.get(str(getattr(it, 'content_id', None))) \
+                if it.type == 'File' else None
+            if owner:
+                # Shown with its guide, but not claiming the guide's path: the
+                # page item matches that, and the PDF keeps its Canvas place.
+                guide_pdfs[id(it)] = owner
+                continue
             p = _match_item(it, lm, claimed)
             if p and p not in claimed:
                 claimed.add(p)
                 matched[id(it)] = p
         if mod is None:
-            return [_canvas_row(module, it, matched.get(id(it))) for it in items]
+            return [_canvas_row(module, it, matched.get(id(it)) or guide_pdfs.get(id(it)))
+                    for it in items]
 
         local_paths = mod.item_paths()
         # Canvas items matched to a file the layout does not include (a PDF
@@ -417,7 +431,7 @@ def fetch_module_structure(course, content_root: str,
             if c is None:
                 rows.append(_local_item(lm, l, True))
             else:
-                row = _canvas_row(module, c, l or matched.get(id(c)))
+                row = _canvas_row(module, c, l or matched.get(id(c)) or guide_pdfs.get(id(c)))
                 if row['local_path'] and row['local_path'] not in included:
                     row['included'] = False
                 rows.append(row)
