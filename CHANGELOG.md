@@ -5,6 +5,18 @@ on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/r
 
 ## Unreleased
 
+### Course Board: the publish toggle sticks ([#48](https://github.com/JonssonLogic/CanvasQuartoSync/issues/48))
+
+- **Publish/Draft on an item now writes `canvas.published` into its file** (`.qmd` or
+  `.json` quiz), as well as changing Canvas. Before, only Canvas changed, and the next
+  Sync quietly put the old state back. Only that one line in the frontmatter is
+  touched; comments and key order stay. A study guide's PDF row writes
+  `canvas.pdf.published`.
+- **PDFs, ZIPs and other plain files** are published when they are first added, and after
+  that a sync leaves their state alone. Unpublishing a handout in the board lasts.
+- A sync that changes an item's published state says so in the log
+  (`Published: …` / `Unpublished: …`).
+
 ### `cqs ics`: the schedule in Outlook
 
 - **`cqs ics`** writes `schedule.yaml` as an iCalendar file (`<course_code>.ics`).

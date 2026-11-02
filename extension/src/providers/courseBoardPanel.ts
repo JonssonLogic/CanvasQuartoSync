@@ -1208,7 +1208,10 @@ function renderBody(data: StructureData): string {
           const pubTitle = item.published ? 'Published. Click to unpublish.' : 'Draft. Click to publish.';
           const pubBtnCls = item.published ? 'pub-on' : 'pub-off';
           h += '<button class="action-btn pub-btn ' + pubBtnCls + '" onclick="event.stopPropagation();doSetPublished({target:\'item\',module_id:'
-            + mod.id + ',item_id:' + item.module_item_id + ',published:' + togglePub + '})" title="' + pubTitle + '">'
+            + mod.id + ',item_id:' + item.module_item_id + ',published:' + togglePub
+            // The file is written too, so the next sync keeps the new state.
+            + (hasLocal ? ',local_path:\'' + safePath.replace(/'/g, "\\'") + '\'' : '')
+            + '})" title="' + pubTitle + '">'
             + (item.published ? 'Published' : 'Draft') + '</button>';
         }
         // Only offered where Canvas is known to differ. Everywhere else it

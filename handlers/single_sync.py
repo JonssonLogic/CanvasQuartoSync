@@ -247,7 +247,7 @@ def sync_single_file(course, content_root, target_abs_path, canvas=None, handler
             'type': 'File',
             'content_id': file_id,
             'title': parse_module_name(filename),
-            'published': True,
+            'initial_published': True,
         })
 
     # Place the item in its correct slot within the module.

@@ -768,3 +768,112 @@ def prune_orphaned_assets(course):
         logger.info("  [green]Cleanup complete.[/green] Removed %d unused files.", deleted_count)
     else:
         logger.info("  [green]Cleanup complete.[/green] No unused files found.")
+
+
+def write_published(file_path, published, keys=('canvas', 'published')):
+    """Write a published state into a content file, so the next sync agrees.
+
+    The Course Board's publish toggle changes Canvas directly. Without this
+    the file keeps its old value and the next sync puts it back (#48).
+
+    A .qmd is edited line by line inside its frontmatter: only the one value
+    changes, and the author's key order, comments and quoting stay. ``keys``
+    is the path to the value, ``('canvas', 'pdf', 'published')`` for a study
+    guide's PDF. A .json quiz is rewritten with its ``canvas.published`` set.
+
+    Returns None on success, or why the file was left alone.
+    """
+    value = 'true' if published else 'false'
+    if file_path.lower().endswith('.json'):
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except (OSError, ValueError) as e:
+            return f'could not read {os.path.basename(file_path)}: {e}'
+        node = data
+        for k in keys[:-1]:
+            node = node.setdefault(k, {})
+            if not isinstance(node, dict):
+                return f'"{k}" in {os.path.basename(file_path)} is not an object'
+        node[keys[-1]] = bool(published)
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+            f.write('\n')
+        return None
+
+    if not file_path.lower().endswith('.qmd'):
+        return f'{os.path.basename(file_path)} has no frontmatter to hold the published state'
+
+    with open(file_path, 'r', encoding='utf-8', newline='') as f:
+        text = f.read()
+    nl = '\r\n' if '\r\n' in text else '\n'
+    lines = text.split(nl)
+
+    if not lines or lines[0].strip() != '---':
+        # No frontmatter yet: give it one holding just this value.
+        head = ['---']
+        for depth, k in enumerate(keys[:-1]):
+            head.append('  ' * depth + f'{k}:')
+        head.append('  ' * (len(keys) - 1) + f'{keys[-1]}: {value}')
+        head.append('---')
+        lines = head + lines
+    else:
+        end = next((i for i in range(1, len(lines)) if lines[i].strip() in ('---', '...')), None)
+        if end is None:
+            return f'the frontmatter in {os.path.basename(file_path)} is not closed'
+
+        def indent_of(line):
+            return len(line) - len(line.lstrip(' '))
+
+        # Walk down the key path. [start, stop) is the block that holds the
+        # children of the key found so far, and ``indent`` their indentation.
+        start, stop, indent, parent = 1, end, 0, None
+        for depth, k in enumerate(keys):
+            found = None
+            for i in range(start, stop):
+                s = lines[i].strip()
+                if not s or s.startswith('#'):
+                    continue
+                if indent_of(lines[i]) == indent and re.match(rf'{re.escape(k)}\s*:', s):
+                    found = i
+                    break
+            last = depth == len(keys) - 1
+            if found is None:
+                # Add the rest of the path at the end of the current block,
+                # after its last non-blank line.
+                at = start
+                for i in range(start, stop):
+                    if lines[i].strip():
+                        at = i + 1
+                new = []
+                for d, kk in enumerate(keys[depth:-1]):
+                    new.append(' ' * (indent + 2 * d) + f'{kk}:')
+                new.append(' ' * (indent + 2 * (len(keys) - 1 - depth)) + f'{keys[-1]}: {value}')
+                lines[at:at] = new
+                break
+            if last:
+                m = re.match(r'^(\s*[^:]+:\s*)([^#]*?)(\s*#.*)?$', lines[found])
+                lines[found] = m.group(1) + value + (m.group(3) or '')
+                break
+            rest = lines[found].split(':', 1)[1].split('#', 1)[0].strip()
+            if rest:
+                return (f'"{k}:" in {os.path.basename(file_path)} is written on one line; '
+                        f'set {".".join(keys)} by hand')
+            # The child block runs until a line at this key's indentation or less.
+            child_stop = stop
+            child_indent = None
+            for i in range(found + 1, stop):
+                s = lines[i].strip()
+                if not s or s.startswith('#'):
+                    continue
+                if indent_of(lines[i]) <= indent:
+                    child_stop = i
+                    break
+                if child_indent is None:
+                    child_indent = indent_of(lines[i])
+            start, stop = found + 1, child_stop
+            indent = child_indent if child_indent is not None else indent + 2
+
+    with open(file_path, 'w', encoding='utf-8', newline='') as f:
+        f.write(nl.join(lines))
+    return None

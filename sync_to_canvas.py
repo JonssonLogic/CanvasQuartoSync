@@ -11,7 +11,7 @@ from handlers.log import logger, setup_logging
 from handlers.calendar_handler import CalendarHandler
 from handlers.subheader_handler import SubHeaderHandler
 from handlers.external_link_handler import ExternalLinkHandler
-from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name, verify_sync_map_course, load_sync_map, save_sync_map, set_sync_identity
+from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name, verify_sync_map_course, load_sync_map, save_sync_map, set_sync_identity, write_published
 from handlers.single_sync import build_handlers, find_or_create_module, arrange_modules, remove_stale_placements, sync_single_file
 from handlers.course_layout import load_layout, is_ordered, free_name, append_item, add_module, remove_module
 from handlers.module_structure import fetch_module_structure
@@ -134,8 +134,12 @@ def _import_single_item(course, content_root: str, item_json: str) -> dict:
     return {'success': True, 'file': rel}
 
 
-def _set_published(course, pub_json: str) -> dict:
-    """Set published state for a module or module item."""
+def _set_published(course, pub_json: str, content_root: str = '') -> dict:
+    """Set published state for a module or module item.
+
+    An item's own file gets the same value written into it (``local_path``,
+    relative to the content root), or the next sync would undo the toggle.
+    """
     try:
         data = json.loads(pub_json)
     except json.JSONDecodeError as e:
@@ -163,7 +167,21 @@ def _set_published(course, pub_json: str) -> dict:
             item = module.get_module_item(item_id)
             item.edit(module_item={'published': published})
             state = 'published' if published else 'unpublished'
-            return {'success': True, 'message': f'Item {state}'}
+            message = f'Item {state}'
+            local_path = data.get('local_path')
+            if local_path and content_root:
+                abs_path = os.path.join(content_root, local_path.replace('/', os.sep))
+                # A study guide's PDF row maps to the study guide's .qmd; its
+                # state lives under canvas.pdf.
+                keys = ('canvas', 'published')
+                if getattr(item, 'type', '') == 'File' and abs_path.lower().endswith('.qmd'):
+                    keys = ('canvas', 'pdf', 'published')
+                why = write_published(abs_path, published, keys)
+                if why:
+                    message += f', but {local_path} was not updated: {why}'
+                else:
+                    message += f' and written to {local_path}'
+            return {'success': True, 'message': message}
 
         else:
             return {'success': False, 'error': f'Unknown target: {target}'}
@@ -507,7 +525,7 @@ def main():
 
     # Publish/unpublish mode
     if args.set_published:
-        result = _set_published(course, args.set_published)
+        result = _set_published(course, args.set_published, content_root)
         print(f'PUBLISH_RESULT_JSON:{json.dumps(result, ensure_ascii=False)}')
         return
 
@@ -721,7 +739,7 @@ def _sync_content(args, course, canvas, content_root):
                             'type': 'File',
                             'content_id': file_id,
                             'title': parse_module_name(filename),
-                            'published': True
+                            'initial_published': True
                         })
                         if mod_item:
                             synced_module_items.append(mod_item)
