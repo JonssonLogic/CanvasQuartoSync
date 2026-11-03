@@ -1100,9 +1100,9 @@ or the **Create GitHub Repository** button in the extension's Project panel, whi
 
 The idea: **the repository holds the truth, and Canvas is where it is published.** Every sync then:
 
-1.  Refuses if there are uncommitted changes, so Canvas shows what is in the repo.
+1.  Commits whatever changed in the course folder, so Canvas shows what is in the repo. You do not commit by hand.
 2.  Takes a **lock**, so two people cannot sync at the same time. If a colleague is syncing, you are told who and since when.
-3.  Pulls, and refuses if you have commits that are not pushed. (Publishing something that is not on GitHub would let the next person's sync revert it.)
+3.  Pulls your colleagues' changes in under yours and pushes. (Publishing something that is not on GitHub would let the next person's sync revert it.) If you and a colleague changed the same lines, it stops and names the files: resolve them in VS Code and sync again. Your changes stay committed on your computer.
 4.  Refuses to overwrite anything edited in Canvas, as described above.
 5.  Commits and pushes the sync map, then releases the lock.
 

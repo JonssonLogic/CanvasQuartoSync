@@ -452,6 +452,28 @@ def remove_module(root, dir_name):
     write_modules(root, entries)
 
 
+def remove_item(root, rel_path):
+    """Drop a deleted file from its module's ``_order.yml``.
+
+    Without it the order file goes on listing the file, and every load warns
+    that it does not exist. Other entries stay as written, missing or not.
+    Returns True if the order file changed.
+    """
+    parts = rel_path.replace('\\', '/').split('/', 1)
+    if len(parts) != 2:
+        return False
+    dir_name, filename = parts
+    path = os.path.join(root, dir_name, ORDER_FILE)
+    if not os.path.isfile(path):
+        return False
+    names = [name for name, _ in read_list(path)]
+    keep = [n for n in names if n.lower() != filename.lower()]
+    if len(keep) == len(names):
+        return False
+    write_order(root, dir_name, keep)
+    return True
+
+
 def free_name(directory, filename):
     """``filename``, or ``stem_2.ext``, ``stem_3.ext``... if it is taken."""
     taken = {n.lower() for n in _listdir(directory)}

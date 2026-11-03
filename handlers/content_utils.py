@@ -6,6 +6,7 @@ import shutil
 from canvasapi import Canvas
 from handlers.fingerprint import file_fingerprint
 from handlers.log import logger
+from handlers.render_workspace import real_path
 
 # Global cache for folder names to IDs to avoid redundant API lookups
 FOLDER_CACHE = {}
@@ -173,20 +174,31 @@ def upload_file(course, local_path, target_folder_name="course_files", content_r
 
     # Smart Upload Logic: skip if this exact content was uploaded before
     fingerprint = file_fingerprint(local_path)
+    # A file rendered in the course mirror is recorded under its course path.
+    map_path = real_path(local_path)
     if content_root:
         sync_map = load_sync_map(content_root)
-        rel_path = os.path.relpath(local_path, content_root).replace('\\', '/')
+        rel_path = os.path.relpath(map_path, content_root).replace('\\', '/')
         cached_entry = sync_map.get(rel_path)
 
         if isinstance(cached_entry, dict):
             # We strictly check url too in case it failed previously
             if cached_entry.get('url') and source_unchanged(
-                    content_root, local_path, cached_entry, fingerprint,
+                    content_root, map_path, cached_entry, fingerprint,
                     legacy_mtime=os.path.getmtime(local_path)):
                 # Track as active even if cached
                 asset_id = cached_entry.get('id')
                 if asset_id:
                     ACTIVE_ASSET_IDS.add(asset_id)
+                # Entries written before files carried a sync time get one now,
+                # during the sync, so the map is committed with it. Reloaded:
+                # source_unchanged may have saved the map in between.
+                if not cached_entry.get('last_synced_at'):
+                    sync_map = load_sync_map(content_root)
+                    entry = sync_map.get(rel_path)
+                    if isinstance(entry, dict):
+                        entry['last_synced_at'] = _now_iso()
+                        save_sync_map(content_root, sync_map)
                 return cached_entry.get('url'), asset_id
 
     folder = get_or_create_folder(course, target_folder_name)
@@ -205,12 +217,16 @@ def upload_file(course, local_path, target_folder_name="course_files", content_r
             # Update Sync Map
             if content_root:
                 sync_map = load_sync_map(content_root)
-                rel_path = os.path.relpath(local_path, content_root).replace('\\', '/')
-                sync_map[rel_path] = {
+                rel_path = os.path.relpath(map_path, content_root).replace('\\', '/')
+                entry = {
                     'source_hash': fingerprint,
                     'url': file_url,
-                    'id': file_id
+                    'id': file_id,
+                    'last_synced_at': _now_iso(),
                 }
+                if _SYNC_IDENTITY:
+                    entry['last_synced_by'] = _SYNC_IDENTITY
+                sync_map[rel_path] = entry
                 save_sync_map(content_root, sync_map)
 
             return file_url, file_id

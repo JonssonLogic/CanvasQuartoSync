@@ -46,16 +46,15 @@ def _normalize_name(name: str) -> str:
     return name
 
 
-def _backfill_last_synced(sync_map: dict, content_root: str):
-    """Backfill last_synced_at for entries that were synced before this field existed.
+def _backfill_last_synced(sync_map: dict):
+    """Fill in last_synced_at for entries synced before this field existed.
 
-    Sets last_synced_at to 'now' — these items were in sync before this feature
-    existed, so we treat the current state as the baseline. Any future Canvas
-    edits or local edits will then be detected correctly.
+    In memory only: 'now' is the baseline for this read, so the item shows as
+    in sync. Writing it back left the map changed after every board refresh,
+    after team mode had already committed it. The sync stamps the entries.
     """
     now_iso = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-    changed = False
-    for rel_path, entry in sync_map.items():
+    for entry in sync_map.values():
         if not isinstance(entry, dict):
             continue
         if entry.get('last_synced_at'):
@@ -64,9 +63,6 @@ def _backfill_last_synced(sync_map: dict, content_root: str):
         if not entry.get('canvas_hash') and not entry.get('id'):
             continue
         entry['last_synced_at'] = now_iso
-        changed = True
-    if changed:
-        save_sync_map(content_root, sync_map)
 
 
 def _iso_mtime(path):
@@ -149,12 +145,13 @@ def fetch_module_structure(course, content_root: str,
 
     if course is not None:
         # Backfill last_synced_at for legacy entries that were synced before this field existed
-        _backfill_last_synced(sync_map, content_root)
+        _backfill_last_synced(sync_map)
 
     # Build reverse map: canvas_id -> local rel_path
     # Build last_synced lookup: rel_path -> last_synced_at ISO string
     id_to_local = {}
     path_to_last_synced = {}
+    pdf_owner = {}      # str(Canvas file id) -> the study guide that renders it
 
     def _still_on_disk(rel: str) -> bool:
         return os.path.isfile(os.path.join(content_root, rel.replace('/', os.sep)))
@@ -183,6 +180,10 @@ def fetch_module_structure(course, content_root: str,
                     _claim(int(canvas_id), rel_path)
                 except (ValueError, TypeError):
                     pass
+            # A study guide's PDF is rendered from the guide, so its Canvas
+            # file belongs to the guide's source, not to a path of its own.
+            if entry.get('pdf_file_id') is not None:
+                pdf_owner[str(entry['pdf_file_id'])] = rel_path
             last_synced = entry.get('last_synced_at', '')
             if last_synced:
                 path_to_last_synced[rel_path] = last_synced
@@ -404,13 +405,22 @@ def fetch_module_structure(course, content_root: str,
         included = set(mod.item_paths()) if mod else set()
         claimed = set()
         matched = {}
+        guide_pdfs = {}     # id(item) -> guide path, for a study guide's PDF
         for it in items:
+            owner = pdf_owner.get(str(getattr(it, 'content_id', None))) \
+                if it.type == 'File' else None
+            if owner:
+                # Shown with its guide, but not claiming the guide's path: the
+                # page item matches that, and the PDF keeps its Canvas place.
+                guide_pdfs[id(it)] = owner
+                continue
             p = _match_item(it, lm, claimed)
             if p and p not in claimed:
                 claimed.add(p)
                 matched[id(it)] = p
         if mod is None:
-            return [_canvas_row(module, it, matched.get(id(it))) for it in items]
+            return [_canvas_row(module, it, matched.get(id(it)) or guide_pdfs.get(id(it)))
+                    for it in items]
 
         local_paths = mod.item_paths()
         # Canvas items matched to a file the layout does not include (a PDF
@@ -421,7 +431,7 @@ def fetch_module_structure(course, content_root: str,
             if c is None:
                 rows.append(_local_item(lm, l, True))
             else:
-                row = _canvas_row(module, c, l or matched.get(id(c)))
+                row = _canvas_row(module, c, l or matched.get(id(c)) or guide_pdfs.get(id(c)))
                 if row['local_path'] and row['local_path'] not in included:
                     row['included'] = False
                 rows.append(row)

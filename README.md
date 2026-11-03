@@ -49,9 +49,9 @@ on GitHub.
 3. Set the environment variable `CANVAS_API_TOKEN` to your own Canvas token.
 4. Ask for a teacher role in the Canvas course.
 
-Then the daily routine: pull, edit, commit and push, sync. The sync refuses to
-run with uncommitted or unpushed changes, takes a lock so two people cannot sync
-at once, and never overwrites a page someone edited directly in Canvas. More in
+Then the daily routine: edit, sync. The sync commits your changes, pulls and
+pushes by itself and stops only on a merge conflict, takes a lock so two people
+cannot sync at once, and never overwrites a page someone edited directly in Canvas. More in
 the [User Guide](Guides/Canvas_Sync_User_Guide.md#team-mode-several-teachers-one-course);
 the design is in [Team Mode](Guides/Team_Mode.md).
 

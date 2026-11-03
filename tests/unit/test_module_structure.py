@@ -487,3 +487,31 @@ def test_without_a_course_the_local_course_is_still_returned(tmp_path):
     # Offline, "local only" can only mean "the map has never seen it".
     assert item["local_only"] is False
     json.dumps(out)
+
+
+# --- A study guide's PDF ----------------------------------------------------
+
+def test_study_guide_pdf_is_shown_with_its_guide(tmp_path):
+    """The PDF is rendered from the guide, so it is not "Not in order".
+
+    Older syncs also recorded the PDF under a path of its own, which does not
+    exist; the board matched the Canvas file to that path and flagged it.
+    """
+    (tmp_path / "_modules.yml").write_text("- Docs\n", encoding="utf-8")
+    _qmd(tmp_path, "Docs/KursPM.qmd", "KursPM")
+    (tmp_path / "Docs" / "_order.yml").write_text("- KursPM.qmd\n", encoding="utf-8")
+    save_sync_map(str(tmp_path), {
+        "Docs/KursPM.qmd": {"id": 10, "pdf_file_id": 99},
+        "Docs/KursPM.pdf": {"id": 99},
+    })
+    course = FakeCourse(modules=[FakeModule("Docs", items=[
+        FakeItem("KursPM", id=1, content_id=10),
+        FakeItem("KursPM (PDF)", type="File", id=2, content_id=99),
+    ])])
+
+    rows = fetch_module_structure(course, str(tmp_path))["modules"][0]["items"]
+
+    page, pdf = rows
+    assert page["local_path"] == "Docs/KursPM.qmd"
+    assert pdf["local_path"] == "Docs/KursPM.qmd"
+    assert pdf.get("included", True) is True

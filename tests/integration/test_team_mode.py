@@ -17,7 +17,8 @@ pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not ins
 
 
 def git(cwd, *args):
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True,
+    return subprocess.run(["git", "-c", "core.quotePath=false", *args], cwd=cwd,
+                          capture_output=True, text=True, encoding="utf-8",
                           check=True).stdout.strip()
 
 
@@ -80,18 +81,31 @@ class TestGuards:
         with pytest.raises(TeamModeError, match="gitignored"):
             TeamSync(str(a)).begin()
 
-    def test_uncommitted_changes_are_refused(self, repos):
+    def test_uncommitted_changes_are_committed_and_pushed(self, repos):
         remote, a, _ = repos
         (a / "01_Mod" / "01_Page.qmd").write_text("edited\n", encoding="utf-8")
-        with pytest.raises(TeamModeError, match="Uncommitted"):
-            TeamSync(str(a)).begin()
-        assert _lock_on_remote(remote) == ""
+        t = TeamSync(str(a), who="Mirza")
+        t.begin()
+        try:
+            assert git(a, "status", "--porcelain") == ""
+            assert git(a, "log", "-1", "--format=%s") == "Changes synced by Mirza: 01_Page.qmd"
+            assert git(a, "rev-parse", "HEAD") == git(a, "rev-parse", "@{u}")
+        finally:
+            t.end()
 
-    def test_untracked_content_is_refused(self, repos):
+    def test_new_and_deleted_files_are_committed(self, repos):
         _, a, _ = repos
-        (a / "01_Mod" / "02_New.qmd").write_text("new\n", encoding="utf-8")
-        with pytest.raises(TeamModeError, match="Uncommitted"):
-            TeamSync(str(a)).begin()
+        (a / "01_Mod" / "02_Strömförsörjning.qmd").write_text("new\n", encoding="utf-8")
+        (a / "01_Mod" / "01_Page.qmd").unlink()
+        t = TeamSync(str(a), who="Mirza")
+        t.begin()
+        try:
+            assert git(a, "status", "--porcelain") == ""
+            files = git(a, "log", "-1", "--format=%b")
+            assert "01_Mod/02_Strömförsörjning.qmd" in files
+            assert "01_Mod/01_Page.qmd" in files
+        finally:
+            t.end()
 
     def test_leftover_map_change_does_not_block(self, repos):
         _, a, _ = repos
@@ -100,13 +114,48 @@ class TestGuards:
         t.begin()
         assert t.end()
 
-    def test_unpushed_commit_is_refused_and_the_lock_released(self, repos):
+    def test_unpushed_commit_is_pushed(self, repos):
         remote, a, _ = repos
         (a / "01_Mod" / "01_Page.qmd").write_text("edited\n", encoding="utf-8")
         git(a, "commit", "-q", "-am", "not pushed")
-        with pytest.raises(TeamModeError, match="not pushed"):
+        t = TeamSync(str(a))
+        t.begin()
+        try:
+            assert git(a, "rev-parse", "HEAD") == git(a, "rev-parse", "@{u}")
+        finally:
+            t.end()
+
+    def test_own_changes_rebase_over_a_colleagues_push(self, repos):
+        _, a, b = repos
+        (b / "01_Mod" / "02_Kalle.qmd").write_text("from Kalle\n", encoding="utf-8")
+        git(b, "add", "-A")
+        git(b, "commit", "-q", "-m", "Kalle's page")
+        git(b, "push", "-q")
+        (a / "01_Mod" / "01_Page.qmd").write_text("edited by Mirza\n", encoding="utf-8")
+
+        t = TeamSync(str(a))
+        t.begin()
+        try:
+            assert (a / "01_Mod" / "02_Kalle.qmd").exists()
+            assert (a / "01_Mod" / "01_Page.qmd").read_text(encoding="utf-8") == "edited by Mirza\n"
+            assert git(a, "rev-parse", "HEAD") == git(a, "rev-parse", "@{u}")
+        finally:
+            t.end()
+
+    def test_conflict_stops_with_the_files_and_keeps_the_commit(self, repos):
+        remote, a, b = repos
+        (b / "01_Mod" / "01_Page.qmd").write_text("Kalle's version\n", encoding="utf-8")
+        git(b, "commit", "-q", "-am", "Kalle edits the page")
+        git(b, "push", "-q")
+        (a / "01_Mod" / "01_Page.qmd").write_text("Mirza's version\n", encoding="utf-8")
+
+        with pytest.raises(TeamModeError, match=r"Merge conflict(.|\n)*01_Mod/01_Page.qmd"):
             TeamSync(str(a)).begin()
+
         assert _lock_on_remote(remote) == "", "a refused sync left the lock behind"
+        assert not (a / ".git" / "rebase-merge").exists(), "the rebase was left half done"
+        assert git(a, "status", "--porcelain") == ""
+        assert (a / "01_Mod" / "01_Page.qmd").read_text(encoding="utf-8") == "Mirza's version\n"
 
     def test_pulls_a_colleagues_work_first(self, repos):
         _, a, b = repos
@@ -197,8 +246,12 @@ class TestMainWiring:
         assert _lock_on_remote(remote) == ""
 
     def test_guard_failure_syncs_nothing(self, repos, monkeypatch):
-        remote, a, _ = repos
-        (a / "01_Mod" / "01_Page.qmd").write_text("uncommitted\n", encoding="utf-8")
+        remote, a, b = repos
+        (b / "01_Mod" / "01_Page.qmd").write_text("Kalle's version\n", encoding="utf-8")
+        git(b, "commit", "-q", "-am", "Kalle edits the page")
+        git(b, "push", "-q")
+        (a / "01_Mod" / "01_Page.qmd").write_text("Mirza's conflicting version\n",
+                                                  encoding="utf-8")
         ran = []
         assert self._run(a, monkeypatch, lambda *x: ran.append(1) or 0) == 1
         assert ran == []

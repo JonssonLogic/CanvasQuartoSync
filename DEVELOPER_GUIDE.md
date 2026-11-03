@@ -35,6 +35,7 @@ CanvasQuartoSync/
 │   ├── subheader_handler.py   # .md/.qmd → Module SubHeader (visual separator)
 │   ├── external_link_handler.py # .qmd → Module External URL link
 │   ├── content_utils.py       # Shared: image upload, cross-linking, sync map, pruning
+│   ├── render_workspace.py    # Quarto renders in a mirror of the course under %TEMP%
 │   ├── dates.py               # Shared: course-local times → UTC (DST-aware)
 │   └── log.py                 # Logging configuration (logger + setup_logging)
 ├── validate_content.py        # Offline content validation (no Canvas/network needed)
@@ -133,6 +134,19 @@ All handlers inherit `BaseHandler` (ABC):
 | `load_sync_map()` / `save_sync_map()` | Persist `.canvas_sync_map.json` (maps local path → Canvas ID, `source_hash`, `canvas_hash`); written sorted, UTF-8, LF |
 | `source_unchanged()` | Has this file been published exactly as it is now? Migrates old `mtime` entries |
 | `safe_delete_file/dir()` | Retry-with-backoff deletion (Dropbox/OneDrive lock workaround) |
+
+### Rendering (`render_workspace.py`)
+
+Quarto never runs in the course folder. `render_workspace(content_root)` wraps a sync
+run (`sync_to_canvas._sync_content`, `single_sync.sync_single_file`, and
+`StudyGuideHandler.sync`, whose PDF outlives the render call); `render_dir(base_path,
+content_root)` gives the folder a render writes its `tmp-*` files into: the matching
+folder of a mirror of the course under the temp folder. The mirror is made on the first
+render of the run (hard links, copies where links fail; `_freeze/` always copied, since
+Quarto rewrites it) and removed when the run ends. Outside a run, each render gets a
+mirror of its own. `real_path()`/`real_text()` map mirror paths back to course paths for
+the sync map and for messages. Write a new render output with `os.replace`, never by
+copying onto an existing file: in the mirror that file can be a hard link into the course.
 
 ### Dates (`dates.py`)
 

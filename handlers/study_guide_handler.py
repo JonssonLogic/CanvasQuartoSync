@@ -1,5 +1,4 @@
 import os
-import shutil
 import frontmatter
 from canvasapi.exceptions import BadRequest
 from handlers.base_handler import BaseHandler
@@ -11,6 +10,7 @@ from handlers.content_utils import (
 from handlers.drift_detector import check_drift, store_canvas_hash, resolve_stored_html
 from handlers.fingerprint import source_fingerprint
 from handlers.sync_policy import get_policy
+from handlers.render_workspace import render_workspace
 from handlers.log import logger
 
 
@@ -36,6 +36,13 @@ class StudyGuideHandler(BaseHandler):
             return False
 
     def sync(self, file_path: str, course, module=None, canvas_obj=None, content_root=None):
+        # The PDF is rendered in the course mirror and uploaded from there, so
+        # the mirror has to outlive the render call. Inside a full sync this
+        # joins the run's mirror.
+        with render_workspace(content_root):
+            return self._sync(file_path, course, module, canvas_obj, content_root)
+
+    def _sync(self, file_path, course, module, canvas_obj, content_root):
         filename = os.path.basename(file_path)
         logger.info("  [cyan]Syncing study guide:[/cyan] [bold]%s[/bold]", filename)
 
@@ -132,7 +139,7 @@ class StudyGuideHandler(BaseHandler):
             pdf_file_id = None
             pdf_file_url = None
 
-            pdf_path = self.render_quarto_pdf(raw_content, base_path, filename)
+            pdf_path = self.render_quarto_pdf(raw_content, base_path, filename, content_root=content_root)
             if pdf_path is None:
                 logger.warning("    [yellow]PDF render failed — syncing HTML page only.[/yellow]")
 
@@ -187,14 +194,28 @@ class StudyGuideHandler(BaseHandler):
             if pdf_path:
                 renamed_pdf = os.path.join(os.path.dirname(pdf_path), pdf_filename)
                 try:
-                    shutil.move(pdf_path, renamed_pdf)
-                    pdf_file_url, pdf_file_id = upload_file(course, renamed_pdf, FOLDER_FILES, content_root=content_root)
+                    # os.replace swaps the directory entry. shutil.move would
+                    # copy into an existing file of that name, and in the mirror
+                    # that file can be a hard link to one in the course.
+                    os.replace(pdf_path, renamed_pdf)
+                    # No content_root: the PDF is recorded as the page's
+                    # pdf_file_id below, not as a source file of its own. An
+                    # entry of its own made the Course Board match the Canvas
+                    # file to a path that does not exist ("Not in order").
+                    pdf_file_url, pdf_file_id = upload_file(course, renamed_pdf, FOLDER_FILES)
                 except Exception as e:
                     logger.error("    [red]PDF upload failed:[/red] %s", e)
                 finally:
                     safe_delete_file(renamed_pdf)
                     if os.path.exists(pdf_path):
                         safe_delete_file(pdf_path)
+
+            # 7b. No new PDF (render or upload failed): the one from the last
+            # sync stays in Canvas. Mark it active, or the orphan pruner at the
+            # end of the sync deletes it and the course is left with no PDF.
+            if not pdf_file_id and isinstance(map_entry, dict) and map_entry.get('pdf_file_id'):
+                ACTIVE_ASSET_IDS.add(map_entry['pdf_file_id'])
+                logger.warning("    [yellow]Keeping the PDF from the last sync in Canvas.[/yellow]")
 
             # 8. Update Sync Map and store content hash for drift detection
             if content_root:
@@ -207,6 +228,13 @@ class StudyGuideHandler(BaseHandler):
                     rel_path = os.path.relpath(file_path, content_root).replace('\\', '/')
                     sync_map[rel_path]['pdf_file_id'] = pdf_file_id
                     sync_map[rel_path]['pdf_url'] = pdf_file_url
+                    # Earlier versions also recorded the PDF under its own
+                    # path. Drop that entry unless a real file is there.
+                    pdf_rel = os.path.relpath(os.path.join(os.path.dirname(file_path), pdf_filename),
+                                              content_root).replace('\\', '/')
+                    if pdf_rel in sync_map and not os.path.isfile(
+                            os.path.join(content_root, pdf_rel.replace('/', os.sep))):
+                        del sync_map[pdf_rel]
                     save_sync_map(content_root, sync_map)
 
             # 9. Add PDF to target module

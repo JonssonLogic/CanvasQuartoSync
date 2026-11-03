@@ -192,3 +192,50 @@ class TestDeleteItemsPrunesMap:
         _delete_items(FakeCourse(), str(course_dir), payload)
 
         assert len(load_sync_map(str(course_dir))) == 2
+
+
+# --- order files ------------------------------------------------------------
+
+class TestDeleteItemsUpdatesOrderFile:
+    """A file deleted in the Course Board leaves its module's _order.yml too.
+
+    Otherwise every load warns "lists 'x', which does not exist. Skipped."
+    """
+
+    @pytest.fixture
+    def ordered_course(self, tmp_path):
+        (tmp_path / "_modules.yml").write_text("- Projektet\n", encoding="utf-8")
+        mod = tmp_path / "Projektet"
+        mod.mkdir()
+        (mod / "RC-bilen.qmd").write_text("---\ntitle: RC\ncanvas:\n  type: page\n---\n",
+                                          encoding="utf-8")
+        (mod / "hej.txt").write_text("hej", encoding="utf-8")
+        (mod / "_order.yml").write_text("- RC-bilen.qmd\n- hej.txt\n- Gone.qmd\n",
+                                        encoding="utf-8")
+        return tmp_path
+
+    def _order(self, root):
+        from handlers.course_layout import read_list
+        return [n for n, _ in read_list(str(root / "Projektet" / "_order.yml"))]
+
+    def test_local_file_delete_drops_it_from_the_order(self, ordered_course):
+        payload = json.dumps({"items": [{"target": "local_file",
+                                         "local_path": "Projektet/hej.txt"}]})
+        res = _delete_items(FakeCourse(), str(ordered_course), payload)
+        assert res["success"]
+        assert self._order(ordered_course) == ["RC-bilen.qmd", "Gone.qmd"]
+
+    def test_item_delete_drops_it_from_the_order(self, ordered_course):
+        payload = json.dumps({"items": [{"target": "item", "module_id": 1, "item_id": 2,
+                                         "local_path": "Projektet/RC-bilen.qmd"}]})
+        res = _delete_items(FakeCourse(), str(ordered_course), payload)
+        assert res["success"]
+        assert self._order(ordered_course) == ["hej.txt", "Gone.qmd"]
+
+    def test_unlisted_file_leaves_the_order_alone(self, ordered_course):
+        (ordered_course / "Projektet" / "notes.md").write_text("x", encoding="utf-8")
+        before = (ordered_course / "Projektet" / "_order.yml").read_bytes()
+        payload = json.dumps({"items": [{"target": "local_file",
+                                         "local_path": "Projektet/notes.md"}]})
+        _delete_items(FakeCourse(), str(ordered_course), payload)
+        assert (ordered_course / "Projektet" / "_order.yml").read_bytes() == before
