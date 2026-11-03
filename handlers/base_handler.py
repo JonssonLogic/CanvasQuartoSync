@@ -92,6 +92,9 @@ class BaseHandler(ABC):
         external_url = item_dict.get('external_url')
         new_tab = item_dict.get('new_tab', False)
         published = item_dict.get('published') # Optional, might be None
+        # Applied only when the item is created. For files with no frontmatter
+        # (PDF, ZIP), whose state is then the Course Board's to change.
+        initial_published = item_dict.get('initial_published')
 
         # Validate indent
         indent = max(0, min(5, int(indent)))
@@ -139,7 +142,7 @@ class BaseHandler(ABC):
             # Check Published (If provided)
             # Note: SubHeaders rely on this heavily.
             if published is not None and getattr(existing_item, 'published', None) != published:
-                logger.debug("      Updating published: %s", published)
+                logger.info("    %s: %s", 'Published' if published else 'Unpublished', title)
                 updates['published'] = published
 
             if updates:
@@ -165,6 +168,8 @@ class BaseHandler(ABC):
             new_item = module.create_module_item(module_item=payload)
 
             # Canvas API ignores 'published' during creation, so we must update it separately
+            if published is None:
+                published = initial_published
             if published is not None:
                 logger.debug("      Setting published: %s", published)
                 new_item.edit(module_item={'published': published})
