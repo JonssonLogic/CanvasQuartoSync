@@ -3,7 +3,7 @@
 What changed in each release, for the people using it. Earlier releases are described
 on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/releases).
 
-## Unreleased
+## 0.16.0 - 2026-11-03
 
 ### Renders no longer happen in the course folder
 
@@ -69,6 +69,19 @@ on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/r
   block.
 - From MDViewer: definition lists, LaTeX in figure captions, the Swedish "AI:n" fix for
   directives, and a highlighted raw source view.
+
+### Courses in a subfolder, and YH courses
+
+- **The Course Board opens on a course in a subfolder.** It used to read `config.toml`
+  from the workspace root only. It now takes the course of the active file, else the
+  root, else the one course under it, and asks when there are several.
+- **Sync this file works from any workspace.** It uses the nearest folder above the file
+  that holds a `config.toml`, the same rule as `cqs`. Sync All uses the active file's
+  course.
+- **Study guides for yrkeshögskola courses**: `yh = true` in `config.toml` (or
+  `canvas.preprocessor: yh` in the guide) gives Yh-poäng on the cover, IG/G/VG grade
+  cards taken from the table header, and a teacher table with optional photo, link and
+  e-mail.
 
 ## 0.15.0 - 2026-10-21
 
