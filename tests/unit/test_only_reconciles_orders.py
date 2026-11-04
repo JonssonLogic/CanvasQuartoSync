@@ -42,3 +42,17 @@ def test_only_sync_renames_in_order_file_and_map(tmp_path, monkeypatch):
     order = [n for n, _ in cl.read_list(str(root / "Labs" / "_order.yml"))]
     assert order == ["test.qmd", "testarNamnByte.qmd"]
     assert seen["map"] == {"Labs/testarNamnByte.qmd": {"id": 42}}
+
+
+def test_only_with_the_old_name_syncs_the_renamed_file(tmp_path, monkeypatch):
+    """The Course Board still showed the old name and asked for it."""
+    root = _course(tmp_path)
+    synced = []
+    monkeypatch.setattr(sync_to_canvas, "sync_single_file",
+                        lambda course, content_root, path, canvas=None, handlers=None:
+                        synced.append(path) or SimpleNamespace(success=True, message="ok"))
+    monkeypatch.setattr(sync_to_canvas, "build_handlers", lambda: [])
+    args = SimpleNamespace(only="Labs/test2.qmd", sync_calendar=False)
+
+    assert sync_to_canvas._sync_content(args, None, None, str(root)) == 0
+    assert synced == [str(root / "Labs" / "testarNamnByte.qmd")]

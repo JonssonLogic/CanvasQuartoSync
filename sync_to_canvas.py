@@ -657,6 +657,18 @@ def _reconcile_order_files(content_root):
     return changes
 
 
+def _renamed_to(content_root, old_path, order_changes):
+    """The new path of ``old_path`` if reconciling just found it renamed, else None."""
+    try:
+        old_rel = os.path.relpath(old_path, content_root).replace('\\', '/').lower()
+    except ValueError:      # another drive: not in the course
+        return None
+    for c in order_changes:
+        if c.kind == 'renamed' and f"{c.module}/{c.old}".lower() == old_rel:
+            return os.path.join(content_root, c.module, c.name)
+    return None
+
+
 def _sync_content(args, course, canvas, content_root):
     """Sync one file (--only) or the whole course. Returns the exit code."""
     handlers = build_handlers()
@@ -664,14 +676,23 @@ def _sync_content(args, course, canvas, content_root):
     # The order files follow the folders first, for --only as well: the Course
     # Board syncs one file at a time, and a renamed file must keep its Canvas id
     # (moved in the sync map here) and its place in _order.yml.
-    _reconcile_order_files(content_root)
+    order_changes = _reconcile_order_files(content_root)
 
     # --only: sync a single asset and exit (delegates to the reusable function
     # so the same logic is available to a future GUI).
     if args.only:
-        candidate = os.path.abspath(os.path.join(content_root, args.only))
+        in_course = os.path.abspath(os.path.join(content_root, args.only))
+        candidate = in_course
         if not os.path.exists(candidate):
             candidate = os.path.abspath(args.only)
+        if not os.path.exists(candidate):
+            # Asked for by its old name (the Course Board shows _order.yml,
+            # which still had it): sync the file it was renamed to.
+            renamed = _renamed_to(content_root, in_course, order_changes)
+            if renamed:
+                logger.info("[cyan]%s was renamed to %s; syncing that.[/cyan]",
+                            os.path.basename(in_course), os.path.basename(renamed))
+                candidate = renamed
         result = sync_single_file(course, content_root, candidate, canvas=canvas, handlers=handlers)
         if result.success:
             logger.info("[bold green]%s[/bold green]", result.message)
