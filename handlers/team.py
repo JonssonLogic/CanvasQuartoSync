@@ -114,7 +114,7 @@ class TeamSync:
             self._release_lock()
             raise
 
-    def _commit_changes(self):
+    def _commit_changes(self, verb='Changes synced'):
         """Commit everything that changed in the course folder. Returns the paths."""
         _git(self.root, 'add', '-A', '--', '.')
         # quotePath off: L2_Strömförsörjning.qmd, not "L2_Str\303\266m..."
@@ -125,7 +125,7 @@ class TeamSync:
             return []
         who = self.who or self._git_user() or 'cqs'
         names = [p.split('/')[-1] for p in paths if p.split('/')[-1] != MAP_NAME] or [MAP_NAME]
-        subject = f'Changes synced by {who}: ' + ', '.join(names[:3])
+        subject = f'{verb} by {who}: ' + ', '.join(names[:3])
         if len(names) > 3:
             subject += f' and {len(names) - 3} more'
         _git(self.root, 'commit', '-q', '-m', subject, '-m', '\n'.join(paths))
@@ -256,10 +256,14 @@ class TeamSync:
         what = 'Sync map' if not orders else ('Order files' if not map_changed
                                              else 'Sync map and order files')
         _git(self.root, 'commit', '-m', f'{what} after sync by {who}', '--', *paths)
+        if self._push():
+            logger.info('[green]%s committed and pushed.[/green]', what)
+            return True
+        return False
 
+    def _push(self):
         for _ in range(3):
             if _git(self.root, 'push', self.remote, 'HEAD', check=False).returncode == 0:
-                logger.info('[green]%s committed and pushed.[/green]', what)
                 return True
             # Someone pushed content meanwhile. Their commits do not touch the
             # map (only syncs do, and we hold the lock), so this rebase is clean.
@@ -267,6 +271,30 @@ class TeamSync:
                 _git(self.root, 'rebase', '--abort', check=False)
                 return False
         return False
+
+    # -- a Course Board action (delete, import, publish, new module) -------
+
+    def end_action(self, verb):
+        """Commit and push everything the action changed, then release the lock.
+
+        The action ran between begin() and here, so every change in the folder
+        is its own: begin() committed what was there before. ``verb`` starts
+        the commit subject ("Deleted", "Imported"). Returns True on success.
+        """
+        try:
+            paths = self._commit_changes(verb)
+            pushed = self._push() if paths else True
+            if paths and pushed:
+                logger.info('[green]Committed and pushed %d changed file(s).[/green]', len(paths))
+        except Exception as e:
+            logger.error('[red]Could not commit and push the change:[/red] %s', e)
+            pushed = False
+        if not pushed:
+            logger.error(
+                '[red]The sync lock is kept[/red] until the change is on GitHub. '
+                'Commit and push it, then run the sync again with --break-lock.')
+            return False
+        return self._release_lock()
 
 
 def _describe(info):

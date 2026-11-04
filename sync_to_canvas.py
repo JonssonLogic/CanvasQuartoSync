@@ -346,6 +346,34 @@ def _delete_items(course, content_root: str, payload_json: str) -> dict:
     return {'success': failed == 0, 'deleted': deleted, 'failed': failed, 'errors': errors}
 
 
+def _run_board_action(content_root, workflow, identity, break_lock, verb, action):
+    """Run a Course Board action; in team mode, inside a commit/pull/push like a sync.
+
+    Returns the action's result dict. A team-mode failure before the action
+    means it did not run; after it, the action stands but is not on GitHub
+    yet, and the result says so.
+    """
+    if workflow != TEAM:
+        return action()
+    team = TeamSync(content_root, who=identity, break_lock=break_lock)
+    try:
+        team.begin()
+    except TeamModeError as e:
+        msg = f'Not done (team mode): {e}'
+        # deleted/failed/errors: the shape the board reads for a delete.
+        return {'success': False, 'error': msg, 'deleted': 0, 'failed': 1, 'errors': [msg]}
+    try:
+        result = action()
+    finally:
+        pushed = team.end_action(verb)
+    if not pushed and isinstance(result, dict):
+        msg = 'Done, but not committed and pushed to GitHub: see the log.'
+        result = dict(result, success=False,
+                      error=' '.join(filter(None, [result.get('error'), msg])),
+                      errors=list(result.get('errors') or []) + [msg])
+    return result
+
+
 def _problem(level, code, message, action=''):
     return {'level': level, 'code': code, 'message': message, 'action': action}
 
@@ -525,27 +553,25 @@ def main():
               for p in args.accept_drift}
     set_policy(SyncPolicy(workflow=workflow, accept=accept))
 
-    # Import single item mode
-    if args.import_item:
-        result = _import_single_item(course, content_root, args.import_item)
-        print(f'IMPORT_RESULT_JSON:{json.dumps(result, ensure_ascii=False)}')
-        return
-
-    # Publish/unpublish mode
-    if args.set_published:
-        result = _set_published(course, args.set_published, content_root)
-        print(f'PUBLISH_RESULT_JSON:{json.dumps(result, ensure_ascii=False)}')
-        return
-
-    if args.create_module:
-        result = _create_module(course, content_root, args.create_module)
-        print(f'CREATE_MODULE_JSON:{json.dumps(result, ensure_ascii=False)}')
-        return
-
-    if args.delete:
-        result = _delete_items(course, content_root, args.delete)
-        print(f'DELETE_RESULT_JSON:{json.dumps(result, ensure_ascii=False)}')
-        return
+    # Course Board actions. Each changes local files as well as Canvas, so in
+    # team mode it runs like a sync: commit and pull first, hold the lock, and
+    # commit and push what it changed.
+    board_actions = [
+        (args.import_item, 'IMPORT_RESULT_JSON', 'Imported',
+         lambda: _import_single_item(course, content_root, args.import_item)),
+        (args.set_published, 'PUBLISH_RESULT_JSON', 'Published state set',
+         lambda: _set_published(course, args.set_published, content_root)),
+        (args.create_module, 'CREATE_MODULE_JSON', 'Module created',
+         lambda: _create_module(course, content_root, args.create_module)),
+        (args.delete, 'DELETE_RESULT_JSON', 'Deleted',
+         lambda: _delete_items(course, content_root, args.delete)),
+    ]
+    for wanted, tag, verb, action in board_actions:
+        if wanted:
+            result = _run_board_action(content_root, workflow, identity, args.break_lock,
+                                       verb, action)
+            print(f'{tag}:{json.dumps(result, ensure_ascii=False)}')
+            return
 
     # Drift check mode: only check for Canvas-side modifications, then exit
     if args.check_drift:

@@ -23,6 +23,10 @@ on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/r
 
 ### Fixes
 
+- **Course Board actions are committed and pushed in team mode.** Deleting, importing,
+  publishing or creating a module changed the local files but left them for you to
+  commit and push. Each now runs like a sync: it commits and pulls first, holds the sync
+  lock, and commits and pushes what it changed ("Deleted by Mirza: Test_page.qmd").
 - **A quiz students have answered is no longer doubled.** Canvas locks the questions of
   a New Quiz once it has submissions. The sync then created a copy of every question and
   left the old one, so the quiz had each question twice. A locked question is now left

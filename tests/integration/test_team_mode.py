@@ -258,6 +258,51 @@ class TestMainWiring:
         assert _lock_on_remote(remote) == ""
 
 
+class TestBoardAction:
+    """A Course Board action (here a delete) is committed and pushed like a sync."""
+
+    def _delete_page(self, clone):
+        def action():
+            os.remove(clone / "01_Mod" / "01_Page.qmd")
+            return {'success': True, 'deleted': 1, 'failed': 0, 'errors': []}
+        return action
+
+    def test_delete_is_committed_and_pushed(self, repos):
+        import sync_to_canvas
+        remote, a, b = repos
+        result = sync_to_canvas._run_board_action(str(a), "team", "Mirza", False, "Deleted",
+                                                  self._delete_page(a))
+        assert result['success']
+        assert git(a, "status", "--porcelain") == ""
+        assert _lock_on_remote(remote) == ""
+
+        git(b, "pull", "-q")
+        assert not (b / "01_Mod" / "01_Page.qmd").exists()
+        assert git(b, "log", "-1", "--format=%s") == "Deleted by Mirza: 01_Page.qmd"
+
+    def test_delete_waits_for_the_lock(self, repos):
+        import sync_to_canvas
+        remote, a, b = repos
+        kalle = TeamSync(str(b), who="Kalle")
+        kalle.begin()
+        ran = []
+        result = sync_to_canvas._run_board_action(
+            str(a), "team", "Mirza", False, "Deleted",
+            lambda: ran.append(1) or {'success': True})
+        kalle.end()
+
+        assert ran == []
+        assert not result['success'] and "syncing right now" in result['errors'][0]
+
+    def test_solo_just_runs_the_action(self, repos):
+        import sync_to_canvas
+        _, a, _ = repos
+        result = sync_to_canvas._run_board_action(str(a), "solo", "Mirza", False, "Deleted",
+                                                  self._delete_page(a))
+        assert result['success']
+        assert "01_Page.qmd" in git(a, "status", "--porcelain")
+
+
 class TestPushMap:
 
     def _sync_writes_map(self, clone, entry):
