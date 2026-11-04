@@ -13,7 +13,7 @@ from handlers.subheader_handler import SubHeaderHandler
 from handlers.external_link_handler import ExternalLinkHandler
 from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name, verify_sync_map_course, load_sync_map, save_sync_map, set_sync_identity, write_published
 from handlers.single_sync import build_handlers, find_or_create_module, arrange_modules, remove_stale_placements, sync_single_file
-from handlers.course_layout import load_layout, is_ordered, free_name, append_item, add_module, remove_module, remove_item
+from handlers.course_layout import load_layout, is_ordered, free_name, append_item, add_module, remove_module, remove_item, reconcile_orders
 from handlers.module_structure import fetch_module_structure
 from handlers import __version__
 from handlers.config import get_api_credentials, get_course_id, load_config
@@ -679,6 +679,13 @@ def _sync_content(args, course, canvas, content_root):
 
     # 1. Walk the course in layout order: _modules.yml and _order.yml, or NN_
     # prefixes in a course that has not moved to order files.
+    if is_ordered(content_root):
+        order_map = load_sync_map(content_root)
+        order_changes = reconcile_orders(content_root, order_map)
+        for c in order_changes:
+            logger.info("[cyan]Order file:[/cyan] %s", c)
+        if any(c.kind == 'renamed' for c in order_changes):
+            save_sync_map(content_root, order_map)
     layout = load_layout(content_root)
     for p in layout.problems:
         log = logger.error if p.level == 'error' else logger.warning

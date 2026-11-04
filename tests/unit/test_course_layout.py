@@ -207,3 +207,91 @@ class TestWriting:
         (tmp_path / "A_2.qmd").write_text("x")
         assert cl.free_name(str(tmp_path), "A.qmd") == "A_3.qmd"
         assert cl.free_name(str(tmp_path), "B.qmd") == "B.qmd"
+
+
+class TestReconcileOrders:
+    """The order file follows the folder: new files in, dead lines out, renames in place."""
+
+    def _course(self, tmp_path, files, order):
+        for n in files:
+            _page(tmp_path / "Labs" / n)
+        _write(tmp_path / "_modules.yml", "- Labs\n")
+        if order is not None:
+            _write(tmp_path / "Labs" / "_order.yml", order)
+        return str(tmp_path)
+
+    def _order(self, tmp_path):
+        return [n for n, _ in cl.read_list(str(tmp_path / "Labs" / "_order.yml"))]
+
+    def test_new_file_is_listed_last_and_manual_order_survives(self, tmp_path):
+        root = self._course(tmp_path, ["A.qmd", "B.qmd", "C.qmd"], "- C.qmd\n- A.qmd\n")
+        changes = cl.reconcile_orders(root)
+        assert self._order(tmp_path) == ["C.qmd", "A.qmd", "B.qmd"]
+        assert [(c.kind, c.name) for c in changes] == [("added", "B.qmd")]
+
+    def test_dead_line_is_removed(self, tmp_path):
+        root = self._course(tmp_path, ["A.qmd"], "- Gone.qmd\n- A.qmd\n")
+        changes = cl.reconcile_orders(root)
+        assert self._order(tmp_path) == ["A.qmd"]
+        assert [(c.kind, c.name) for c in changes] == [("removed", "Gone.qmd")]
+        assert not cl.load_layout(root).problems
+
+    def test_rename_keeps_the_place_and_moves_the_canvas_id(self, tmp_path):
+        """The case that started this: New_External_URL.qmd became Kuggar_URL.qmd."""
+        root = self._course(tmp_path, ["First.qmd", "Kuggar_URL.qmd", "Last.qmd"],
+                            "- First.qmd\n- New_External_URL.qmd\n- Last.qmd\n")
+        smap = {"Labs/New_External_URL.qmd": {"id": 7, "mtime": 1.0}}
+        changes = cl.reconcile_orders(root, smap)
+        assert self._order(tmp_path) == ["First.qmd", "Kuggar_URL.qmd", "Last.qmd"]
+        assert [(c.kind, c.old, c.name) for c in changes] == \
+            [("renamed", "New_External_URL.qmd", "Kuggar_URL.qmd")]
+        assert smap == {"Labs/Kuggar_URL.qmd": {"id": 7, "mtime": 1.0}}
+
+    def test_ambiguous_rename_is_not_guessed(self, tmp_path):
+        root = self._course(tmp_path, ["N1.qmd", "N2.qmd"], "- Old1.qmd\n- Old2.qmd\n")
+        smap = {"Labs/Old1.qmd": {"id": 1}, "Labs/Old2.qmd": {"id": 2}}
+        cl.reconcile_orders(root, smap)
+        assert self._order(tmp_path) == ["N1.qmd", "N2.qmd"]
+        assert set(smap) == {"Labs/Old1.qmd", "Labs/Old2.qmd"}   # no id moved
+
+    def test_different_extension_is_not_a_rename(self, tmp_path):
+        root = self._course(tmp_path, ["A.qmd"], "- Old.pdf\n- A.qmd\n")
+        smap = {"Labs/Old.pdf": {"id": 9}}
+        cl.reconcile_orders(root, smap)
+        assert "Labs/Old.pdf" in smap
+
+    def test_a_file_that_already_has_an_id_never_receives_another(self, tmp_path):
+        root = self._course(tmp_path, ["New.qmd"], "- Old.qmd\n")
+        smap = {"Labs/Old.qmd": {"id": 1}, "Labs/New.qmd": {"id": 2}}
+        cl.reconcile_orders(root, smap)
+        assert smap["Labs/New.qmd"] == {"id": 2}
+        assert self._order(tmp_path) == ["New.qmd"]
+
+    def test_dry_run_writes_nothing(self, tmp_path):
+        root = self._course(tmp_path, ["A.qmd", "B.qmd"], "- A.qmd\n- Gone.qmd\n")
+        before = (tmp_path / "Labs" / "_order.yml").read_text(encoding="utf-8")
+        changes = cl.reconcile_orders(root, write=False)
+        assert changes and (tmp_path / "Labs" / "_order.yml").read_text(encoding="utf-8") == before
+
+    def test_attachments_are_never_added_and_listed_ones_stay(self, tmp_path):
+        root = self._course(tmp_path, ["A.qmd"], "- A.qmd\n- Kursplan.pdf\n")
+        (tmp_path / "Labs" / "Kursplan.pdf").write_bytes(b"%PDF")
+        (tmp_path / "Labs" / "notes.txt").write_text("x", encoding="utf-8")
+        assert cl.reconcile_orders(root) == []
+        assert self._order(tmp_path) == ["A.qmd", "Kursplan.pdf"]
+
+    def test_in_step_course_is_left_alone(self, tmp_path):
+        root = self._course(tmp_path, ["A.qmd"], "- A.qmd\n")
+        p = tmp_path / "Labs" / "_order.yml"
+        p.write_text("# my own comment\n- A.qmd\n", encoding="utf-8")
+        assert cl.reconcile_orders(root) == []
+        assert "my own comment" in p.read_text(encoding="utf-8")
+
+    def test_module_without_order_file_gets_one(self, tmp_path):
+        root = self._course(tmp_path, ["B.qmd", "A.qmd"], None)
+        cl.reconcile_orders(root)
+        assert self._order(tmp_path) == ["A.qmd", "B.qmd"]
+
+    def test_nn_course_is_ignored(self, tmp_path):
+        _page(tmp_path / "01_Mod" / "01_A.qmd")
+        assert cl.reconcile_orders(str(tmp_path)) == []

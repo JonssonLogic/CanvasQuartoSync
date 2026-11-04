@@ -3,6 +3,18 @@
 What changed in each release, for the people using it. Earlier releases are described
 on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/releases).
 
+## Unreleased
+
+### The sync keeps `_order.yml` in step with the folder
+
+- **A full sync now updates each module's `_order.yml`**: new content files are listed
+  last, lines for files that are gone are removed (nothing is deleted in Canvas), and the
+  sync logs each change. Lines for files that still exist are never touched, so a manual
+  order survives. `PDFs and notes` are only kept if you listed them yourself.
+- **A rename keeps its place and its Canvas id**: one dead line plus one new file with the
+  same extension is treated as a rename, so Canvas gets an update and not a duplicate.
+  Anything less clear is not guessed at. Fixes #55.
+
 ## 0.16.0 - 2026-11-03
 
 ### Renders no longer happen in the course folder
