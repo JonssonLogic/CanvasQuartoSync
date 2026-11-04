@@ -530,6 +530,7 @@ class NewQuizHandler(BaseHandler):
             tracked_item_ids = map_entry['item_ids']
 
         new_tracked_item_ids = {}
+        locked = []     # questions Canvas would not change (students have answered)
 
         for i, q_data in enumerate(questions_data):
             q_name = q_data.get('question_name', f"Question {i+1}")
@@ -555,18 +556,29 @@ class NewQuizHandler(BaseHandler):
             if item_id:
                 # Update existing
                 logger.debug("    Updating question: %s", q_name)
+                # The question stays tracked whether or not the update goes
+                # through. Creating a replacement used to leave the old one in
+                # the quiz as well, so students got every question twice.
+                new_tracked_item_ids[q_name] = item_id
                 try:
-                    updated_item = client.update_item(course_id, assignment_id, item_id, item_data)
-                    new_tracked_item_ids[q_name] = item_id
+                    client.update_item(course_id, assignment_id, item_id, item_data)
                 except Exception as e:
-                     logger.error("    Failed to update question %s: %s. Re-creating.", q_name, e)
-                     created_item = client.create_item(course_id, assignment_id, item_data)
-                     new_tracked_item_ids[q_name] = str(created_item['id'])
+                    if 'immutable' in str(e):
+                        locked.append(q_name)
+                    else:
+                        logger.error("    Failed to update question %s: %s. Left as it is "
+                                     "in Canvas.", q_name, e)
             else:
                 # Create new
                 logger.info("    [green]Adding new question:[/green] %s", q_name)
                 created_item = client.create_item(course_id, assignment_id, item_data)
                 new_tracked_item_ids[q_name] = str(created_item['id'])
+
+        if locked:
+            logger.warning(
+                "    [yellow]%d question(s) not updated: students have answered them, so "
+                "Canvas locks them.[/yellow] Edit them in Canvas, or make a new quiz. "
+                "Locked: %s", len(locked), ', '.join(locked))
 
         # 4. Cleanup remaining orphaned or duplicated items on Canvas
         for q_name, items_list in existing_q_map.items():

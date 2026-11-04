@@ -11,7 +11,7 @@ from handlers.log import logger, setup_logging
 from handlers.calendar_handler import CalendarHandler
 from handlers.subheader_handler import SubHeaderHandler
 from handlers.external_link_handler import ExternalLinkHandler
-from handlers.content_utils import canvas_file_name, upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name, verify_sync_map_course, load_sync_map, save_sync_map, set_sync_identity, write_published
+from handlers.content_utils import canvas_file_name, record_file, upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name, verify_sync_map_course, load_sync_map, save_sync_map, set_sync_identity, write_published
 from handlers.single_sync import build_handlers, find_or_create_module, arrange_modules, remove_stale_placements, sync_single_file
 from handlers.course_layout import load_layout, is_ordered, free_name, append_item, add_module, remove_module, remove_item, reconcile_orders
 from handlers.module_structure import fetch_module_structure
@@ -113,6 +113,9 @@ def _import_single_item(course, content_root: str, item_json: str) -> dict:
                 original_name = canvas_file_name(getattr(file_obj, 'filename', safe_name))
                 file_path = _place(f'{prefix}{original_name}')
                 file_obj.download(file_path)
+                # The file is that Canvas file already: the next sync must not
+                # upload it again and add a second copy to the module.
+                record_file(content_root, file_path, file_obj.id, getattr(file_obj, 'url', ''))
                 rel = os.path.relpath(file_path, content_root).replace('\\', '/')
                 return {'success': True, 'file': rel}
             except Exception as e:

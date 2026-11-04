@@ -161,6 +161,27 @@ def get_or_create_folder(course, folder_path, parent_folder_id=None):
         logger.error("    Failed to create folder '%s': %s", folder_path, e)
         raise
 
+def record_file(content_root, local_path, file_id, file_url, fingerprint=None):
+    """Record that ``local_path`` is Canvas file ``file_id``, as of its current content.
+
+    Written after an upload, and after an import downloads a file from Canvas:
+    without it the next sync takes the imported file for a new one, uploads a
+    second copy and adds it to the module next to the original.
+    """
+    rel_path = os.path.relpath(local_path, content_root).replace('\\', '/')
+    entry = {
+        'source_hash': fingerprint or file_fingerprint(local_path),
+        'url': file_url,
+        'id': file_id,
+        'last_synced_at': _now_iso(),
+    }
+    if _SYNC_IDENTITY:
+        entry['last_synced_by'] = _SYNC_IDENTITY
+    sync_map = load_sync_map(content_root)
+    sync_map[rel_path] = entry
+    save_sync_map(content_root, sync_map)
+
+
 def upload_file(course, local_path, target_folder_name="course_files", content_root=None):
     """
     Uploads a file (image or asset) to Canvas.
@@ -215,20 +236,8 @@ def upload_file(course, local_path, target_folder_name="course_files", content_r
             if file_id:
                 ACTIVE_ASSET_IDS.add(file_id)
 
-            # Update Sync Map
             if content_root:
-                sync_map = load_sync_map(content_root)
-                rel_path = os.path.relpath(map_path, content_root).replace('\\', '/')
-                entry = {
-                    'source_hash': fingerprint,
-                    'url': file_url,
-                    'id': file_id,
-                    'last_synced_at': _now_iso(),
-                }
-                if _SYNC_IDENTITY:
-                    entry['last_synced_by'] = _SYNC_IDENTITY
-                sync_map[rel_path] = entry
-                save_sync_map(content_root, sync_map)
+                record_file(content_root, map_path, file_id, file_url, fingerprint)
 
             return file_url, file_id
         else:

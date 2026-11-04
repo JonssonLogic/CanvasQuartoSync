@@ -31,7 +31,7 @@ import hashlib
 import requests
 from html import unescape
 from urllib.parse import unquote, urlparse, urljoin
-from handlers.content_utils import canvas_file_name
+from handlers.content_utils import canvas_file_name, record_file
 
 from canvasapi import Canvas
 
@@ -1024,7 +1024,8 @@ def import_course(course, output_path: str, dry_run: bool = False, include_types
                 elif item_type == 'File':
                     if include_types and 'files' not in include_types:
                         continue
-                    _record(written, _import_file_item(course, item, mod_dir, item_prefix, safe_item_name, dry_run))
+                    _record(written, _import_file_item(course, item, mod_dir, item_prefix, safe_item_name, dry_run,
+                                                       content_root=output_path))
 
                 elif item_type == 'ExternalUrl':
                     if include_types and 'links' not in include_types:
@@ -1103,7 +1104,8 @@ def _write_qmd(directory: str, prefix: str, name: str, content: str, dry_run: bo
     return filename
 
 
-def _import_file_item(course, item, mod_dir: str, prefix: str, name: str, dry_run: bool):
+def _import_file_item(course, item, mod_dir: str, prefix: str, name: str, dry_run: bool,
+                      content_root: str = ''):
     """Download a file module item."""
     try:
         content_id = item.content_id
@@ -1120,6 +1122,10 @@ def _import_file_item(course, item, mod_dir: str, prefix: str, name: str, dry_ru
 
         if download_file(file_obj, target_path):
             logger.info("    [green]Downloaded:[/green] %s", target_name)
+            if content_root:
+                # It is that Canvas file already: the first sync must not
+                # upload a second copy and add it next to the original.
+                record_file(content_root, target_path, file_obj.id, getattr(file_obj, 'url', ''))
             return target_name
     except Exception as e:
         logger.error("    Failed to download file item: %s", e)
