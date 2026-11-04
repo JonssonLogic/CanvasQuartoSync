@@ -233,9 +233,9 @@ def _same(a, b):
 
 def where(cwd):
     """Which copy runs, with which Python, against which course. Offline."""
-    from handlers import __version__
+    from handlers import full_version
 
-    dev = os.environ.get('CANVAS_QUARTO_SYNC_DIR')
+    dev =os.environ.get('CANVAS_QUARTO_SYNC_DIR')
     if dev and _same(dev, TOOL_DIR):
         kind = 'dev clone, from CANVAS_QUARTO_SYNC_DIR'
     elif _same(install_dir(), TOOL_DIR):
@@ -246,7 +246,7 @@ def where(cwd):
         kind = 'not the install location'
 
     lines = [
-        f"tool:    {TOOL_DIR}  (v{__version__}, {kind})",
+        f"tool:    {TOOL_DIR}  (v{full_version()}, {kind})",
         f"python:  {sys.executable}",
     ]
     root = find_course_root(cwd)
@@ -312,8 +312,8 @@ def main(argv=None):
         print(USAGE, end='')
         return 0
     if args[0] == '--version':
-        from handlers import __version__
-        print(f"CanvasQuartoSync {__version__}")
+        from handlers import full_version
+        print(f"CanvasQuartoSync {full_version()}")
         return 0
 
     verb, rest = args[0], args[1:]

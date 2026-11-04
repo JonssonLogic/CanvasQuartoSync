@@ -36,7 +36,7 @@ from handlers.content_utils import canvas_file_name
 from canvasapi import Canvas
 
 from handlers import course_layout as cl
-from handlers import __version__
+from handlers import __version__, full_version
 from handlers.log import logger, setup_logging
 from handlers.config import load_config, get_api_credentials, get_course_id
 from handlers.dates import resolve_timezone, to_local_naive
@@ -1195,7 +1195,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Import existing Canvas course content into CanvasQuartoSync QMD structure."
     )
-    parser.add_argument("--version", action="version", version=f"CanvasQuartoSync {__version__}")
+    parser.add_argument("--version", action="version", version=f"CanvasQuartoSync {full_version()}")
     parser.add_argument(
         "output_path",
         help="Path to the output content directory (must contain config.toml, or use --course-id)."

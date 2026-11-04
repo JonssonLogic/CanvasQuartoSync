@@ -50,3 +50,6 @@ TODO.md
 # Node, for the VS Code extension
 node_modules/
 *.vsix
+
+# Build stamp dev-deploy.ps1 writes into the install
+/BUILD

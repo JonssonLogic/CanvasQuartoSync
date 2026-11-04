@@ -13,10 +13,14 @@ import { openNewProjectPanel } from './providers/newProjectPanel';
 import { openCourseBoard } from './providers/courseBoardPanel';
 import { openGradeRollupPanel } from './providers/gradeRollupPanel';
 import { showWelcomeIfNeeded } from './providers/welcomePanel';
+import { registerTerminalPath } from './providers/terminalPath';
 
 export function activate(context: vscode.ExtensionContext) {
   const version = context.extension.packageJSON?.version ?? 'unknown';
   console.log(`CanvasQuartoSync v${version} activated`);
+
+  // cqs in the integrated terminals, without restarting VS Code
+  registerTerminalPath(context);
 
   // Sidebar tree views (Project / Sync / Tools)
   registerSidebarViews(context);

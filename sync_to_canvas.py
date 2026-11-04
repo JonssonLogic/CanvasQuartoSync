@@ -15,7 +15,7 @@ from handlers.content_utils import canvas_file_name, upload_file, prune_orphaned
 from handlers.single_sync import build_handlers, find_or_create_module, arrange_modules, remove_stale_placements, sync_single_file
 from handlers.course_layout import load_layout, is_ordered, free_name, append_item, add_module, remove_module, remove_item, reconcile_orders
 from handlers.module_structure import fetch_module_structure
-from handlers import __version__
+from handlers import __version__, full_version
 from handlers.config import get_api_credentials, get_course_id, load_config
 from handlers.drift_detector import check_all_drift, drift_report, forget_synced_file, forget_synced_dir
 from handlers.sync_policy import SyncPolicy, set_policy, get_policy, SOLO, TEAM
@@ -412,7 +412,7 @@ def _print_module_structure(content_root, api_url, api_token, course_id, with_dr
 
 def main():
     parser = argparse.ArgumentParser(description="Sync local content to Canvas.")
-    parser.add_argument("--version", action="version", version=f"CanvasQuartoSync {__version__}")
+    parser.add_argument("--version", action="version", version=f"CanvasQuartoSync {full_version()}")
     parser.add_argument("content_path", nargs="?", default=".", help="Path to the content directory (default: current dir).")
     parser.add_argument("--sync-calendar", action="store_true", help="Enable calendar synchronization (Opt-in).")
     parser.add_argument("--course-id", help="Canvas Course ID (Override).")

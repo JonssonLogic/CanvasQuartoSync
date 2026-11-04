@@ -35,7 +35,7 @@ function Write-Err   { param([string]$msg) Write-Host "   [ERROR] $msg" -Foregro
 # Written straight to the registry as REG_EXPAND_SZ: SetEnvironmentVariable
 # would rewrite the whole value as REG_SZ and break every other entry that
 # uses a %VARIABLE%. Returns $true when it changed something.
-# Keep in step with dev-deploy.ps1.
+# Keep in step with dev-deploy.ps1 and update.ps1.
 function Add-CqsToUserPath {
     param([string]$BinDir)
     $key = Get-Item 'HKCU:\Environment'
@@ -241,6 +241,8 @@ if ($doClone) {
         Push-Location $CLONE_DIR
         & git pull 2>&1 | Out-Null
         Pop-Location
+        # A dev build's stamp (dev-deploy.ps1) no longer describes this copy.
+        Remove-Item (Join-Path $CLONE_DIR "BUILD") -ErrorAction SilentlyContinue
         Write-Ok "Updated to latest version."
     } elseif (Test-Path (Join-Path $CLONE_DIR "sync_to_canvas.py")) {
         # dev-deploy.ps1 copies a working tree here without .git
@@ -301,10 +303,11 @@ $cqsBin = Join-Path $CLONE_DIR "bin"
 if (Test-Path (Join-Path $cqsBin "cqs.cmd")) {
     Write-Step "Putting the cqs command on your PATH..."
     if (Add-CqsToUserPath $cqsBin) {
-        # A new tab in VS Code or Windows Terminal inherits the app's environment
-        # from when it started, so "open a new terminal" is not enough there.
+        # Windows Terminal tabs inherit the app's environment from when it
+        # started, so they need the app restarted. VS Code terminals get cqs
+        # from the extension once its window is reloaded.
         Write-Ok "Added $cqsBin to your PATH."
-        Write-Warn "Close VS Code / Windows Terminal completely (all windows) and reopen them to use cqs."
+        Write-Warn "In VS Code: reload the window (Developer: Reload Window), then open a new terminal. Restart Windows Terminal."
     } else {
         Write-Ok "cqs is already on your PATH."
     }

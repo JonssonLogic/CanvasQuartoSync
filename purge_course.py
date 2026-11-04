@@ -29,7 +29,7 @@ import argparse
 
 from canvasapi import Canvas
 
-from handlers import __version__
+from handlers import __version__, full_version
 from handlers.log import logger, setup_logging
 from handlers.config import get_api_credentials, get_course_id
 
@@ -148,7 +148,7 @@ def purge(course, inventory):
 
 def main():
     parser = argparse.ArgumentParser(description="Purge content from a Canvas course.")
-    parser.add_argument("--version", action="version", version=f"CanvasQuartoSync {__version__}")
+    parser.add_argument("--version", action="version", version=f"CanvasQuartoSync {full_version()}")
     parser.add_argument("content_path", nargs="?", default=".", help="Path to content directory with config.toml (default: current dir).")
     parser.add_argument("--course-id", help="Canvas Course ID (override config.toml).")
     parser.add_argument("--dry-run", action="store_true", help="Only list content, do not delete anything.")
