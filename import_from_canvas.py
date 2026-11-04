@@ -31,6 +31,7 @@ import hashlib
 import requests
 from html import unescape
 from urllib.parse import unquote, urlparse, urljoin
+from handlers.content_utils import canvas_file_name
 
 from canvasapi import Canvas
 
@@ -213,7 +214,7 @@ class AssetDownloader:
             file_id = files_match.group(1)
             meta = self._resolve_canvas_file(file_id)
             if meta.get('filename'):
-                return sanitize_filename(meta['filename'])
+                return sanitize_filename(canvas_file_name(meta['filename']))
             # Fallback
             ext = os.path.splitext(path.rstrip('/'))[1]
             if not ext or ext in ('.preview', '.download'):
@@ -1107,7 +1108,7 @@ def _import_file_item(course, item, mod_dir: str, prefix: str, name: str, dry_ru
     try:
         content_id = item.content_id
         file_obj = course.get_file(content_id)
-        original_name = getattr(file_obj, 'filename', name)
+        original_name = canvas_file_name(getattr(file_obj, 'filename', name))
         ext = os.path.splitext(original_name)[1]
         stem = sanitize_filename(os.path.splitext(original_name)[0])
         target_name = f"{prefix}_{stem}{ext}" if prefix else cl.free_name(mod_dir, f"{stem}{ext}")

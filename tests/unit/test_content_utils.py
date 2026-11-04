@@ -235,3 +235,12 @@ class TestSyncMapCourseIdentity:
         for rel_path, entry in sync_map.items():
             if rel_path == MAP_COURSE_KEY:
                 assert not isinstance(entry, dict)
+
+
+def test_canvas_file_name_decodes_the_url_encoded_upload_name():
+    """Canvas's `filename` is URL-encoded; the import must not use it as is."""
+    from handlers.content_utils import canvas_file_name
+    assert canvas_file_name("L1+Fj%C3%A4drar%2C+d%C3%A4mpare.pdf") == "L1 Fjädrar, dämpare.pdf"
+    assert canvas_file_name("plain.pdf") == "plain.pdf"
+    assert canvas_file_name("a%2Bb.pdf") == "a+b.pdf"   # a literal plus stays a plus
+    assert canvas_file_name(None) == ""

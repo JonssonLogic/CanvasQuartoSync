@@ -1,5 +1,6 @@
 import os
 import re
+from urllib.parse import unquote_plus
 import frontmatter
 import json
 import shutil
@@ -893,3 +894,13 @@ def write_published(file_path, published, keys=('canvas', 'published')):
     with open(file_path, 'w', encoding='utf-8', newline='') as f:
         f.write(nl.join(lines))
     return None
+
+
+def canvas_file_name(name):
+    """The real name of a Canvas file.
+
+    Canvas's ``filename`` is the upload name URL-encoded (``+`` for a space,
+    ``%C3%A4`` for ``ä``); ``display_name`` is what teachers see but can be
+    renamed. Decoding ``filename`` gives the name the file was uploaded with.
+    """
+    return unquote_plus(name or '')
