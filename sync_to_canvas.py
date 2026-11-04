@@ -644,9 +644,27 @@ def _apply_force(args, content_root):
         logger.info("[yellow]Force mode:[/yellow] all files will re-render")
 
 
+def _reconcile_order_files(content_root):
+    """Bring every _order.yml in step with its folder (see reconcile_orders)."""
+    if not is_ordered(content_root):
+        return []
+    order_map = load_sync_map(content_root)
+    changes = reconcile_orders(content_root, order_map)
+    for c in changes:
+        logger.info("[cyan]Order file:[/cyan] %s", c)
+    if any(c.kind == 'renamed' for c in changes):
+        save_sync_map(content_root, order_map)
+    return changes
+
+
 def _sync_content(args, course, canvas, content_root):
     """Sync one file (--only) or the whole course. Returns the exit code."""
     handlers = build_handlers()
+
+    # The order files follow the folders first, for --only as well: the Course
+    # Board syncs one file at a time, and a renamed file must keep its Canvas id
+    # (moved in the sync map here) and its place in _order.yml.
+    _reconcile_order_files(content_root)
 
     # --only: sync a single asset and exit (delegates to the reusable function
     # so the same logic is available to a future GUI).
@@ -679,13 +697,6 @@ def _sync_content(args, course, canvas, content_root):
 
     # 1. Walk the course in layout order: _modules.yml and _order.yml, or NN_
     # prefixes in a course that has not moved to order files.
-    if is_ordered(content_root):
-        order_map = load_sync_map(content_root)
-        order_changes = reconcile_orders(content_root, order_map)
-        for c in order_changes:
-            logger.info("[cyan]Order file:[/cyan] %s", c)
-        if any(c.kind == 'renamed' for c in order_changes):
-            save_sync_map(content_root, order_map)
     layout = load_layout(content_root)
     for p in layout.problems:
         log = logger.error if p.level == 'error' else logger.warning

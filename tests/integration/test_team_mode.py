@@ -277,6 +277,31 @@ class TestPushMap:
         assert "Sync map after sync by Mirza" in git(b, "log", "-1", "--format=%s")
         assert _lock_on_remote(remote) == ""
 
+    def test_order_file_the_sync_changed_is_committed_with_the_map(self, repos):
+        # A renamed file: the sync rewrites _order.yml and moves the map entry.
+        remote, a, b = repos
+        t = TeamSync(str(a), who="Mirza")
+        t.begin()
+        (a / "01_Mod" / "_order.yml").write_text("- 01_Page.qmd\n", encoding="utf-8")
+        self._sync_writes_map(a, {"01_Mod/01_Page.qmd": {"id": 1}})
+        assert t.end()
+
+        git(b, "pull", "-q")
+        assert (b / "01_Mod" / "_order.yml").read_text(encoding="utf-8") == "- 01_Page.qmd\n"
+        assert git(b, "log", "-1", "--format=%s").strip() == \
+            "Sync map and order files after sync by Mirza"
+        assert git(a, "status", "--porcelain").strip() == ""
+
+    def test_order_file_alone_is_committed(self, repos):
+        remote, a, b = repos
+        t = TeamSync(str(a), who="Mirza")
+        t.begin()
+        (a / "01_Mod" / "_order.yml").write_text("- 01_Page.qmd\n", encoding="utf-8")
+        assert t.end()
+
+        git(b, "pull", "-q")
+        assert git(b, "log", "-1", "--format=%s").strip() == "Order files after sync by Mirza"
+
     def test_push_rebases_over_content_pushed_during_the_sync(self, repos):
         remote, a, b = repos
         t = TeamSync(str(a), who="Mirza")
