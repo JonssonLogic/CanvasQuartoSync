@@ -34,6 +34,22 @@ if ($REPO_ROOT -ne $CLONE_DIR) {
     Write-Ok "Already running from install directory."
 }
 
+# Stamp the install with the commit it was built from, so "cqs --version"
+# tells builds of different branches apart (0.16.0+b6eb056 (feat/x)).
+# install.ps1 and update.ps1 delete the stamp: a release shows the bare version.
+$buildFile = Join-Path $CLONE_DIR "BUILD"
+$commit = (git -C $REPO_ROOT rev-parse --short HEAD 2>$null)
+if ($LASTEXITCODE -eq 0 -and $commit) {
+    $branch = (git -C $REPO_ROOT rev-parse --abbrev-ref HEAD 2>$null)
+    if ($branch -eq 'HEAD') { $branch = '' }    # detached
+    $dirty = [bool](git -C $REPO_ROOT status --porcelain --untracked-files=no 2>$null)
+    $stamp = "commit=$commit`nbranch=$branch`nmodified=$($dirty.ToString().ToLower())`n"
+    [IO.File]::WriteAllText($buildFile, $stamp, (New-Object Text.UTF8Encoding $false))
+    Write-Ok "Build stamp: $commit $(if ($branch) { "($branch)" })$(if ($dirty) { ' + uncommitted changes' })"
+} else {
+    Remove-Item $buildFile -ErrorAction SilentlyContinue
+}
+
 # The venv lives inside the install; create it on first deploy, and keep its
 # packages in step with requirements.txt on every deploy.
 $venvPython = Join-Path $VENV_DIR "Scripts\python.exe"
@@ -57,12 +73,17 @@ if (-not ($pathParts | Where-Object { $_.TrimEnd('\') -ieq $cqsBin })) {
     Set-ItemProperty -Path 'HKCU:\Environment' -Name Path -Value ((@($pathParts) + $cqsBin) -join ';') -Type ExpandString
     [Environment]::SetEnvironmentVariable('CQS_PATH_REFRESH', '1', 'User')
     [Environment]::SetEnvironmentVariable('CQS_PATH_REFRESH', $null, 'User')
-    # A new tab in VS Code or Windows Terminal inherits the app's environment
-    # from when it started, so "open a new terminal" is not enough there.
+    # Windows Terminal tabs inherit the app's environment from when it started,
+    # so they need the app restarted. VS Code terminals get cqs from the
+    # extension once it is reloaded.
     Write-Ok "Added $cqsBin to your PATH."
-    Write-Host "   Close VS Code / Windows Terminal completely and reopen them to use cqs." -ForegroundColor Yellow
+    Write-Host "   New VS Code terminals have cqs after a reload; restart Windows Terminal." -ForegroundColor Yellow
 } else {
     Write-Ok "cqs is on your PATH."
+}
+# And in this shell, so cqs works straight after the deploy.
+if (-not (($env:Path -split ';') | Where-Object { $_.TrimEnd('\') -ieq $cqsBin })) {
+    $env:Path = "$env:Path;$cqsBin"
 }
 
 # ---- Step 2: Build VSIX ----
@@ -103,8 +124,14 @@ if (-not $codeCmd) {
 }
 
 $vsixPath = Join-Path $EXT_DIR $vsixName
-& $codeCmd --install-extension $vsixPath --force
-if ($LASTEXITCODE -ne 0) {
+# code.cmd's Node prints deprecation warnings on stderr. Under "Stop" that
+# aborts the deploy although the install worked; the exit code decides.
+$ErrorActionPreference = "Continue"
+& $codeCmd --install-extension $vsixPath --force 2>&1 | ForEach-Object { "$_" } |
+    Where-Object { $_ -notmatch 'DeprecationWarning|--trace-deprecation' } | Write-Host
+$installExit = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
+if ($installExit -ne 0) {
     Write-Err "Extension install failed."
     exit 1
 }

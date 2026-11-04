@@ -11,11 +11,11 @@ from handlers.log import logger, setup_logging
 from handlers.calendar_handler import CalendarHandler
 from handlers.subheader_handler import SubHeaderHandler
 from handlers.external_link_handler import ExternalLinkHandler
-from handlers.content_utils import upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name, verify_sync_map_course, load_sync_map, save_sync_map, set_sync_identity, write_published
+from handlers.content_utils import canvas_file_name, record_file, upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name, verify_sync_map_course, load_sync_map, save_sync_map, set_sync_identity, write_published
 from handlers.single_sync import build_handlers, find_or_create_module, arrange_modules, remove_stale_placements, sync_single_file
-from handlers.course_layout import load_layout, is_ordered, free_name, append_item, add_module, remove_module, remove_item
+from handlers.course_layout import load_layout, is_ordered, free_name, append_item, add_module, remove_module, remove_item, reconcile_orders
 from handlers.module_structure import fetch_module_structure
-from handlers import __version__
+from handlers import __version__, full_version
 from handlers.config import get_api_credentials, get_course_id, load_config
 from handlers.drift_detector import check_all_drift, drift_report, forget_synced_file, forget_synced_dir
 from handlers.sync_policy import SyncPolicy, set_policy, get_policy, SOLO, TEAM
@@ -110,9 +110,12 @@ def _import_single_item(course, content_root: str, item_json: str) -> dict:
             # Download file
             try:
                 file_obj = course.get_file(content_id)
-                original_name = getattr(file_obj, 'filename', safe_name)
+                original_name = canvas_file_name(getattr(file_obj, 'filename', safe_name))
                 file_path = _place(f'{prefix}{original_name}')
                 file_obj.download(file_path)
+                # The file is that Canvas file already: the next sync must not
+                # upload it again and add a second copy to the module.
+                record_file(content_root, file_path, file_obj.id, getattr(file_obj, 'url', ''))
                 rel = os.path.relpath(file_path, content_root).replace('\\', '/')
                 return {'success': True, 'file': rel}
             except Exception as e:
@@ -412,7 +415,7 @@ def _print_module_structure(content_root, api_url, api_token, course_id, with_dr
 
 def main():
     parser = argparse.ArgumentParser(description="Sync local content to Canvas.")
-    parser.add_argument("--version", action="version", version=f"CanvasQuartoSync {__version__}")
+    parser.add_argument("--version", action="version", version=f"CanvasQuartoSync {full_version()}")
     parser.add_argument("content_path", nargs="?", default=".", help="Path to the content directory (default: current dir).")
     parser.add_argument("--sync-calendar", action="store_true", help="Enable calendar synchronization (Opt-in).")
     parser.add_argument("--course-id", help="Canvas Course ID (Override).")
@@ -644,16 +647,55 @@ def _apply_force(args, content_root):
         logger.info("[yellow]Force mode:[/yellow] all files will re-render")
 
 
+def _reconcile_order_files(content_root):
+    """Bring every _order.yml in step with its folder (see reconcile_orders)."""
+    if not is_ordered(content_root):
+        return []
+    order_map = load_sync_map(content_root)
+    changes = reconcile_orders(content_root, order_map)
+    for c in changes:
+        logger.info("[cyan]Order file:[/cyan] %s", c)
+    if any(c.kind == 'renamed' for c in changes):
+        save_sync_map(content_root, order_map)
+    return changes
+
+
+def _renamed_to(content_root, old_path, order_changes):
+    """The new path of ``old_path`` if reconciling just found it renamed, else None."""
+    try:
+        old_rel = os.path.relpath(old_path, content_root).replace('\\', '/').lower()
+    except ValueError:      # another drive: not in the course
+        return None
+    for c in order_changes:
+        if c.kind == 'renamed' and f"{c.module}/{c.old}".lower() == old_rel:
+            return os.path.join(content_root, c.module, c.name)
+    return None
+
+
 def _sync_content(args, course, canvas, content_root):
     """Sync one file (--only) or the whole course. Returns the exit code."""
     handlers = build_handlers()
 
+    # The order files follow the folders first, for --only as well: the Course
+    # Board syncs one file at a time, and a renamed file must keep its Canvas id
+    # (moved in the sync map here) and its place in _order.yml.
+    order_changes = _reconcile_order_files(content_root)
+
     # --only: sync a single asset and exit (delegates to the reusable function
     # so the same logic is available to a future GUI).
     if args.only:
-        candidate = os.path.abspath(os.path.join(content_root, args.only))
+        in_course = os.path.abspath(os.path.join(content_root, args.only))
+        candidate = in_course
         if not os.path.exists(candidate):
             candidate = os.path.abspath(args.only)
+        if not os.path.exists(candidate):
+            # Asked for by its old name (the Course Board shows _order.yml,
+            # which still had it): sync the file it was renamed to.
+            renamed = _renamed_to(content_root, in_course, order_changes)
+            if renamed:
+                logger.info("[cyan]%s was renamed to %s; syncing that.[/cyan]",
+                            os.path.basename(in_course), os.path.basename(renamed))
+                candidate = renamed
         result = sync_single_file(course, content_root, candidate, canvas=canvas, handlers=handlers)
         if result.success:
             logger.info("[bold green]%s[/bold green]", result.message)

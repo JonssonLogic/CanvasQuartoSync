@@ -10,6 +10,30 @@ from handlers.render_workspace import render_dir, real_text
 from handlers.config import load_config
 from handlers.log import logger
 
+def _url_key(url):
+    """An external URL as Canvas stores it, for comparing.
+
+    Canvas adds ``http://`` to a URL written without a scheme
+    (``mechanics.ju.se`` is saved as ``http://mechanics.ju.se``). Scheme and
+    host are case-insensitive, and a bare trailing slash means nothing.
+    """
+    url = (url or '').strip()
+    if not url:
+        return ''
+    if not re.match(r'^[A-Za-z][A-Za-z0-9+.-]*://', url):
+        url = 'http://' + url
+    parts = urllib.parse.urlsplit(url)
+    path = parts.path.rstrip('/')
+    return urllib.parse.urlunsplit(
+        (parts.scheme.lower(), parts.netloc.lower(), path, parts.query, parts.fragment))
+
+
+def same_external_url(canvas_url, local_url):
+    """True if the module item's URL is the file's ``canvas.url``."""
+    a, b = _url_key(canvas_url), _url_key(local_url)
+    return bool(a) and a == b
+
+
 # Default callout styles (used when no branding.css defines them)
 _DEFAULT_CALLOUT_STYLES = {
     'callout-tip':       {'border': '#198754', 'bg': '#d1e7dd', 'icon': '\U0001f4a1'},
@@ -119,7 +143,8 @@ class BaseHandler(ABC):
                 except (ValueError, TypeError):
                     if str(item.content_id) == str(content_id):
                         match = True
-            elif item_type == 'ExternalUrl' and getattr(item, 'external_url', None) == external_url:
+            elif (item_type == 'ExternalUrl'
+                  and same_external_url(getattr(item, 'external_url', None), external_url)):
                 match = True
 
             if match:

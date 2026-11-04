@@ -28,6 +28,20 @@ function Write-Ok    { param([string]$msg) Write-Host "   [OK] $msg" -Foreground
 function Write-Warn  { param([string]$msg) Write-Host "   [!] $msg" -ForegroundColor Yellow }
 function Write-Err   { param([string]$msg) Write-Host "   [ERROR] $msg" -ForegroundColor Red }
 
+# Same as Add-CqsToUserPath in install.ps1; keep them in step. An install made
+# before cqs existed gets it on the PATH by updating.
+function Add-CqsToUserPath {
+    param([string]$BinDir)
+    $key = Get-Item 'HKCU:\Environment'
+    $raw = $key.GetValue('Path', '', 'DoNotExpandEnvironmentNames')
+    $parts = @($raw -split ';' | Where-Object { $_ })
+    if ($parts | Where-Object { $_.TrimEnd('\') -ieq $BinDir.TrimEnd('\') }) { return $false }
+    Set-ItemProperty -Path 'HKCU:\Environment' -Name Path -Value ((@($parts) + $BinDir) -join ';') -Type ExpandString
+    [Environment]::SetEnvironmentVariable('CQS_PATH_REFRESH', '1', 'User')
+    [Environment]::SetEnvironmentVariable('CQS_PATH_REFRESH', $null, 'User')
+    return $true
+}
+
 Write-Host ""
 Write-Host "=============================================" -ForegroundColor Cyan
 Write-Host "   Canvas Quarto Sync - Updater"              -ForegroundColor Cyan
@@ -54,6 +68,20 @@ if (Test-Path (Join-Path $CLONE_DIR ".git")) {
     git clone $REPO_URL $CLONE_DIR
     if ($LASTEXITCODE -ne 0) { Write-Err "Failed to clone repository."; exit 1 }
     Write-Ok "Repository cloned to $CLONE_DIR"
+}
+# A dev build's stamp (dev-deploy.ps1) no longer describes this copy.
+Remove-Item (Join-Path $CLONE_DIR "BUILD") -ErrorAction SilentlyContinue
+
+# ---- cqs on the PATH ----
+$cqsBin = Join-Path $CLONE_DIR "bin"
+if (Test-Path (Join-Path $cqsBin "cqs.cmd")) {
+    if (Add-CqsToUserPath $cqsBin) {
+        Write-Ok "Added $cqsBin to your PATH."
+        Write-Warn "In VS Code: reload the window (Developer: Reload Window), then open a new terminal. Restart Windows Terminal."
+    }
+    if (-not (($env:Path -split ';') | Where-Object { $_.TrimEnd('\') -ieq $cqsBin })) {
+        $env:Path = "$env:Path;$cqsBin"
+    }
 }
 
 # ---- Step 2: Update Python packages ----

@@ -31,11 +31,12 @@ import hashlib
 import requests
 from html import unescape
 from urllib.parse import unquote, urlparse, urljoin
+from handlers.content_utils import canvas_file_name, record_file
 
 from canvasapi import Canvas
 
 from handlers import course_layout as cl
-from handlers import __version__
+from handlers import __version__, full_version
 from handlers.log import logger, setup_logging
 from handlers.config import load_config, get_api_credentials, get_course_id
 from handlers.dates import resolve_timezone, to_local_naive
@@ -213,7 +214,7 @@ class AssetDownloader:
             file_id = files_match.group(1)
             meta = self._resolve_canvas_file(file_id)
             if meta.get('filename'):
-                return sanitize_filename(meta['filename'])
+                return sanitize_filename(canvas_file_name(meta['filename']))
             # Fallback
             ext = os.path.splitext(path.rstrip('/'))[1]
             if not ext or ext in ('.preview', '.download'):
@@ -1023,7 +1024,8 @@ def import_course(course, output_path: str, dry_run: bool = False, include_types
                 elif item_type == 'File':
                     if include_types and 'files' not in include_types:
                         continue
-                    _record(written, _import_file_item(course, item, mod_dir, item_prefix, safe_item_name, dry_run))
+                    _record(written, _import_file_item(course, item, mod_dir, item_prefix, safe_item_name, dry_run,
+                                                       content_root=output_path))
 
                 elif item_type == 'ExternalUrl':
                     if include_types and 'links' not in include_types:
@@ -1102,12 +1104,13 @@ def _write_qmd(directory: str, prefix: str, name: str, content: str, dry_run: bo
     return filename
 
 
-def _import_file_item(course, item, mod_dir: str, prefix: str, name: str, dry_run: bool):
+def _import_file_item(course, item, mod_dir: str, prefix: str, name: str, dry_run: bool,
+                      content_root: str = ''):
     """Download a file module item."""
     try:
         content_id = item.content_id
         file_obj = course.get_file(content_id)
-        original_name = getattr(file_obj, 'filename', name)
+        original_name = canvas_file_name(getattr(file_obj, 'filename', name))
         ext = os.path.splitext(original_name)[1]
         stem = sanitize_filename(os.path.splitext(original_name)[0])
         target_name = f"{prefix}_{stem}{ext}" if prefix else cl.free_name(mod_dir, f"{stem}{ext}")
@@ -1119,6 +1122,10 @@ def _import_file_item(course, item, mod_dir: str, prefix: str, name: str, dry_ru
 
         if download_file(file_obj, target_path):
             logger.info("    [green]Downloaded:[/green] %s", target_name)
+            if content_root:
+                # It is that Canvas file already: the first sync must not
+                # upload a second copy and add it next to the original.
+                record_file(content_root, target_path, file_obj.id, getattr(file_obj, 'url', ''))
             return target_name
     except Exception as e:
         logger.error("    Failed to download file item: %s", e)
@@ -1194,7 +1201,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Import existing Canvas course content into CanvasQuartoSync QMD structure."
     )
-    parser.add_argument("--version", action="version", version=f"CanvasQuartoSync {__version__}")
+    parser.add_argument("--version", action="version", version=f"CanvasQuartoSync {full_version()}")
     parser.add_argument(
         "output_path",
         help="Path to the output content directory (must contain config.toml, or use --course-id)."

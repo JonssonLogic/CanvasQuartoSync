@@ -404,6 +404,84 @@ def _load_module(root, dir_name, display, is_content, problems):
 
 
 # ---------------------------------------------------------------------------
+# Reconciling the order files with the folders
+# ---------------------------------------------------------------------------
+
+@dataclass
+class OrderChange:
+    module: str
+    kind: str       # 'added' | 'removed' | 'renamed'
+    name: str       # the file now listed, or the line removed
+    old: str = ''   # for 'renamed': the line it replaced
+
+    def __str__(self):
+        if self.kind == 'renamed':
+            return f"{self.module}/{ORDER_FILE}: {self.old} -> {self.name} (same place)"
+        sign = '+' if self.kind == 'added' else '-'
+        return f"{self.module}/{ORDER_FILE}: {sign}{self.name}"
+
+
+def reconcile_orders(root, sync_map=None, is_content=None, write=True):
+    """Bring every module's ``_order.yml`` in step with its folder.
+
+    The folder decides which files exist, the order file decides their order:
+
+    * a content file that is not listed is appended;
+    * a line whose file is gone is removed (nothing is deleted in Canvas);
+    * exactly one dead line and exactly one new file with the same extension
+      is a rename: the new name takes the old line's place and, when
+      ``sync_map`` is given, the old file's entry (its Canvas id) moves to the
+      new path, so Canvas gets an update and not a duplicate. Anything less
+      clear is not guessed at.
+
+    Lines for files that still exist are never touched, so a manual order
+    survives. Returns the ``[OrderChange]`` made, or that would be made when
+    ``write`` is False. ``sync_map`` is changed in place; the caller saves it.
+    """
+    root = os.path.abspath(root)
+    changes = []
+    if not is_ordered(root):
+        return changes
+    layout = load_layout(root, is_content)
+    for mod in layout.modules:
+        mod_path = os.path.join(root, mod.dir)
+        listed, seen = [], set()
+        for name, _ in read_list(os.path.join(mod_path, ORDER_FILE)):
+            if name.lower() not in seen:
+                seen.add(name.lower())
+                listed.append(name)
+        on_disk = {n.lower() for n in _listdir(mod_path)
+                   if os.path.isfile(os.path.join(mod_path, n))}
+        dead = [n for n in listed if n.lower() not in on_disk]
+        new = list(mod.auto_added)
+        if not dead and not new:
+            continue
+
+        def mapped(n):
+            return sync_map is not None and f"{mod.dir}/{n}" in sync_map
+
+        result = list(listed)
+        if (len(dead) == 1 and len(new) == 1
+                and os.path.splitext(dead[0])[1].lower() == os.path.splitext(new[0])[1].lower()
+                and not mapped(new[0])):
+            old, nw = dead[0], new[0]
+            result[result.index(old)] = nw
+            if sync_map is not None and f"{mod.dir}/{old}" in sync_map:
+                sync_map[f"{mod.dir}/{nw}"] = sync_map.pop(f"{mod.dir}/{old}")
+            changes.append(OrderChange(mod.dir, 'renamed', nw, old))
+        else:
+            for n in dead:
+                result.remove(n)
+                changes.append(OrderChange(mod.dir, 'removed', n))
+            for n in new:
+                result.append(n)
+                changes.append(OrderChange(mod.dir, 'added', n))
+        if write:
+            write_order(root, mod.dir, result)
+    return changes
+
+
+# ---------------------------------------------------------------------------
 # Changing the order (the Course Board's drag and drop)
 # ---------------------------------------------------------------------------
 

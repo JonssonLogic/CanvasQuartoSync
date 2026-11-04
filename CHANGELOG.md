@@ -3,6 +3,48 @@
 What changed in each release, for the people using it. Earlier releases are described
 on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/releases).
 
+## Unreleased
+
+### The sync keeps `_order.yml` in step with the folder
+
+- **Every sync now updates each module's `_order.yml`**, also a one-file sync from the
+  Course Board: new content files are listed
+  last, lines for files that are gone are removed (nothing is deleted in Canvas), and the
+  sync logs each change. Lines for files that still exist are never touched, so a manual
+  order survives. `PDFs and notes` are only kept if you listed them yourself.
+- **A rename keeps its place and its Canvas id**: one dead line plus one new file with the
+  same extension is treated as a rename, so Canvas gets an update and not a duplicate.
+  Anything less clear is not guessed at. Fixes #55.
+- **Syncing a file by its old name syncs the renamed file.** The Course Board shows
+  `_order.yml`, so right after a rename it asked for the old name and the sync failed
+  with "File not found".
+- **In team mode, the `_order.yml` files a sync changed are committed and pushed** with
+  the sync map, instead of waiting for the next sync.
+
+### Fixes
+
+- **A quiz students have answered is no longer doubled.** Canvas locks the questions of
+  a New Quiz once it has submissions. The sync then created a copy of every question and
+  left the old one, so the quiz had each question twice. A locked question is now left
+  as it is, and the sync warns once and names the locked ones.
+- **An imported file is not uploaded again.** Importing a file from Canvas (Course Board
+  or `cqs import`) did not record it in the sync map, so the next sync uploaded a second
+  copy and added it to the module next to the original.
+- **External links without `https://` are no longer added again on every sync.** Canvas
+  stores `mechanics.ju.se` as `http://mechanics.ju.se`, and the sync compared the raw
+  strings, so it never found the existing link.
+- **Imported file names are decoded**: `L1+Fj%C3%A4drar.pdf` is saved as `L1 Fjädrar.pdf`.
+
+### Tooling
+
+- **`cqs --version` shows which build runs**: a build from `dev-deploy.ps1` reads
+  `0.16.0+b6eb056 (feat/x)`, with `modified` if it had uncommitted changes. A release
+  install shows the bare version.
+- **`cqs` works in VS Code terminals without restarting VS Code.** The extension puts
+  the install's `bin` folder on PATH for its terminals. `update.ps1` also adds it to the
+  user PATH, as `install.ps1` does, and `dev-deploy.ps1` no longer stops on Node's
+  deprecation warning when installing the extension.
+
 ## 0.16.0 - 2026-11-03
 
 ### Renders no longer happen in the course folder

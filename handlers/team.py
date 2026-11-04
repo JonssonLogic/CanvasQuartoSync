@@ -44,6 +44,8 @@ from handlers.log import logger
 LOCK_REF = 'refs/cqs/sync-lock'
 STALE_AFTER_MINUTES = 30
 MAP_NAME = '.canvas_sync_map.json'
+# Every module's order file, at any depth (git pathspec).
+ORDER_PATHSPEC = ':(glob)**/_order.yml'
 
 
 class TeamModeError(Exception):
@@ -239,19 +241,25 @@ class TeamSync:
         return self._release_lock()
 
     def _push_map(self):
-        if not os.path.exists(self.map_path):
-            return True
-        changed = _git(self.root, 'status', '--porcelain', '--', MAP_NAME).stdout.strip()
-        if not changed:
+        # The map, and the order files the sync brought in step with the
+        # folders (a new, deleted or renamed file), which are committed with
+        # it so they do not wait for the next sync.
+        orders = _git(self.root, 'status', '--porcelain', '--', ORDER_PATHSPEC).stdout.strip()
+        map_changed = (os.path.exists(self.map_path) and
+                       _git(self.root, 'status', '--porcelain', '--', MAP_NAME).stdout.strip())
+        if not map_changed and not orders:
             return True
 
-        _git(self.root, 'add', '--', MAP_NAME)
+        paths = ([MAP_NAME] if map_changed else []) + ([ORDER_PATHSPEC] if orders else [])
+        _git(self.root, 'add', '--', *paths)
         who = self.who or self._git_user() or 'cqs'
-        _git(self.root, 'commit', '-m', f'Sync map after sync by {who}', '--', MAP_NAME)
+        what = 'Sync map' if not orders else ('Order files' if not map_changed
+                                             else 'Sync map and order files')
+        _git(self.root, 'commit', '-m', f'{what} after sync by {who}', '--', *paths)
 
         for _ in range(3):
             if _git(self.root, 'push', self.remote, 'HEAD', check=False).returncode == 0:
-                logger.info('[green]Sync map committed and pushed.[/green]')
+                logger.info('[green]%s committed and pushed.[/green]', what)
                 return True
             # Someone pushed content meanwhile. Their commits do not touch the
             # map (only syncs do, and we hold the lock), so this rebase is clean.
