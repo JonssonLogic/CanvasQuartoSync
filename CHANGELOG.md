@@ -5,6 +5,21 @@ on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/r
 
 ## Unreleased
 
+### One folder, a sandbox and a live course
+
+- **Name your courses in `config.toml` and switch with one word**: `course_id = "live"`
+  with a `[courses]` table (`live = 17671`, `training = 74`), or `--course-id training`
+  for one run. Each course keeps its own sync map (`.canvas_sync_map.json` for the first,
+  `.canvas_sync_map.<id>.json` for the others), so switching never mixes their Canvas ids.
+- **"Wrong course" now says how to fix it.** It used to suggest `--force`, which only
+  re-renders files and never got past the check. It now shows the `[courses]` table to add.
+  A course that is not listed is still refused.
+- **The Course Board shows "Wrong course" as a banner** instead of "JSON parse error":
+  the error was printed on stdout in front of the board's JSON.
+- **Renames and moves update every course's map**, from the Course Board and from a sync.
+- New course folders gitignore `.canvas_sync_map*.json`, so every course's map stays out
+  of a solo course's repo. Team mode commits and pushes all of them.
+
 ### The sync keeps `_order.yml` in step with the folder
 
 - **Every sync now updates each module's `_order.yml`**, also a one-file sync from the
@@ -38,8 +53,31 @@ on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/r
 - `.hover` is passed on to Canvas as before. The sync cannot draw a hover effect, and
   Canvas's own shows no visible highlight.
 
+### A calendar in VS Code
+
+- **The course schedule and your Outlook calendar side by side.** Tools > Calendar (or
+  "Open Calendar") shows `schedule.yaml` next to any number of Outlook calendars, read
+  from their published ICS links. Outlook stays read-only, each calendar can be hidden,
+  and the ICS address is kept in VS Code's secret storage, not in the course folder.
+- **Week, month and course views.** The week runs Monday to Friday with Swedish week
+  numbers, and Swedish public holidays are red. The month view scrolls on from one month
+  into the next, a mini-calendar on the left jumps to any week, and the course view lists
+  every booking, week by week.
+- **Book by clicking or dragging** in the week view, snapped to half hours, with title,
+  place and a comment (the event's description in Canvas). A recurring booking shows a
+  preview with red days and Outlook clashes first, and is written as one entry per
+  occasion, so a single occasion can be cancelled on its own.
+- **Edit by double-click, right-click or the edit button, and drag to move or stretch.**
+  Edits change only that entry in `schedule.yaml`; comments and layout stay. An old
+  `days:` series is split into single entries the first time one occasion is changed.
+- Nothing in the calendar talks to Canvas: the schedule still reaches Canvas with
+  `cqs sync --sync-calendar`, and Outlook with `cqs ics`.
+
 ### Fixes
 
+- **Publishing in Canvas sticks.** Publishing or unpublishing in Canvas left
+  `canvas.published` in the file behind, and the next sync put the old state back. A
+  Course Board refresh now copies Canvas's state into the files, where the two differ.
 - **Course Board actions are committed and pushed in team mode.** Deleting, importing,
   publishing or creating a module changed the local files but left them for you to
   commit and push. Each now runs like a sync: it commits and pulls first, holds the sync

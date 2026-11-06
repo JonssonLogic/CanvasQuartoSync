@@ -27,6 +27,7 @@ import time
 
 API = 'https://api.github.com'
 MAP_NAME = '.canvas_sync_map.json'
+MAP_GLOB = '.canvas_sync_map*.json'   # every course's map, see content_utils.get_sync_map_path
 NAME_RE = re.compile(r'^[A-Za-z0-9._-]+$')
 
 EPILOG = """\
@@ -289,7 +290,8 @@ def push_with_token(root, branch, token):
 def fix_gitignore(text):
     """The .gitignore of a team course: map not ignored, local and student data ignored."""
     lines = text.splitlines()
-    kept = [l for l in lines if l.strip() not in (MAP_NAME, '/' + MAP_NAME)]
+    maps = (MAP_NAME, '/' + MAP_NAME, MAP_GLOB, '/' + MAP_GLOB)
+    kept = [l for l in lines if l.strip() not in maps]
     present = {l.strip() for l in kept}
     missing = [p for p in GITIGNORE_REQUIRED if p not in present]
     if missing:

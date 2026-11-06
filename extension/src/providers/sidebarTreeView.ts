@@ -108,6 +108,11 @@ export function registerSidebarViews(
       command: 'cqs.openCourseBoard',
     },
     {
+      label: 'Calendar',
+      icon: 'calendar',
+      command: 'cqs.openCalendar',
+    },
+    {
       label: 'Grade Rollup',
       icon: 'checklist',
       command: 'cqs.showGradeRollup',

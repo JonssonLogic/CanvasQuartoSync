@@ -33,7 +33,8 @@ import subprocess
 import sys
 
 from handlers import course_layout as cl
-from handlers.content_utils import is_valid_name, load_sync_map, save_sync_map
+from handlers.content_utils import (is_valid_name, is_sync_map_file, all_sync_map_paths,
+                                    rekey_all_sync_maps, read_sync_map_file, write_sync_map_file)
 
 # Text files whose paths may point at a renamed file.
 _TEXT_EXT = {'.qmd', '.md', '.yml', '.yaml', '.json', '.html', '.htm', '.css',
@@ -148,7 +149,7 @@ def _walk_text_files(root):
     for d, dirs, files in os.walk(root):
         dirs[:] = [x for x in dirs if x not in _SKIP_DIRS]
         for f in files:
-            if f in _SKIP_FILES:
+            if f in _SKIP_FILES or is_sync_map_file(f):
                 continue
             if os.path.splitext(f)[1].lower() in _TEXT_EXT:
                 yield os.path.join(d, f)
@@ -293,17 +294,22 @@ def migrate(root, dry_run=False, allow_dirty=False):
     for old_norm, new_abs in pmap.items():
         rel_map[os.path.relpath(old_norm, os.path.normcase(root)).replace('\\', '/')] = \
             os.path.relpath(new_abs, root).replace('\\', '/')
-    sync_map = load_sync_map(root)
-    if sync_map:
-        moved = {}
+    # Every course's map: a folder synced to a sandbox and a live course has one each.
+    snapshots_moved = set()
+    for map_path in all_sync_map_paths(root):
+        sync_map = read_sync_map_file(map_path)
+        moved, keys = {}, 0
         for k, v in sync_map.items():
             nk = rel_map.get(os.path.normcase(k).replace('\\', '/'), k)
             if nk != k:
-                report['map_keys'] += 1
-                _move_snapshot(root, k, nk)
+                keys += 1
+                if k not in snapshots_moved:
+                    _move_snapshot(root, k, nk)
+                    snapshots_moved.add(k)
             moved[nk] = v
-        if report['map_keys']:
-            save_sync_map(root, moved)
+        if keys:
+            report['map_keys'] += keys
+            write_sync_map_file(map_path, moved)
 
     cl.write_modules(root, plan['modules'])
     for d, files in plan['orders'].items():
@@ -486,10 +492,7 @@ def apply_op(root, op):
 
 
 def _rekey(root, old_rel, new_rel):
-    sync_map = load_sync_map(root)
-    if old_rel in sync_map:
-        sync_map[new_rel] = sync_map.pop(old_rel)
-        save_sync_map(root, sync_map)
+    if rekey_all_sync_maps(root, {old_rel: new_rel}):
         _move_snapshot(root, old_rel, new_rel)
 
 

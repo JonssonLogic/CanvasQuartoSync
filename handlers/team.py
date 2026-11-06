@@ -44,6 +44,9 @@ from handlers.log import logger
 LOCK_REF = 'refs/cqs/sync-lock'
 STALE_AFTER_MINUTES = 30
 MAP_NAME = '.canvas_sync_map.json'
+# Every course's sync map (a folder synced to two courses has one each, see
+# content_utils.get_sync_map_path). A rename touches all of them.
+MAP_PATHSPEC = ':(glob).canvas_sync_map*.json'
 # Every module's order file, at any depth (git pathspec).
 ORDER_PATHSPEC = ':(glob)**/_order.yml'
 
@@ -72,7 +75,10 @@ class TeamSync:
         self.break_lock = break_lock
         self.remote = 'origin'
         self.lock_sha = None
-        self.map_path = os.path.join(content_root, MAP_NAME)
+        from handlers.content_utils import get_sync_map_path
+        # The map this sync writes: the active course's, set when it was verified.
+        self.map_path = get_sync_map_path(content_root)
+        self.map_name = os.path.basename(self.map_path)
 
     # -- before ------------------------------------------------------------
 
@@ -90,9 +96,9 @@ class TeamSync:
                 'pull from or push to. Push it once with "git push -u origin main".')
         self.remote = upstream.stdout.strip().split('/', 1)[0] or 'origin'
 
-        if _git(self.root, 'check-ignore', '-q', MAP_NAME, check=False).returncode == 0:
+        if _git(self.root, 'check-ignore', '-q', self.map_name, check=False).returncode == 0:
             raise TeamModeError(
-                f'{MAP_NAME} is gitignored. In team mode it must be committed: it holds '
+                f'{self.map_name} is gitignored. In team mode it must be committed: it holds '
                 'the Canvas ids everyone needs. Remove it from .gitignore and commit it.')
 
         self._commit_changes()
@@ -124,7 +130,8 @@ class TeamSync:
         if not paths:
             return []
         who = self.who or self._git_user() or 'cqs'
-        names = [p.split('/')[-1] for p in paths if p.split('/')[-1] != MAP_NAME] or [MAP_NAME]
+        names = ([p.split('/')[-1] for p in paths if not p.split('/')[-1].startswith('.canvas_sync_map')]
+                 or [self.map_name])
         subject = f'{verb} by {who}: ' + ', '.join(names[:3])
         if len(names) > 3:
             subject += f' and {len(names) - 3} more'
@@ -236,7 +243,7 @@ class TeamSync:
             logger.error(
                 '[red]The sync lock is kept[/red] until the sync map is on GitHub. '
                 'Without it, the next sync would duplicate what this one created. '
-                'Commit and push %s, then run the sync again with --break-lock.', MAP_NAME)
+                'Commit and push %s, then run the sync again with --break-lock.', self.map_name)
             return False
         return self._release_lock()
 
@@ -245,12 +252,11 @@ class TeamSync:
         # folders (a new, deleted or renamed file), which are committed with
         # it so they do not wait for the next sync.
         orders = _git(self.root, 'status', '--porcelain', '--', ORDER_PATHSPEC).stdout.strip()
-        map_changed = (os.path.exists(self.map_path) and
-                       _git(self.root, 'status', '--porcelain', '--', MAP_NAME).stdout.strip())
+        map_changed = _git(self.root, 'status', '--porcelain', '--', MAP_PATHSPEC).stdout.strip()
         if not map_changed and not orders:
             return True
 
-        paths = ([MAP_NAME] if map_changed else []) + ([ORDER_PATHSPEC] if orders else [])
+        paths = ([MAP_PATHSPEC] if map_changed else []) + ([ORDER_PATHSPEC] if orders else [])
         _git(self.root, 'add', '--', *paths)
         who = self.who or self._git_user() or 'cqs'
         what = 'Sync map' if not orders else ('Order files' if not map_changed

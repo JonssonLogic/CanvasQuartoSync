@@ -11,6 +11,7 @@ import { createToggleButtons, registerToggleCommands } from './providers/syncOpt
 import { registerSidebarViews } from './providers/sidebarTreeView';
 import { openNewProjectPanel } from './providers/newProjectPanel';
 import { openCourseBoard } from './providers/courseBoardPanel';
+import { openCalendar } from './providers/calendarPanel';
 import { openGradeRollupPanel } from './providers/gradeRollupPanel';
 import { showWelcomeIfNeeded } from './providers/welcomePanel';
 import { registerTerminalPath } from './providers/terminalPath';
@@ -66,6 +67,9 @@ export function activate(context: vscode.ExtensionContext) {
     // The panel's old name. Kept so keybindings and scripts that call it work.
     vscode.commands.registerCommand('cqs.showModuleStructure', () =>
       openCourseBoard(context)
+    ),
+    vscode.commands.registerCommand('cqs.openCalendar', () =>
+      openCalendar(context)
     ),
     vscode.commands.registerCommand('cqs.showGradeRollup', () =>
       openGradeRollupPanel(context.extensionPath)

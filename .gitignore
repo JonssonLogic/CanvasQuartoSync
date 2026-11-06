@@ -24,7 +24,7 @@ build/
 _temp_*
 .canvas_snapshots/
 .canvas_diff_temp/
-.canvas_sync_map.json
+.canvas_sync_map*.json
 *.log
 *_files/
 *.html
