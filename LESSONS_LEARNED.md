@@ -187,6 +187,14 @@ QMD quizzes can have many questions, each with markdown and LaTeX. Rendering the
 ### Query String Mangling
 Quarto/Pandoc appends extensions (e.g., `.png`) to URLs missing them. For Canvas links with verifier tokens, this appends the extension to the end of the query string, breaking the token. The sync tool prevents this by inserting the extension directly before the `?` (e.g., `.../download.png?verifier=...`).
 
+### Tables Are Drawn With Inline Styles, Stripes on the Row
+Canvas strips `<style>`, and the only table CSS a page gets is Canvas's own legacy Bootstrap 2, which styles `table-striped` (`#f9f9f9`, practically invisible on white), `table-bordered`, `table-hover` and `table-condensed`. Quarto emits Bootstrap 5 names, so `.striped`, `.bordered` and `.hover` work by coincidence and `.sm` (`table-sm`) does nothing. `handlers/table_styles.py` (#47) therefore inlines the styling, which beats Canvas's class rules without `!important` and cannot leak to another table.
+
+- **Stripes go on the `<tr>`, not on its cells.** Canvas's `.table-hover` rule colours the `td`s of the hovered row, and an inline background on a `td` would beat it.
+- **A visible hover is not available.** Canvas's `.table-hover` colour is `#F2F4F4` (`vendor/bootstrap/_variables.scss`), and in testing on ju.instructure.com hovering showed no change at all, on striped and plain rows alike. Canvas's modern `.ic-Table--hover-row` is visible (`#E0EBF5`) but colours the `tr`, so an inline row stripe beats it, and it only works together with `.ic-Table`, which brings Canvas's own padding and borders. An inline style cannot express `:hover`, so the sync passes `.hover` on as `table-hover` and draws nothing.
+- **Quarto drops `key=value` on a table** (`: {.striped stripe-color="#eef"}` loses the attribute, `data-*` too) but keeps unknown classes. Named styles can therefore be classes, while values for one table need a wrapper div, whose attributes Quarto keeps as `data-*`.
+- **Only start tags are edited.** The pass finds tags with `html.parser` and rewrites them in place rather than re-serialising the page, so a course without table settings keeps byte-identical HTML.
+
 ---
 
 ## QMD Quiz Format Notes

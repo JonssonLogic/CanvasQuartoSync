@@ -6,6 +6,8 @@
   - [Prerequisites](#prerequisites)
   - [Configuration](#configuration)
   - [Dates and time zones](#dates-and-time-zones)
+  - [Cross-references](#cross-references)
+  - [Table styling](#table-styling)
   - [Usage](#usage)
 - [2. File Organization & Module Order](#2-file-organization--module-order)
   - [Order files](#order-files-_modulesyml-_orderyml)
@@ -122,6 +124,111 @@ version until the reference is fixed, set `strict_crossrefs = true` in
 `config.toml`. The offline validator (`check_content`) flags the same problems
 before a sync, including the most common cause: images on adjacent lines with no
 blank line between them, which are inline images to Quarto, not figures.
+
+### Table styling
+
+Out of the box a table looks the way Canvas draws it. Quarto turns the caption
+options `: {.striped .hover .bordered}` into class names that Canvas's own legacy
+stylesheet happens to style, with stripes so faint they look like nothing, and
+colours nobody can change. A course can have the sync draw its tables instead. The
+sync writes the styling onto each table it draws, so a setting on one table never
+reaches another.
+
+The settings form a hierarchy. Each level overrides the ones above it, for the tables
+it reaches:
+
+| Level | Set in | Reaches |
+|:--|:--|:--|
+| Canvas | nothing set | every table, exactly as before |
+| Course | `[tables]` in `config.toml`, or `--table-*` on `:root` in `branding.css` | every table in the course, except `.plain` ones |
+| Named style | a class defined in `branding.css` | the tables that carry that class |
+| One table | a `.cqs-table` wrapper | the table inside it |
+
+**Course.** Either file turns course styling on. `[tables] style` lists the options
+for every table whose caption line names none of its own; a table that names any gets
+exactly what it names:
+
+```toml
+[tables]
+style = ["striped", "hover"]
+```
+
+The colours go on `:root` in `branding.css`, and may use the brand colours there:
+
+```css
+:root {
+  --table-stripe: #f0f4f7;
+  --table-header-bg: var(--brand-heading);
+  --table-header-fg: #ffffff;
+}
+```
+
+**Named style.** A class whose rule sets `--table-*` values. Add it to a table's
+caption line and only that table changes:
+
+```css
+.schema { --table-stripe: #eef3f8; --table-border: #999999; }
+```
+
+```markdown
+: {.striped .bordered .schema}
+```
+
+**One table.** Quarto drops `key=value` settings on a table, so values for a single
+table go on a wrapper around it. The sync removes the wrapper and keeps the table:
+
+```markdown
+::: {.cqs-table stripe="#eef3f8" border="#999999"}
+
+| Vecka | Ämne |
+|---|---|
+| 44 | Kursintro |
+
+: {.striped .bordered}
+
+:::
+```
+
+**Opting out.** `: {.plain}` leaves a table as Canvas draws it, whatever the course
+sets.
+
+Options, on a table's caption line or in `[tables] style`:
+
+| Option | In `[tables] style` | What it does |
+|:--|:--|:--|
+| `.striped` | `"striped"` | a background on the 1st, 3rd, 5th... body row |
+| `.bordered` | `"bordered"` | lines around every cell |
+| `.sm` | `"sm"` | tighter cell padding |
+| `.hover` | `"hover"` | passed on to Canvas, which shows no visible highlight (see below) |
+
+Values, in `branding.css` or on a wrapper:
+
+| In `branding.css` | On a wrapper | What it sets | When unset |
+|:--|:--|:--|:--|
+| `--table-stripe` | `stripe=` | background of the striped rows | `#f0f4f7` |
+| `--table-border` | `border=` | colour of the lines between rows, and around cells | Canvas's lines; `#dddddd` for `.bordered` |
+| `--table-header-bg` | `header-bg=` | background of the header row | Canvas's |
+| `--table-header-fg` | `header-fg=` | text colour of the header row | Canvas's |
+
+A value is a colour: `#003865`, `rgb(0, 56, 101)`, `white`, or `var(--brand-heading)`
+for a property on `:root`.
+
+- Header colours and a line colour set for the course reach every table's header row
+  and lines. Stripes, grid lines and tight padding appear only on tables that ask for
+  them, through their caption line or `[tables] style`.
+- A table written as raw HTML in a `.qmd` is left alone by course settings. Give it a
+  named style or a wrapper to style it.
+- The sync cannot draw a hover effect: it needs `:hover`, which only a stylesheet can
+  express, and Canvas removes stylesheets from pages. `.hover` is passed on to Canvas
+  as the class `table-hover`, but Canvas's own hover colour for it is a near-white
+  grey (`#F2F4F4`), and in testing it showed no visible highlight at all.
+- A study guide's Canvas page follows these settings; its PDF does not.
+- The `table th` and `tr:nth-child` rules in older `branding.css` files are not table
+  settings. They only ever reached study guides, and they still mean what they meant.
+- Changing `config.toml` or `branding.css` re-publishes every page on the next sync,
+  so a new colour reaches all of them.
+- `check_content` (`cqs check`) reports what the sync would ignore: an option it does
+  not know, a value that is not a colour, a wrapper with no table inside.
 
 ### Usage
 Run the script from the root of your project:

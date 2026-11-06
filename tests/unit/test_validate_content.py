@@ -639,3 +639,88 @@ class TestCrossRefs:
     def test_email_addresses_are_not_references(self, tmp_path):
         r = _single(tmp_path, "Mail lab@fig-dept.example.\n")
         assert _xref_errors(r) == []
+
+
+# --- Table styling (#47) ------------------------------------------------------
+
+def _table_warnings(report):
+    return [i.message for i in report.warnings
+            if "cqs-table" in i.message or "table setting" in i.message]
+
+
+WRAPPED_TABLE = """::: {{.cqs-table {attrs}}}
+
+| A | B |
+|---|---|
+| 1 | 2 |
+
+: {{.striped}}
+
+:::
+"""
+
+
+class TestTableWrappers:
+
+    def test_a_wrapper_around_a_table_is_clean(self, tmp_path):
+        r = _single(tmp_path, WRAPPED_TABLE.format(
+            attrs='stripe="#eef3f8" border="#999" header-bg="rgb(0, 56, 101)" header-fg="white"'))
+        assert _table_warnings(r) == []
+
+    def test_a_wrapper_with_no_table_does_nothing(self, tmp_path):
+        r = _single(tmp_path, '::: {.cqs-table stripe="#eef3f8"}\nJust text.\n:::\n')
+        assert _table_warnings(r) == [
+            "line 7: this .cqs-table wrapper has no table inside, so it does nothing."]
+
+    def test_an_unknown_setting_is_named_with_the_real_ones(self, tmp_path):
+        r = _single(tmp_path, WRAPPED_TABLE.format(attrs='strip="#eef3f8"'))
+        msgs = _table_warnings(r)
+        assert len(msgs) == 1
+        assert "strip= is not a table setting" in msgs[0]
+        assert "stripe, border, header-bg, header-fg" in msgs[0]
+
+    def test_a_value_that_is_not_a_colour_is_reported(self, tmp_path):
+        r = _single(tmp_path, WRAPPED_TABLE.format(attrs='border="1px solid"'))
+        assert _table_warnings(r) == [
+            "line 7: .cqs-table border=: '1px solid' is not a colour such as #003865, "
+            "rgb(0, 56, 101) or white; the sync ignores it."]
+
+    def test_a_brand_colour_from_branding_css_is_accepted(self, tmp_path):
+        (tmp_path / "config.toml").write_text('[branding]\ncss = "branding.css"\n', encoding="utf-8")
+        (tmp_path / "branding.css").write_text(":root { --brand-heading: #003865; }", encoding="utf-8")
+        r = _single(tmp_path, WRAPPED_TABLE.format(attrs='header-bg="var(--brand-heading)"'))
+        assert _table_warnings(r) == []
+
+    def test_a_table_in_a_nested_div_counts(self, tmp_path):
+        body = ('::: {.cqs-table stripe="#eef3f8"}\n'
+                '::: {.column-margin}\n\n| A |\n|---|\n| 1 |\n\n:::\n:::\n')
+        assert _table_warnings(_single(tmp_path, body)) == []
+
+    def test_ordinary_divs_and_code_are_not_wrappers(self, tmp_path):
+        body = ("::: {.callout-note}\nNo table here.\n:::\n\n"
+                "```\n::: {.cqs-table strip=\"x\"}\n:::\n```\n")
+        assert _table_warnings(_single(tmp_path, body)) == []
+
+
+class TestTableSettingsInTheCourse:
+
+    def _course(self, tmp_path, config, css=""):
+        (tmp_path / "config.toml").write_text(
+            '[branding]\ncss = "branding.css"\n' + config, encoding="utf-8")
+        (tmp_path / "branding.css").write_text(css, encoding="utf-8")
+        _write(tmp_path, "01_Mod/01_Page.qmd", _page("Text."))
+
+    def test_settings_the_sync_cannot_use_are_reported_once_per_file(self, tmp_path):
+        self._course(tmp_path, '[tables]\nstyle = ["stripes"]\n',
+                     ":root { --table-strip: #eee; }")
+        reports = {os.path.basename(r.path): r for r in validate_path(str(tmp_path))
+                   if r.kind == "table styling"}
+        assert set(reports) == {"config.toml", "branding.css"}
+        assert "'stripes' is not an option" in _messages(reports["config.toml"])
+        assert "--table-strip is not a table setting" in _messages(reports["branding.css"])
+        assert all(i.level == "WARN" for r in reports.values() for i in r.issues)
+
+    def test_good_settings_report_nothing(self, tmp_path):
+        self._course(tmp_path, '[tables]\nstyle = ["striped", "hover"]\n',
+                     ":root { --table-stripe: #eef3f8; }\n.schema { --table-border: #999; }")
+        assert not [r for r in validate_path(str(tmp_path)) if r.kind == "table styling"]
