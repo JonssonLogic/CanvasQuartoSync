@@ -49,3 +49,9 @@ css = "branding.css"
 # [courses]
 # live     = 12345
 # training = 678
+
+# Tables look the way Canvas draws them until the course asks otherwise. With a
+# [tables] section the sync draws every table instead, and gives these options to
+# the tables whose caption line names none of its own. Colours go in branding.css.
+# [tables]
+# style = ["striped"]                # options: striped, bordered, sm, hover

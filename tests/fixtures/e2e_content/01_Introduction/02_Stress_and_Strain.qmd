@@ -66,6 +66,20 @@ Slender columns can fail by buckling **before** reaching $\sigma_y$.
 | Aluminium 6061-T6 | 69 | 276 | 2700 |
 | Titanium Ti-6Al-4V | 114 | 880 | 4430 |
 
+## Load Cases
+
+::: {.cqs-table stripe="#e8eef5" border="#9aa5b1" header-bg="#003865" header-fg="#ffffff"}
+
+| Load case | Axial force (kN) | Safety factor |
+|:----------|-----------------:|--------------:|
+| Dead load | 120 | 1.35 |
+| Live load | 80 | 1.50 |
+| Wind | 45 | 1.50 |
+
+: {.striped .bordered .hover}
+
+:::
+
 ## Computing Axial Stress
 
 ```python

@@ -9,6 +9,7 @@ from handlers.content_utils import safe_delete_file, safe_delete_dir
 from handlers.render_workspace import render_dir, real_text
 from handlers.config import load_config
 from handlers.log import logger
+from handlers.table_styles import inline_table_styles, load_table_settings
 
 def _url_key(url):
     """An external URL as Canvas stores it, for comparing.
@@ -345,6 +346,8 @@ class BaseHandler(ABC):
             html_body = self._inline_figure_alignment(html_body)
             html_body = self._inline_syntax_highlighting(html_body)
             html_body = self._inline_math(html_body)
+            table_settings = load_table_settings(content_root, warn=True) if content_root else None
+            html_body = inline_table_styles(html_body, table_settings)
 
             # Cleanup
             self._cleanup(temp_qmd, temp_html, temp_files_dir)

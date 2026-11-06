@@ -36,6 +36,23 @@ on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/r
 - **In team mode, the `_order.yml` files a sync changed are committed and pushed** with
   the sync map, instead of waiting for the next sync.
 
+### Table styling
+
+- **Tables can look like your course.** Canvas draws tables with its own faint, fixed
+  styling. A course can now have the sync draw them instead, with visible stripes,
+  lines and header colours: `[tables] style` in `config.toml` chooses the options,
+  `--table-*` values on `:root` in `branding.css` the colours.
+- **One table can differ from the rest.** A class defined in `branding.css` (a named
+  style), or a `::: {.cqs-table stripe="..."}` wrapper, styles a single table and
+  overrides the course. `.plain` leaves a table as Canvas draws it.
+- **Nothing changes until a course asks.** Without these settings the sync produces
+  exactly the HTML it did before, and the `table` rules already in `branding.css`
+  still reach study guides only.
+- `cqs check` reports options it does not know, values that are not colours, and
+  wrappers with no table inside.
+- `.hover` is passed on to Canvas as before. The sync cannot draw a hover effect, and
+  Canvas's own shows no visible highlight.
+
 ### Fixes
 
 - **Course Board actions are committed and pushed in team mode.** Deleting, importing,
