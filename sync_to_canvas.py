@@ -11,12 +11,12 @@ from handlers.log import logger, setup_logging
 from handlers.calendar_handler import CalendarHandler
 from handlers.subheader_handler import SubHeaderHandler
 from handlers.external_link_handler import ExternalLinkHandler
-from handlers.content_utils import canvas_file_name, record_file, upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name, verify_sync_map_course, load_sync_map, save_sync_map, set_sync_identity, write_published
+from handlers.content_utils import canvas_file_name, record_file, upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name, verify_sync_map_course, load_sync_map, save_sync_map, set_sync_identity, write_published, rekey_all_sync_maps, get_sync_map_path
 from handlers.single_sync import build_handlers, find_or_create_module, arrange_modules, remove_stale_placements, sync_single_file
 from handlers.course_layout import load_layout, is_ordered, free_name, append_item, add_module, remove_module, remove_item, reconcile_orders
 from handlers.module_structure import fetch_module_structure
 from handlers import __version__, full_version
-from handlers.config import get_api_credentials, get_course_id, load_config
+from handlers.config import get_api_credentials, get_course_id, load_config, course_id_error
 from handlers.drift_detector import check_all_drift, drift_report, forget_synced_file, forget_synced_dir
 from handlers.sync_policy import SyncPolicy, set_policy, get_policy, SOLO, TEAM
 from handlers.team import TeamSync, TeamModeError
@@ -391,6 +391,10 @@ def _print_module_structure(content_root, api_url, api_token, course_id, with_dr
         problems.append(_problem('error', 'no_config',
             'This folder has no config.toml, so the board does not know which Canvas course it belongs to.',
             'Create config.toml with course_id and canvas_api_url. New Project in the sidebar sets one up.'))
+    elif not course_id and course_id_error(content_root):
+        problems.append(_problem('error', 'unknown_course',
+            course_id_error(content_root),
+            'Open config.toml and fix course_id or the [courses] table.'))
     elif not course_id:
         problems.append(_problem('error', 'no_course_id',
             'No course_id in config.toml.',
@@ -422,8 +426,9 @@ def _print_module_structure(content_root, api_url, api_token, course_id, with_dr
             course = None
     if course is not None and not verify_sync_map_course(content_root, course_id, getattr(course, 'name', None)):
         problems.append(_problem('error', 'wrong_course',
-            f'.canvas_sync_map.json belongs to another course than {course_id}.',
-            'Check course_id in config.toml. If the course really changed, delete the sync map.'))
+            f'The sync map in this folder belongs to another course than {course_id}.',
+            'Check course_id in config.toml. To sync this folder to both courses, list them '
+            'in a [courses] table (e.g. live = 17671, training = 74) and each keeps its own sync map.'))
         course = None
 
     try:
@@ -482,9 +487,12 @@ def main():
     # instead of an edit to an expression every new mode has to touch.
     machine_output = any(getattr(args, flag, False)
                          for flag in ('module_structure', 'json'))
+    # Quiet alone still lets errors into stdout, where the Course Board read
+    # "Wrong course..." in front of its JSON and showed a parse error instead.
     setup_logging(verbose=args.verbose,
                   quiet=args.quiet or machine_output,
-                  log_file=args.log_file)
+                  log_file=args.log_file,
+                  to_stderr=machine_output)
 
     # Helper to resolve paths relative to content_path
     content_root = os.path.abspath(args.content_path)
@@ -519,7 +527,8 @@ def main():
          return 1
 
     if not course_id:
-        logger.error("[red]Course ID not specified.[/red] Set course_id in config.toml, or pass --course-id.")
+        if not course_id_error(content_root):   # an unknown name was already reported
+            logger.error("[red]Course ID not specified.[/red] Set course_id in config.toml, or pass --course-id.")
         return 1
 
     logger.info("[cyan]Connecting to Canvas...[/cyan]")
@@ -681,8 +690,12 @@ def _reconcile_order_files(content_root):
     changes = reconcile_orders(content_root, order_map)
     for c in changes:
         logger.info("[cyan]Order file:[/cyan] %s", c)
-    if any(c.kind == 'renamed' for c in changes):
+    renames = {f"{c.module}/{c.old}": f"{c.module}/{c.name}"
+               for c in changes if c.kind == 'renamed'}
+    if renames:
         save_sync_map(content_root, order_map)
+        # The other courses this folder syncs to see the same renamed file.
+        rekey_all_sync_maps(content_root, renames, skip=get_sync_map_path(content_root))
     return changes
 
 

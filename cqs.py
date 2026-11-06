@@ -259,9 +259,18 @@ def where(cwd):
         lines.append(f"course:  {root}  ({source})")
         cid = cfg.get('course_id')
         if cid:
+            from handlers.config import resolve_course_ref, get_course_targets, CourseConfigError
+            try:
+                num = resolve_course_ref(root, cid)
+                shown = f'{num} ("{cid}")' if str(num) != str(cid).strip() else str(num)
+            except CourseConfigError:
+                shown = f'"{cid}" (not in [courses])'
             name = cfg.get('course_name')
-            lines.append(f"canvas:  course {cid}" + (f", {name}" if name else "")
+            lines.append(f"canvas:  course {shown}" + (f", {name}" if name else "")
                          + (f" at {cfg['canvas_api_url']}" if cfg.get('canvas_api_url') else ""))
+            targets = get_course_targets(root)
+            if targets:
+                lines.append("courses: " + ", ".join(f"{n} = {i}" for n, i in targets.items()))
         else:
             lines.append("canvas:  no course_id in config.toml")
     print("\n".join(lines))

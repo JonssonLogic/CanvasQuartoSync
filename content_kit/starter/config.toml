@@ -42,3 +42,10 @@ language    = "english"              # or "swedish"
 css = "branding.css"
 # Optional: an institution theme stylesheet loaded on Canvas pages
 # canvas_css_url = "https://example.com/your-institution-theme.css"
+
+# A sandbox next to the live course? Name both and pick one with course_id
+# (course_id = "live"), or with --course-id training for one run. Each course
+# keeps its own sync map, so switching never mixes their Canvas ids.
+# [courses]
+# live     = 12345
+# training = 678

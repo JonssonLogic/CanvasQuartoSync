@@ -601,8 +601,16 @@ def verify_sync_map_course(content_root, course_id, course_name=None):
     """Refuse to sync when this folder's sync map belongs to a different course.
 
     Returns True when it is safe to continue, False when the caller must stop.
+    Also makes ``course_id`` the folder's active course, so every later
+    load_sync_map reads the map this check approved.
 
-    Four cases:
+    First, the folder may already hold a map for another course and none for
+    this one. That is a second course only when config.toml names it in
+    [courses]: it then starts its own map, and the other course's map is kept
+    as it is. A course that is not named is refused, as below, because a typo
+    in course_id must not quietly start publishing a whole course somewhere.
+
+    Then, for the map this course uses, four cases:
 
     No map, or a map with no file entries yet
         Nothing can be wrong. Stamp the course and continue.
@@ -625,8 +633,38 @@ def verify_sync_map_course(content_root, course_id, course_name=None):
     except (TypeError, ValueError):
         return True  # No usable id to compare against; other checks handle this.
 
+    from handlers.config import set_active_course, clear_active_course
+
+    ok = _verify_map_for(content_root, course_id, course_name)
+    # Approved: every later read and write uses this course's map. Refused:
+    # readers such as the Course Board keep seeing the map that is there.
+    if ok:
+        set_active_course(content_root, course_id)
+    else:
+        clear_active_course(content_root)
+    return ok
+
+
+def _verify_map_for(content_root, course_id, course_name):
+    from handlers.config import get_course_targets, course_name_for
+
     label = f"'{course_name}' (id {course_id})" if course_name else f"id {course_id}"
-    sync_map = load_sync_map(content_root)
+    path = get_sync_map_path(content_root, course_id)
+    default = os.path.join(content_root, SYNC_MAP_NAME)
+
+    if path != default and not os.path.exists(path):
+        other = _map_file_course(default)
+        if course_id not in get_course_targets(content_root).values():
+            _log_wrong_course(content_root, other, label, course_id)
+            return False
+        logger.info(
+            "    [cyan]First sync to %s.[/cyan] It gets its own sync map, %s. "
+            "Course %s%s keeps %s.",
+            label, os.path.basename(path), other,
+            _named(course_name_for(content_root, other)), SYNC_MAP_NAME,
+        )
+
+    sync_map = read_sync_map_file(path)
     mapped = get_map_course_id(sync_map)
 
     if mapped == course_id:
@@ -638,29 +676,133 @@ def verify_sync_map_course(content_root, course_id, course_name=None):
                 "    [yellow]This sync map has no course recorded.[/yellow] Adopting %s. "
                 "If this folder was ever synced to a different course, stop now and delete "
                 "%s, or the next sync will edit the wrong course.",
-                label, get_sync_map_path(content_root),
+                label, path,
             )
         sync_map[MAP_COURSE_KEY] = course_id
-        save_sync_map(content_root, sync_map)
+        write_sync_map_file(path, sync_map)
         return True
 
-    logger.error(
-        "    [red]Wrong course.[/red] This folder's sync map was built against course id %s, "
-        "but the target is %s. Its Canvas ids do not exist in the target course, so syncing "
-        "would edit the wrong objects or create duplicates. "
-        "Sync back to course %s, or run with --force to discard the map and start fresh "
-        "against the new course.",
-        mapped, label, mapped,
-    )
+    # A per-course map stamped with another course: someone copied or renamed
+    # a map file by hand. Same danger, same answer.
+    _log_wrong_course(content_root, mapped, label, course_id)
     return False
 
 
+def _named(name):
+    return f' ("{name}")' if name else ''
 
-def get_sync_map_path(content_root):
-    return os.path.join(content_root, ".canvas_sync_map.json")
+
+def _log_wrong_course(content_root, mapped, label, course_id):
+    from handlers.config import course_name_for
+    logger.error(
+        "    [red]Wrong course.[/red] This folder's sync map was built against course %s%s, "
+        "but the target is %s. Its Canvas ids do not exist in the target course, so syncing "
+        "would edit the wrong objects or create duplicates.\n"
+        "    To sync this folder to both courses, name them in config.toml, and each keeps "
+        "its own sync map:\n\n"
+        "        course_id = \"live\"\n\n"
+        "        \\[courses]\n"      # escaped: rich would read [courses] as markup
+        "        live     = %s\n"
+        "        training = %s\n\n"
+        "    Pick the course with course_id (or --course-id training). "
+        "Or set course_id back to %s.",
+        mapped, _named(course_name_for(content_root, mapped)), label,
+        course_id, mapped, mapped,
+    )
+
+
+# One folder can be synced to several courses (the [courses] table in
+# config.toml), and each needs its own map. The first course a folder is
+# synced to keeps the plain name, so a folder with one course looks exactly as
+# it always did. Any other course gets a file named after its id:
+#
+#     .canvas_sync_map.json         the first course, e.g. the sandbox (74)
+#     .canvas_sync_map.17671.json   a second course
+#
+# Which file a course uses follows from the files themselves: its own file if
+# it has one, else the plain map if that is unclaimed or stamped with this
+# course, else a new file of its own. No setting to keep in step, and renaming
+# a course in [courses] changes nothing.
+
+SYNC_MAP_NAME = ".canvas_sync_map.json"
+
+
+def course_sync_map_name(course_id):
+    return f".canvas_sync_map.{course_id}.json"
+
+
+def is_sync_map_file(name):
+    """True for the plain sync map and every per-course one."""
+    return name == SYNC_MAP_NAME or bool(re.fullmatch(r"\.canvas_sync_map\.\d+\.json", name))
+
+
+def all_sync_map_paths(content_root):
+    """Every sync map in the folder, the plain one first."""
+    try:
+        names = os.listdir(content_root)
+    except OSError:
+        return []
+    found = sorted(n for n in names if is_sync_map_file(n) and n != SYNC_MAP_NAME)
+    if SYNC_MAP_NAME in names:
+        found.insert(0, SYNC_MAP_NAME)
+    return [os.path.join(content_root, n) for n in found]
+
+
+def _map_file_course(path):
+    """The course a map file is stamped with, or None (missing, unstamped, unreadable)."""
+    if not os.path.exists(path):
+        return None
+    return get_map_course_id(read_sync_map_file(path))
+
+
+def get_sync_map_path(content_root, course_id=None):
+    """The map file for ``course_id``, by default the folder's active course."""
+    if course_id is None:
+        from handlers.config import get_active_course
+        course_id = get_active_course(content_root)
+    default = os.path.join(content_root, SYNC_MAP_NAME)
+    if course_id is None:
+        return default
+    try:
+        course_id = int(course_id)
+    except (TypeError, ValueError):
+        return default
+    own = os.path.join(content_root, course_sync_map_name(course_id))
+    if os.path.exists(own):
+        return own
+    claimed = _map_file_course(default)
+    if claimed is None or claimed == course_id:
+        return default
+    return own
+
+
+def rekey_all_sync_maps(content_root, renames, skip=None):
+    """Apply {old rel path: new rel path} to every sync map but ``skip``.
+
+    A rename is a fact about the folder, not about one course, so every
+    course's map follows it. Returns the number of keys moved.
+    """
+    moved = 0
+    for path in all_sync_map_paths(content_root):
+        if skip and os.path.normcase(os.path.abspath(path)) == os.path.normcase(os.path.abspath(skip)):
+            continue
+        sync_map = read_sync_map_file(path)
+        changed = False
+        for old, new in renames.items():
+            if old != new and old in sync_map:
+                sync_map[new] = sync_map.pop(old)
+                changed = True
+                moved += 1
+        if changed:
+            write_sync_map_file(path, sync_map)
+    return moved
+
 
 def load_sync_map(content_root):
-    path = get_sync_map_path(content_root)
+    return read_sync_map_file(get_sync_map_path(content_root))
+
+
+def read_sync_map_file(path):
     if os.path.exists(path):
         try:
             with open(path, 'r', encoding='utf-8') as f:
@@ -669,11 +811,15 @@ def load_sync_map(content_root):
             logger.error("    Failed to load sync map: %s", e)
     return {}
 
+
 def save_sync_map(content_root, sync_map):
+    write_sync_map_file(get_sync_map_path(content_root), sync_map)
+
+
+def write_sync_map_file(path, sync_map):
     # Sorted, UTF-8 and LF so the file is stable under git: two people's syncs
     # change entries in predictable places, and a diff reads "Föreläsningar"
     # rather than "Föreläsningar".
-    path = get_sync_map_path(content_root)
     try:
         with open(path, 'w', encoding='utf-8', newline='\n') as f:
             json.dump(sync_map, f, indent=4, sort_keys=True, ensure_ascii=False)

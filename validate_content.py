@@ -950,7 +950,7 @@ def validate_path(target, content_root=None):
         for name in sorted(filenames):
             if os.path.splitext(name)[1].lower() not in _CHECKABLE:
                 continue
-            if name in _IGNORED_FILES or name.startswith(("_temp_", "tmp-")):
+            if (name in _IGNORED_FILES or name.startswith(("_temp_", "tmp-", ".canvas_sync_map."))):
                 continue
             reports.append(validate_file(os.path.join(dirpath, name), root, handlers))
 

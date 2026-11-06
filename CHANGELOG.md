@@ -5,6 +5,21 @@ on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/r
 
 ## Unreleased
 
+### One folder, a sandbox and a live course
+
+- **Name your courses in `config.toml` and switch with one word**: `course_id = "live"`
+  with a `[courses]` table (`live = 17671`, `training = 74`), or `--course-id training`
+  for one run. Each course keeps its own sync map (`.canvas_sync_map.json` for the first,
+  `.canvas_sync_map.<id>.json` for the others), so switching never mixes their Canvas ids.
+- **"Wrong course" now says how to fix it.** It used to suggest `--force`, which only
+  re-renders files and never got past the check. It now shows the `[courses]` table to add.
+  A course that is not listed is still refused.
+- **The Course Board shows "Wrong course" as a banner** instead of "JSON parse error":
+  the error was printed on stdout in front of the board's JSON.
+- **Renames and moves update every course's map**, from the Course Board and from a sync.
+- New course folders gitignore `.canvas_sync_map*.json`, so every course's map stays out
+  of a solo course's repo. Team mode commits and pushes all of them.
+
 ### The sync keeps `_order.yml` in step with the folder
 
 - **Every sync now updates each module's `_order.yml`**, also a one-file sync from the

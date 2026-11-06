@@ -257,7 +257,16 @@ def export(root, do_publish=False, gh=None, now=None):
     code = str(cfg.get('course_code') or 'schedule')
     name = ics_cfg.get('name') or cfg.get('course_name') or code
     filename = ics_cfg.get('file') or f"{code}.ics"
-    course_key = re.sub(r'[^A-Za-z0-9]+', '-', str(cfg.get('course_id') or code)).strip('-')
+    # The number, also when course_id names a course in [courses]: event UIDs
+    # built from it must not change when a name is introduced.
+    course_ref = cfg.get('course_id')
+    if course_ref:
+        from handlers.config import resolve_course_ref, CourseConfigError
+        try:
+            course_ref = resolve_course_ref(root, course_ref)
+        except CourseConfigError:
+            pass
+    course_key = re.sub(r'[^A-Za-z0-9]+', '-', str(course_ref or code)).strip('-')
 
     text = build_ics(events, name, tz, tz_name, course_key, now=now)
     out = os.path.join(root, filename)

@@ -5,6 +5,7 @@
 - [1. Getting Started](#1-getting-started)
   - [Prerequisites](#prerequisites)
   - [Configuration](#configuration)
+    - [A sandbox and a live course from one folder](#a-sandbox-and-a-live-course-from-one-folder)
   - [Dates and time zones](#dates-and-time-zones)
   - [Usage](#usage)
 - [2. File Organization & Module Order](#2-file-organization--module-order)
@@ -63,6 +64,33 @@ course_id = 12345
 ```
 
 `--course-id 12345` on the command line overrides it for one run.
+
+#### A sandbox and a live course from one folder
+
+To try things in a sandbox before they reach students, name both courses and
+pick one with `course_id`:
+
+```toml
+course_id = "live"        # or "training"
+
+[courses]
+live     = 17671
+training = 74
+```
+
+`--course-id training` picks the other one for a single run. Names match
+without regard to case, and a plain number still works.
+
+Each course keeps its own [sync map](#the-sync-map-canvas_sync_mapjson): the
+first course the folder was synced to uses `.canvas_sync_map.json`, any other
+gets `.canvas_sync_map.<course id>.json`. Switching back and forth never mixes
+their Canvas ids. A course that is **not** in `[courses]` is still refused when
+the folder already belongs to another one, so a typo in `course_id` cannot
+start publishing the whole course somewhere else.
+
+Renaming or moving a file updates every course's map. Drift snapshots
+(`.canvas_snapshots/`) are shared, so after switching courses, a drift diff may
+show differences between the two courses rather than an edit in Canvas.
 
 A `course_id.txt` holding only the id still works but is **deprecated**: the
 sync and `check_content` warn about it, and support will be removed in a future
@@ -1068,7 +1096,7 @@ The first time a file is synced, the system records its unique **Canvas ID**, a 
 *   **Preserving Data**: Because it updates the existing object by ID, student submissions, grades, and quiz results are always preserved.
 
 > [!CAUTION]
-> **Do not delete `.canvas_sync_map.json`**. If this file is lost, the system will fall back to "Matching by Title" for all content items. If you then rename a title, it will likely create a duplicate object in Canvas.
+> **Do not delete `.canvas_sync_map.json`** (or a per-course `.canvas_sync_map.<id>.json`, see [A sandbox and a live course](#a-sandbox-and-a-live-course-from-one-folder)). If this file is lost, the system will fall back to "Matching by Title" for all content items. If you then rename a title, it will likely create a duplicate object in Canvas.
 
 ### When someone edits Canvas directly
 
