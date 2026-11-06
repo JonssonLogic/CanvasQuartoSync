@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 
 import frontmatter as fm
 
-from handlers.content_utils import load_sync_map, save_sync_map, parse_module_name
+from handlers.content_utils import load_sync_map, save_sync_map, parse_module_name, write_published
 from handlers.course_layout import load_layout
 from handlers.drift_detector import check_all_drift
 
@@ -474,3 +474,55 @@ def fetch_module_structure(course, content_root: str,
         'modules': modules,
     })
     return base
+
+
+def _file_published(abs_path, keys):
+    """The published value a content file holds now (False when it has none)."""
+    try:
+        if abs_path.lower().endswith('.json'):
+            import json
+            with open(abs_path, 'r', encoding='utf-8') as f:
+                node = json.load(f)
+        else:
+            node = fm.load(abs_path).metadata
+    except Exception:
+        return None
+    for k in keys:
+        if not isinstance(node, dict):
+            return False
+        node = node.get(k)
+    return bool(node)
+
+
+def pull_published(structure: dict, content_root: str) -> list:
+    """Write Canvas's published state into the files that disagree with it.
+
+    Publishing in Canvas leaves the file's ``canvas.published`` behind, and the
+    next sync would put the old state back. Only items that exist in Canvas and
+    match a local file are touched, and only when the values differ. Canvas
+    wins: a published change made in the file and not yet synced is replaced.
+
+    Returns the relative paths that were changed.
+    """
+    changed = []
+    for mod in structure.get('modules', []):
+        for row in mod.get('items', []):
+            rel = row.get('local_path')
+            if not rel or not row.get('module_item_id') or row.get('included') is False:
+                continue
+            if row.get('type') == 'SubHeader':
+                continue
+            abs_path = os.path.join(content_root, rel.replace('/', os.sep))
+            if not os.path.isfile(abs_path):
+                continue
+            keys = ('canvas', 'published')
+            if row.get('type') == 'File' and abs_path.lower().endswith('.qmd'):
+                keys = ('canvas', 'pdf', 'published')   # a study guide's PDF
+            current = _file_published(abs_path, keys)
+            want = bool(row.get('published'))
+            if current is None or current == want:
+                continue
+            if write_published(abs_path, want, keys) is None:
+                changed.append(rel)
+    return changed
+

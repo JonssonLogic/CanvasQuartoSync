@@ -515,3 +515,20 @@ def test_study_guide_pdf_is_shown_with_its_guide(tmp_path):
     assert page["local_path"] == "Docs/KursPM.qmd"
     assert pdf["local_path"] == "Docs/KursPM.qmd"
     assert pdf.get("included", True) is True
+
+
+def test_pull_published_copies_canvas_state_into_files(tmp_path):
+    from handlers.module_structure import pull_published
+    (tmp_path / "Mod").mkdir()
+    a = tmp_path / "Mod" / "A.qmd"
+    a.write_text("---\ncanvas:\n  type: page\n  published: true\n---\nHi\n", encoding="utf-8")
+    b = tmp_path / "Mod" / "B.qmd"
+    b.write_text("---\ncanvas:\n  type: page\n  published: false\n---\nHi\n", encoding="utf-8")
+    structure = {"modules": [{"items": [
+        {"local_path": "Mod/A.qmd", "module_item_id": 1, "type": "Page", "published": False},
+        {"local_path": "Mod/B.qmd", "module_item_id": 2, "type": "Page", "published": False},
+        {"local_path": "Mod/C.qmd", "module_item_id": None, "type": "Page", "published": True},
+    ]}]}
+    assert pull_published(structure, str(tmp_path)) == ["Mod/A.qmd"]
+    assert "published: false" in a.read_text(encoding="utf-8")
+    assert "published: false" in b.read_text(encoding="utf-8")

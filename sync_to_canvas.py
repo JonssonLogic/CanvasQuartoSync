@@ -14,7 +14,7 @@ from handlers.external_link_handler import ExternalLinkHandler
 from handlers.content_utils import canvas_file_name, record_file, upload_file, prune_orphaned_assets, FOLDER_FILES, parse_module_name, is_valid_name, verify_sync_map_course, load_sync_map, save_sync_map, set_sync_identity, write_published, rekey_all_sync_maps, get_sync_map_path
 from handlers.single_sync import build_handlers, find_or_create_module, arrange_modules, remove_stale_placements, sync_single_file
 from handlers.course_layout import load_layout, is_ordered, free_name, append_item, add_module, remove_module, remove_item, reconcile_orders
-from handlers.module_structure import fetch_module_structure
+from handlers.module_structure import fetch_module_structure, pull_published
 from handlers import __version__, full_version
 from handlers.config import get_api_credentials, get_course_id, load_config, course_id_error
 from handlers.drift_detector import check_all_drift, drift_report, forget_synced_file, forget_synced_dir
@@ -440,9 +440,16 @@ def _print_module_structure(content_root, api_url, api_token, course_id, with_dr
     except Exception:
         pass
 
-    print(json.dumps(fetch_module_structure(course, content_root, with_drift=with_drift,
-                                            problems=problems),
-                     ensure_ascii=False))
+    structure = fetch_module_structure(course, content_root, with_drift=with_drift,
+                                       problems=problems)
+    if course is not None:
+        # Canvas is where publishing happens; keep the files in step with it.
+        try:
+            structure['published_pulled'] = pull_published(structure, content_root)
+        except Exception as e:
+            problems.append(_problem('warning', 'pull_published_failed',
+                f'Could not copy the published state from Canvas into the files: {e}', ''))
+    print(json.dumps(structure, ensure_ascii=False))
     return 0
 
 
