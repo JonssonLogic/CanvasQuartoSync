@@ -53,8 +53,31 @@ on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/r
 - `.hover` is passed on to Canvas as before. The sync cannot draw a hover effect, and
   Canvas's own shows no visible highlight.
 
+### A calendar in VS Code
+
+- **The course schedule and your Outlook calendar side by side.** Tools > Calendar (or
+  "Open Calendar") shows `schedule.yaml` next to any number of Outlook calendars, read
+  from their published ICS links. Outlook stays read-only, each calendar can be hidden,
+  and the ICS address is kept in VS Code's secret storage, not in the course folder.
+- **Week, month and course views.** The week runs Monday to Friday with Swedish week
+  numbers, and Swedish public holidays are red. The month view scrolls on from one month
+  into the next, a mini-calendar on the left jumps to any week, and the course view lists
+  every booking, week by week.
+- **Book by clicking or dragging** in the week view, snapped to half hours, with title,
+  place and a comment (the event's description in Canvas). A recurring booking shows a
+  preview with red days and Outlook clashes first, and is written as one entry per
+  occasion, so a single occasion can be cancelled on its own.
+- **Edit by double-click, right-click or the edit button, and drag to move or stretch.**
+  Edits change only that entry in `schedule.yaml`; comments and layout stay. An old
+  `days:` series is split into single entries the first time one occasion is changed.
+- Nothing in the calendar talks to Canvas: the schedule still reaches Canvas with
+  `cqs sync --sync-calendar`, and Outlook with `cqs ics`.
+
 ### Fixes
 
+- **Publishing in Canvas sticks.** Publishing or unpublishing in Canvas left
+  `canvas.published` in the file behind, and the next sync put the old state back. A
+  Course Board refresh now copies Canvas's state into the files, where the two differ.
 - **Course Board actions are committed and pushed in team mode.** Deleting, importing,
   publishing or creating a module changed the local files but left them for you to
   commit and push. Each now runs like a sync: it commits and pulls first, holds the sync
