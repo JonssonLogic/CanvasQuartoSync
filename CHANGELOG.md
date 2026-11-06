@@ -3,7 +3,7 @@
 What changed in each release, for the people using it. Earlier releases are described
 on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/releases).
 
-## Unreleased
+## 0.17.0 - 2026-11-06
 
 ### One folder, a sandbox and a live course
 

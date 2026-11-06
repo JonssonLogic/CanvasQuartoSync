@@ -1,6 +1,6 @@
 import os
 
-__version__ = "0.16.0"
+__version__ = "0.17.0"
 
 # Written into the install by dev-deploy.ps1: the commit, branch and whether
 # the working tree had uncommitted changes. install.ps1 and update.ps1 delete
