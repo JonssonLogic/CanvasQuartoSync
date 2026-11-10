@@ -1171,7 +1171,7 @@ function renderBody(data: StructureData): string {
         + (draggableRow ? ' draggable="true" data-path="' + safePath + '"' : '')
         + ' data-kind="' + dataKind + '" data-value="' + dataVal.replace(/"/g, '&quot;') + '">';
       h += '<span class="cb-cell"><input type="checkbox" class="item-cb" onclick="event.stopPropagation();onCheckChanged()" data-kind="' + dataKind + '" data-value="' + dataVal.replace(/"/g, '&quot;') + '" data-delete="' + deleteVal.replace(/"/g, '&quot;') + '"></span>';
-      h += '<span class="icon">' + icon + '</span>';
+      h += '<span class="icon" title="' + esc(badgeText) + '">' + icon + '</span>';
       // A rollup target carries its button inside the title cell, at the
       // right edge, so it sits left of the type badge without adding a grid
       // column that every other row would have to leave empty.
@@ -1341,7 +1341,11 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);backgr
 .pub-badge{font-size:10px;padding:1px 6px;border-radius:3px;font-weight:400}
 .pub-badge.published{background:rgba(25,135,84,0.15);color:#198754}
 .pub-badge.draft{background:rgba(108,117,125,0.15);color:#6c757d}
-.module-items{padding:4px 0;display:grid;grid-template-columns:22px 24px 1fr 80px 70px minmax(100px,280px) 96px auto;align-items:center;row-gap:1px;min-height:8px}.module-items.hidden{display:none}
+/* Columns: checkbox, icon, title, type, updated, path, status, actions.
+   The title keeps a real minimum width; the path column is the one that
+   gives way first (minmax(0,..)), and the breakpoints at the end of this
+   sheet drop updated, path and type in that order on narrow panels. */
+.module-items{padding:4px 0;display:grid;grid-template-columns:22px 24px minmax(160px,1fr) auto 64px minmax(0,260px) auto auto;align-items:center;row-gap:1px;min-height:8px}.module-items.hidden{display:none}
 .item{display:grid;grid-column:1/-1;grid-template-columns:subgrid;align-items:center;cursor:default;font-size:13px}
 .item>*{padding:4px 0}
 .item:hover{background:var(--vscode-list-hoverBackground)}
@@ -1377,7 +1381,7 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);backgr
 .item.clickable{cursor:pointer}
 .item .icon{font-size:14px;text-align:center;padding-left:4px}
 .item .title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:6px;padding-right:8px}
-.item .type-badge{font-size:10px;padding:2px 8px;border-radius:3px;background:var(--vscode-badge-background);color:var(--vscode-badge-foreground);text-align:center;width:80px;justify-self:end}
+.item .type-badge{font-size:10px;padding:0 8px;color:var(--vscode-descriptionForeground);text-align:right;white-space:nowrap;opacity:0.8;justify-self:end}
 .item .status{font-size:10px;text-align:center;white-space:nowrap;padding:2px 6px;border-radius:3px;justify-self:end;font-weight:600;letter-spacing:0.02em}
 .item .status.in-sync{color:var(--vscode-descriptionForeground);font-weight:400}
 .item .status.local-newer{background:rgba(32,201,151,0.16);color:#20c997}
@@ -1386,9 +1390,9 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);backgr
 .item .status.canvas-only{background:rgba(220,53,69,0.16);color:#ff6b7a}
 .item .status.not-synced{background:rgba(13,110,253,0.16);color:#6ea8fe}
 .item .status.unknown{background:var(--vscode-badge-background);color:var(--vscode-badge-foreground)}
-.type-badge.not-synced-badge{background:rgba(13,110,253,0.15);color:#6ea8fe}
+.item .type-badge.not-synced-badge{color:#6ea8fe;opacity:1}
 .item .updated{font-size:10px;color:var(--vscode-descriptionForeground);text-align:right;white-space:nowrap;padding-right:4px}
-.item .local-path{font-size:11px;color:var(--vscode-descriptionForeground);padding-left:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px;text-align:right}
+.item .local-path{font-size:11px;color:var(--vscode-descriptionForeground);padding-left:10px;padding-right:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;text-align:right}
 .item .local-path.clickable{cursor:pointer;text-decoration:underline;text-decoration-style:dotted}
 .item .local-path.clickable:hover{color:var(--vscode-textLink-foreground)}
 .item .actions{display:flex;gap:4px;padding-right:10px;padding-left:6px;justify-self:end}
@@ -1435,6 +1439,26 @@ body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);backgr
 .item .title-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rollup-summary{grid-column:1/-1;padding:2px 10px 8px 52px;font-size:12px}
 ${ROLLUP_CSS}
+/* Narrow panels. Rows are subgrid and auto-placed, so a hidden cell must
+   also lose its column, or every later cell shifts one step left. */
+.header{flex-wrap:wrap;gap:10px}
+.header-btns{flex-wrap:wrap}
+.module-header{flex-wrap:wrap;row-gap:4px}
+@media (max-width:1000px){
+  .module-items{grid-template-columns:22px 24px minmax(140px,1fr) auto minmax(0,200px) auto auto}
+  .item .updated{display:none}
+}
+@media (max-width:800px){
+  body{padding:12px 12px}
+  .module-items{grid-template-columns:22px 24px minmax(120px,1fr) auto auto auto}
+  .item .local-path{display:none}
+  .stats{flex-wrap:wrap;gap:10px 16px}
+}
+@media (max-width:600px){
+  .module-items{grid-template-columns:22px 24px minmax(100px,1fr) auto auto}
+  .item .type-badge{display:none}
+  .item .actions{padding-right:6px}
+}
 </style>
 </head>
 <body>
