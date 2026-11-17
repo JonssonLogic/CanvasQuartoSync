@@ -300,18 +300,19 @@ class HtmlToMarkdown:
 
         # Process block elements first
 
-        # Headings
+        # Headings (alignment / direction set in the Canvas editor -> heading attributes)
         for level in range(6, 0, -1):
             tag = f'h{level}'
             prefix = '#' * level
             text = re.sub(
-                rf'<{tag}[^>]*>(.*?)</{tag}>',
-                lambda m, p=prefix: f'\n\n{p} {self._inline(m.group(1)).strip()}\n\n',
+                rf'<{tag}\b([^>]*)>(.*?)</{tag}>',
+                lambda m, p=prefix: self._heading(p, m.group(1), m.group(2)),
                 text, flags=re.DOTALL | re.IGNORECASE
             )
 
-        # Paragraphs
-        text = re.sub(r'<p[^>]*>(.*?)</p>', lambda m: f'\n\n{self._inline(m.group(1)).strip()}\n\n', text, flags=re.DOTALL | re.IGNORECASE)
+        # Paragraphs (alignment / direction -> a fenced div around the paragraph)
+        text = re.sub(r'<p\b([^>]*)>(.*?)</p>', lambda m: self._paragraph(m.group(1), m.group(2)),
+                      text, flags=re.DOTALL | re.IGNORECASE)
 
         # Line breaks
         text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
@@ -394,15 +395,7 @@ class HtmlToMarkdown:
         )
 
         # Inline formatting
-        text = re.sub(r'<strong[^>]*>(.*?)</strong>', r'**\1**', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<b[^>]*>(.*?)</b>', r'**\1**', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<em[^>]*>(.*?)</em>', r'*\1*', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<i[^>]*>(.*?)</i>', r'*\1*', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<code[^>]*>(.*?)</code>', r'`\1`', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<sup[^>]*>(.*?)</sup>', r'^{\1}', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<sub[^>]*>(.*?)</sub>', r'~{\1}', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<del[^>]*>(.*?)</del>', r'~~\1~~', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<s[^>]*>(.*?)</s>', r'~~\1~~', text, flags=re.DOTALL | re.IGNORECASE)
+        text = self._inline_formatting(text)
 
         # Strip remaining HTML tags
         text = self._strip_tags(text)
@@ -438,11 +431,7 @@ class HtmlToMarkdown:
         text = re.sub(r'<span[^>]*class="[^"]*MathJax[_\w]*"[^>]*>.*?</span>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<span[^>]*class="[^"]*math_equation_latex[^"]*"[^>]*>.*?</span>', '', text, flags=re.DOTALL | re.IGNORECASE)
 
-        text = re.sub(r'<strong[^>]*>(.*?)</strong>', r'**\1**', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<b[^>]*>(.*?)</b>', r'**\1**', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<em[^>]*>(.*?)</em>', r'*\1*', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<i[^>]*>(.*?)</i>', r'*\1*', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<code[^>]*>(.*?)</code>', r'`\1`', text, flags=re.DOTALL | re.IGNORECASE)
+        text = self._inline_formatting(text)
         text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
         # Canvas equation images -> LaTeX (any remaining)
         text = re.sub(
@@ -506,6 +495,164 @@ class HtmlToMarkdown:
 
     def _strip_tags(self, html: str) -> str:
         return re.sub(r'<[^>]+>', '', html)
+
+    # --- Rich Content Editor formatting -------------------------------------
+    # The Canvas editor (TinyMCE) writes most of its Format menu as inline CSS:
+    # strike-through and underline are <span style="text-decoration: ...">,
+    # text colour, background colour, font and font size are <span style>, and
+    # Align / Directionality sit on the block (<p style="text-align: ...">,
+    # dir="rtl"). Bold, italic, code, superscript and subscript are real tags.
+    # Everything maps to Pandoc markdown, which Quarto renders back to the same
+    # HTML on the next sync: ~~x~~ -> <del>, [x]{.underline} -> <u>,
+    # ^x^ -> <sup>, ~x~ -> <sub>, [x]{style="..."} -> <span style="...">.
+
+    _TAG_FLAGS = re.DOTALL | re.IGNORECASE
+    # Block-level properties carried over from <p>/<hN> (the Align and
+    # Directionality menus). Margins and the like are left to the theme.
+    _BLOCK_STYLE_PROPS = ('text-align', 'direction')
+
+    @staticmethod
+    def _attr(attrs: str, name: str) -> str:
+        m = re.search(rf'\b{name}\s*=\s*("([^"]*)"|\'([^\']*)\')', attrs or '', re.IGNORECASE)
+        if not m:
+            return ''
+        return m.group(2) if m.group(2) is not None else m.group(3)
+
+    @staticmethod
+    def _parse_style(style: str) -> list:
+        """'a: b; c: d' -> [('a', 'b'), ('c', 'd')], lowercased property names."""
+        decls = []
+        for part in unescape(style or '').split(';'):
+            if ':' not in part:
+                continue
+            prop, val = part.split(':', 1)
+            prop, val = prop.strip().lower(), val.strip()
+            if prop and val:
+                decls.append((prop, val))
+        return decls
+
+    @staticmethod
+    def _style_attr(decls: list) -> str:
+        """Declarations -> a Pandoc attribute value. Double quotes (font-family
+        lists) become single quotes so the attribute stays well-formed."""
+        return '; '.join(f'{p}: {v}' for p, v in decls).replace('"', "'") + ';'
+
+    @staticmethod
+    def _wrap(inner: str, opener: str, closer: str = None) -> str:
+        """Wrap inline content in markdown markers, moving leading/trailing
+        whitespace outside them (Pandoc ignores '** x**')."""
+        closer = opener if closer is None else closer
+        stripped = inner.strip()
+        if not stripped:
+            return inner
+        lead = inner[:len(inner) - len(inner.lstrip())]
+        trail = inner[len(inner.rstrip()):]
+        return f'{lead}{opener}{stripped}{closer}{trail}'
+
+    @staticmethod
+    def _escape_spaces(inner: str) -> str:
+        # Pandoc super/subscripts end at the first unescaped space.
+        return re.sub(r'(?<!\\) ', r'\\ ', inner.strip())
+
+    def _span(self, attrs: str, inner: str) -> str:
+        """One <span> (no nested spans left inside) -> Pandoc markdown."""
+        decls = self._parse_style(self._attr(attrs, 'style'))
+        direction = self._attr(attrs, 'dir')
+        keep = []
+        strike = underline = bold = italic = False
+        for prop, val in decls:
+            low = val.lower()
+            if prop in ('text-decoration', 'text-decoration-line'):
+                strike = strike or 'line-through' in low
+                underline = underline or 'underline' in low
+                rest = [v for v in low.split() if v not in ('line-through', 'underline', 'none')]
+                if rest and prop == 'text-decoration-line':
+                    keep.append((prop, ' '.join(rest)))
+            elif prop == 'font-weight' and (low in ('bold', 'bolder') or (low.isdigit() and int(low) >= 600)):
+                bold = True
+            elif prop == 'font-style' and low in ('italic', 'oblique'):
+                italic = True
+            else:
+                keep.append((prop, val))
+
+        out = inner
+        if not out.strip():
+            return out
+        if keep or direction:
+            parts = []
+            if keep:
+                parts.append(f'style="{self._style_attr(keep)}"')
+            if direction:
+                parts.append(f'dir="{direction}"')
+            out = self._wrap(out, '[', ']{' + ' '.join(parts) + '}')
+        if underline:
+            out = self._wrap(out, '[', ']{.underline}')
+        if italic:
+            out = self._wrap(out, '*')
+        if bold:
+            out = self._wrap(out, '**')
+        if strike:
+            out = self._wrap(out, '~~')
+        return out
+
+    def _inline_formatting(self, text: str) -> str:
+        """Convert inline formatting tags and styled spans to Pandoc markdown."""
+        F = self._TAG_FLAGS
+        # Spans innermost-first, so nested spans (colour inside strike-through,
+        # say) each keep their own formatting.
+        innermost = re.compile(r'<span\b([^>]*)>((?:(?!<span\b).)*?)</span>', F)
+        while True:
+            new = innermost.sub(lambda m: self._span(m.group(1), m.group(2)), text)
+            if new == text:
+                break
+            text = new
+
+        # \b keeps <b> from matching <br>/<blockquote>, <s> from <span>/<sup>,
+        # <i> from <img>/<iframe>, <u> from <ul>.
+        simple = [
+            (r'strong|b', lambda s: self._wrap(s, '**')),
+            (r'em|i', lambda s: self._wrap(s, '*')),
+            (r'u|ins', lambda s: self._wrap(s, '[', ']{.underline}')),
+            (r'del|s|strike', lambda s: self._wrap(s, '~~')),
+            (r'mark', lambda s: self._wrap(s, '[', ']{style="background-color: yellow;"}')),
+            (r'sup', lambda s: self._wrap(self._escape_spaces(s), '^')),
+            (r'sub', lambda s: self._wrap(self._escape_spaces(s), '~')),
+            (r'code', lambda s: f'`{s}`'),
+        ]
+        for tags, fn in simple:
+            text = re.sub(rf'<({tags})\b[^>]*>(.*?)</\1>', lambda m, fn=fn: fn(m.group(2)), text, flags=F)
+        return text
+
+    def _block_attrs(self, attrs: str) -> str:
+        """Alignment/direction of a <p> or <hN> as a Pandoc attribute list
+        ('' when there is none)."""
+        keep = [(p, v) for p, v in self._parse_style(self._attr(attrs, 'style'))
+                if p in self._BLOCK_STYLE_PROPS]
+        # Left-aligned left-to-right text is the default; don't clutter the file.
+        keep = [(p, v) for p, v in keep
+                if not (p == 'text-align' and v.lower() in ('left', 'start'))
+                and not (p == 'direction' and v.lower() == 'ltr')]
+        parts = []
+        if keep:
+            parts.append(f'style="{self._style_attr(keep)}"')
+        direction = self._attr(attrs, 'dir')
+        if direction and direction.lower() != 'ltr':
+            parts.append(f'dir="{direction}"')
+        return ' '.join(parts)
+
+    def _paragraph(self, attrs: str, inner: str) -> str:
+        body = self._inline(inner).strip()
+        block = self._block_attrs(attrs)
+        if block and body:
+            return f'\n\n::: {{{block}}}\n{body}\n:::\n\n'
+        return f'\n\n{body}\n\n'
+
+    def _heading(self, prefix: str, attrs: str, inner: str) -> str:
+        body = self._inline(inner).strip()
+        block = self._block_attrs(attrs)
+        if block:
+            return f'\n\n{prefix} {body} {{{block}}}\n\n'
+        return f'\n\n{prefix} {body}\n\n'
 
     def _code_block(self, code: str, lang_class: str) -> str:
         lang = ''

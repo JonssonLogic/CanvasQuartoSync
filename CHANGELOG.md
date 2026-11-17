@@ -3,6 +3,21 @@
 What changed in each release, for the people using it. Earlier releases are described
 on the [GitHub releases page](https://github.com/JonssonLogic/CanvasQuartoSync/releases).
 
+## Unreleased
+
+### Import keeps the Canvas editor's formatting
+
+- **Strike-through, underline, text and background colour, fonts and font sizes now
+  survive `cqs import`** (and the drift diff). The Canvas editor writes these as
+  `<span style="...">`, which the importer used to drop. They come back as Pandoc
+  markdown that renders to the same HTML: `~~struck~~`, `[text]{.underline}`,
+  `[text]{style="color: #e03e2d;"}`.
+- **Align and Directionality are kept**: an aligned or right-to-left paragraph becomes a
+  `::: {style="text-align: center;"}` div, a heading gets `{style="..."}`.
+- **Superscript and subscript import as `x^2^` and `H~2~O`**; they used to come out as
+  the literal text `^{2}` and `~{2}`.
+- Fix: `<s>`, `<b>` and `<i>` no longer match the start of `<span>`, `<br>` or `<img>`.
+
 ## 0.17.0 - 2026-11-06
 
 ### One folder, a sandbox and a live course
