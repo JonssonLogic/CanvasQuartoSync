@@ -37,6 +37,7 @@
   - [The Sync Map (.canvas_sync_map.json)](#the-sync-map-canvas_sync_mapjson)
   - [When someone edits Canvas directly](#when-someone-edits-canvas-directly)
   - [Team mode: several teachers, one course](#team-mode-several-teachers-one-course)
+    - [Large files in team mode](#large-files-in-team-mode)
 - [8. Authoring with an AI Assistant](#8-authoring-with-an-ai-assistant)
   - [Setting up a content folder](#setting-up-a-content-folder)
   - [The workflow](#the-workflow)
@@ -1246,6 +1247,36 @@ The sync map **must be committed** in team mode: remove `.canvas_sync_map.json` 
 If a sync crashes, the lock stays for safety. After 30 minutes the message says so; run the sync again with `--break-lock`.
 
 Each teacher uses their own Canvas token, so Canvas records who published what.
+
+#### Large files in team mode
+
+GitHub refuses any file over 100 MB (and warns above 50 MB). Because a team sync pushes before it publishes, one such file stops the whole sync: *"Could not push your changes to GitHub, so nothing was synced"*, followed by `GH001: Large files detected`. Lecture slides with embedded video or animated GIFs reach that size easily.
+
+The failed sync leaves a local commit holding the file. Undo it first; your files stay as they are:
+
+```
+git reset --soft HEAD~1
+```
+
+Then keep the file out of the repository **and** out of the sync, and link to it instead:
+
+1.  Put the file somewhere shareable (Dropbox, OneDrive, SharePoint) and copy a share link.
+2.  Add an [External Link](#external-links-qmd) next to where the file was, e.g. `Lectures/Gears_URL.qmd`:
+    ```yaml
+    ---
+    title: "Gears"
+    canvas:
+      type: external_url
+      url: "https://www.dropbox.com/scl/fi/.../Gears.pptx?rlkey=...&dl=0"
+      published: true
+      new_tab: true
+    ---
+    ```
+3.  List the `_URL.qmd` in the module's `_order.yml` instead of the file, and add the file (or a pattern such as `Lectures/*.pptx`) to `.gitignore`. If the file was already on GitHub, also run `git rm --cached <file>`.
+
+Updating the slides then needs no sync: the link always opens the current version.
+
+**Do not** just gitignore a large file and keep it listed in `_order.yml`. The sync still uploads it from your computer to `synced-files`, but a colleague's clone does not have it, so their next full sync treats it as unused and [prunes](#e-orphan-asset-cleanup-pruning) it from Canvas without warning. Git LFS works too, but GitHub's free LFS quota (1 GB storage and 1 GB download a month) runs out quickly when every teacher's clone downloads the slides.
 
 ### Troubleshooting Missing Assets or Duplicates
 If you manually delete an image or file on Canvas that was previously synced, the sync tool won't re-upload it automatically because the local file hasn't changed.
